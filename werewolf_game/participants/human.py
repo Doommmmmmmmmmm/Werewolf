@@ -235,10 +235,6 @@ class HumanParticipant(Participant):
                 "\u3400" <= char <= "\u9fff" for char in speech
             ):
                 raise ValueError("发言必须包含中文")
-            if not allowed.get("allow_latin_letters", True) and any(
-                ("A" <= char <= "Z") or ("a" <= char <= "z") for char in speech
-            ):
-                raise ValueError("发言不能包含英文字母")
 
     def _display_packet(self, packet: Mapping[str, Any]) -> None:
         private = packet.get("private_information") or {}

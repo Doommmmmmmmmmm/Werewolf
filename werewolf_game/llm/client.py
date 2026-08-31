@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 import time
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -20,6 +20,60 @@ from ..errors import ModelClientError
 
 SUPPORTED_PROTOCOLS = frozenset({"responses", "messages", "chat_completions"})
 SUPPORTED_AGENT_PROFILES = frozenset({"task", "meta"})
+
+
+def _normalized_tool_schema(tool: Mapping[str, Any]) -> tuple[str, str, dict[str, Any]]:
+    """读取框架内部统一的工具描述。"""
+
+    name = str(tool.get("name", "")).strip()
+    if not name:
+        raise ValueError("工具描述缺少 name")
+    description = str(tool.get("description", "")).strip()
+    parameters = tool.get("parameters") or tool.get("input_schema")
+    if not isinstance(parameters, Mapping):
+        parameters = {"type": "object", "properties": {}, "additionalProperties": False}
+    return name, description, dict(parameters)
+
+
+def _provider_tools(
+    tools: list[dict[str, Any]] | None, protocol: str
+) -> list[dict[str, Any]]:
+    """把统一工具描述转换成三种 API 协议各自的形状。"""
+
+    if not tools:
+        return []
+    converted: list[dict[str, Any]] = []
+    for tool in tools:
+        name, description, parameters = _normalized_tool_schema(tool)
+        if protocol == "responses":
+            converted.append(
+                {
+                    "type": "function",
+                    "name": name,
+                    "description": description,
+                    "parameters": parameters,
+                }
+            )
+        elif protocol == "messages":
+            converted.append(
+                {
+                    "name": name,
+                    "description": description,
+                    "input_schema": parameters,
+                }
+            )
+        else:
+            converted.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": description,
+                        "parameters": parameters,
+                    },
+                }
+            )
+    return converted
 
 
 @dataclass(frozen=True)
@@ -223,6 +277,8 @@ def build_model_payload(
     messages: list[dict[str, Any]],
     max_tokens: int,
     config: ModelConfig,
+    *,
+    tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_messages(messages)
     if config.protocol == "responses":
@@ -236,6 +292,9 @@ def build_model_payload(
             payload["max_output_tokens"] = config.responses_max_output_tokens
         if config.reasoning_effort:
             payload["reasoning"] = {"effort": config.reasoning_effort}
+        provider_tools = _provider_tools(tools, config.protocol)
+        if provider_tools:
+            payload["tools"] = provider_tools
         return payload
     if config.protocol == "messages":
         payload = {
@@ -251,6 +310,9 @@ def build_model_payload(
         # provider's original default behavior.
         if config.reasoning_effort == "none":
             payload["thinking"] = {"type": "disabled"}
+        provider_tools = _provider_tools(tools, config.protocol)
+        if provider_tools:
+            payload["tools"] = provider_tools
         return payload
     payload = {
         "model": config.model,
@@ -260,6 +322,9 @@ def build_model_payload(
     }
     if not config.enable_thinking:
         payload["chat_template_kwargs"] = {"enable_thinking": False}
+    provider_tools = _provider_tools(tools, config.protocol)
+    if provider_tools:
+        payload["tools"] = provider_tools
     return payload
 
 
@@ -294,6 +359,152 @@ def extract_text(response: dict[str, Any]) -> str:
             if isinstance(part, dict) and part.get("type") in {"output_text", "text"}:
                 texts.append(str(part.get("text", "")))
     return "\n".join(texts)
+
+
+def _tool_arguments(value: object) -> dict[str, Any]:
+    """把不同供应商返回的工具参数统一成对象。"""
+
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, Mapping) else {}
+    return {}
+
+
+def extract_tool_calls(
+    response: Mapping[str, Any], protocol: str | None = None
+) -> list[dict[str, Any]]:
+    """提取 Responses、Messages 和 Chat Completions 的工具调用。"""
+
+    calls: list[dict[str, Any]] = []
+
+    output = response.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, Mapping):
+                continue
+            item_type = str(item.get("type", ""))
+            if item_type not in {"function_call", "tool_call", "tool_use"}:
+                continue
+            name = item.get("name")
+            arguments = item.get("arguments", item.get("input", {}))
+            if not name:
+                continue
+            calls.append(
+                {
+                    "id": str(item.get("call_id", item.get("id", ""))),
+                    "name": str(name),
+                    "arguments": _tool_arguments(arguments),
+                }
+            )
+
+    content = response.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, Mapping):
+                continue
+            item_type = str(item.get("type", ""))
+            if item_type not in {"tool_use", "function_call", "tool_call"}:
+                continue
+            name = item.get("name")
+            if not name:
+                continue
+            calls.append(
+                {
+                    "id": str(item.get("id", item.get("call_id", ""))),
+                    "name": str(name),
+                    "arguments": _tool_arguments(item.get("input", item.get("arguments", {}))),
+                }
+            )
+
+    choices = response.get("choices")
+    if isinstance(choices, list) and choices:
+        message = choices[0].get("message") if isinstance(choices[0], Mapping) else None
+        if isinstance(message, Mapping):
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for item in tool_calls:
+                    if not isinstance(item, Mapping):
+                        continue
+                    function = item.get("function")
+                    if not isinstance(function, Mapping):
+                        continue
+                    name = function.get("name")
+                    if not name:
+                        continue
+                    calls.append(
+                        {
+                            "id": str(item.get("id", "")),
+                            "name": str(name),
+                            "arguments": _tool_arguments(function.get("arguments", {})),
+                        }
+                    )
+            function_call = message.get("function_call")
+            if isinstance(function_call, Mapping) and function_call.get("name"):
+                calls.append(
+                    {
+                        "id": "",
+                        "name": str(function_call["name"]),
+                        "arguments": _tool_arguments(function_call.get("arguments", {})),
+                    }
+                )
+
+    # A few gateways put tool calls at the top level. Avoid duplicating calls
+    # already found in the protocol-specific fields.
+    top_level = response.get("tool_calls")
+    if isinstance(top_level, list):
+        for item in top_level:
+            if not isinstance(item, Mapping):
+                continue
+            function = item.get("function", item)
+            if not isinstance(function, Mapping) or not function.get("name"):
+                continue
+            candidate = {
+                "id": str(item.get("id", "")),
+                "name": str(function["name"]),
+                "arguments": _tool_arguments(function.get("arguments", function.get("input", {}))),
+            }
+            if candidate not in calls:
+                calls.append(candidate)
+    return calls
+
+
+def serialize_tool_result(value: object, max_tokens: int) -> str:
+    """序列化并截断工具结果。
+
+    当前没有额外 tokenizer 依赖，采用 Unicode 字符作为保守预算单位；对中文
+    内容这不会超过指定的 token 上限，虽可能比真实 tokenizer 更节省一些空间。
+    """
+
+    try:
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        text = json.dumps({"value": str(value)}, ensure_ascii=False)
+    limit = max(1, int(max_tokens))
+    if len(text) <= limit:
+        return text
+    marker = "…[已截断]"
+    if len(marker) >= limit:
+        return marker[:limit]
+    return text[: limit - len(marker)] + marker
+
+
+def _is_tool_unsupported_error(error: Exception) -> bool:
+    """判断网关是否明确表示不支持工具字段。"""
+
+    status_code = int(getattr(error, "status_code", 0) or 0)
+    if status_code not in {400, 404, 405, 422}:
+        return False
+    message = str(error).lower()
+    tool_words = ("tool", "function_call", "function call", "input_schema")
+    unsupported_words = ("unsupported", "not support", "unknown", "invalid", "unrecognized")
+    return any(word in message for word in tool_words) and any(
+        word in message for word in unsupported_words
+    )
 
 
 def extract_json(text: str) -> dict[str, Any] | None:
@@ -386,7 +597,15 @@ class ModelClient:
         )
 
     def complete_json(
-        self, *, system: str, messages: list[dict[str, Any]], max_tokens: int
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        tools: list[dict[str, Any]] | None = None,
+        tool_executor: Callable[[str, dict[str, Any]], object] | None = None,
+        max_tool_calls: int = 0,
+        max_tool_result_tokens: int = 800,
     ) -> dict[str, Any]:
         """完成一次 JSON 调用，并按异常类型采用不同的重试策略。
 
@@ -394,6 +613,17 @@ class ModelClient:
         这类错误不等待退避，直接重新发起请求以触发上游重新路由；其余可恢复错误
         仍使用原有的有限线性退避，避免无限等待真正故障的服务。
         """
+
+        if tools and tool_executor is not None and int(max_tool_calls) > 0:
+            return self._complete_json_with_tools(
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                tools=tools,
+                tool_executor=tool_executor,
+                max_tool_calls=max_tool_calls,
+                max_tool_result_tokens=max_tool_result_tokens,
+            )
 
         generic_retries = 0
         usage_limit_retries = 0
@@ -436,6 +666,181 @@ class ModelClient:
                     )
                     raise
 
+                generic_retries += 1
+                time.sleep((self.config.retry_delay_ms / 1000) * generic_retries)
+
+    def _complete_json_with_tools(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        tools: list[dict[str, Any]],
+        tool_executor: Callable[[str, dict[str, Any]], object],
+        max_tool_calls: int,
+        max_tool_result_tokens: int,
+    ) -> ModelResponse:
+        """执行一个极小的工具循环。
+
+        工具结果以新的用户消息回传，而不是把完整历史留在客户端会话中；这样既
+        兼容三种当前协议，也保证每次 Task-Agent 行动结束后会话可丢弃。
+        """
+
+        conversation = [dict(message) for message in messages]
+        allowed_tool_names = {
+            str(tool.get("name", "")) for tool in tools if tool.get("name")
+        }
+        tool_calls_used = 0
+        tools_enabled = True
+        total_attempts = 0
+        total_generic_retries = 0
+        total_usage_limit_retries = 0
+        usage_totals: dict[str, int] = {}
+
+        # One initial call, at most one final call after each tool response, and
+        # one guard turn if a model ignores the exhausted tool budget.
+        max_turns = max(3, int(max_tool_calls) + 2)
+        for _turn in range(max_turns):
+            payload = build_model_payload(
+                system,
+                conversation,
+                max_tokens,
+                self.config,
+                tools=tools if tools_enabled else None,
+            )
+            try:
+                response, attempts, generic_retries, usage_retries = (
+                    self._request_with_retries(payload)
+                )
+            except Exception as error:
+                # Some OpenAI-compatible gateways expose the model but not
+                # function tools. Keep the minimum game runnable by retrying
+                # the original request once without a tool declaration; the
+                # fallback is limited to explicit unsupported-tool errors and
+                # never masks network or quota failures.
+                if _is_tool_unsupported_error(error) and _turn == 0:
+                    return self.complete_json(
+                        system=system,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                    )  # type: ignore[return-value]
+                raise
+            total_attempts += attempts
+            total_generic_retries += generic_retries
+            total_usage_limit_retries += usage_retries
+            for key, value in extract_token_usage(response).items():
+                if value is not None:
+                    usage_totals[key] = usage_totals.get(key, 0) + int(value)
+
+            calls = extract_tool_calls(response, self.config.protocol)
+            if calls and tools_enabled:
+                remaining = max(0, int(max_tool_calls) - tool_calls_used)
+                if remaining == 0:
+                    conversation.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "工具调用预算已用尽。请不要再调用工具，直接返回最终行动 JSON。"
+                            ),
+                        }
+                    )
+                    tools_enabled = False
+                    continue
+
+                result_items: list[dict[str, Any]] = []
+                for call in calls[:remaining]:
+                    tool_calls_used += 1
+                    name = str(call.get("name", ""))
+                    if name not in allowed_tool_names:
+                        result: object = {"error": f"不支持的工具：{name}"}
+                    else:
+                        try:
+                            result = tool_executor(
+                                name, call.get("arguments") or {}
+                            )
+                        except Exception as error:  # pragma: no cover - defensive boundary
+                            result = {"error": f"工具执行失败：{type(error).__name__}"}
+                    result_items.append(
+                        {
+                            "name": name,
+                            "result": serialize_tool_result(
+                                result, max_tool_result_tokens
+                            ),
+                        }
+                    )
+                if len(calls) > remaining:
+                    result_items.append(
+                        {
+                            "name": "预算提示",
+                            "result": "本次其余工具调用未执行：已达到调用次数上限。",
+                        }
+                    )
+                conversation.append(
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "tool_results": result_items,
+                                "instruction": "请结合工具结果直接返回最终行动 JSON。",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
+                )
+                if tool_calls_used >= int(max_tool_calls):
+                    tools_enabled = False
+                continue
+
+            parsed = extract_json(extract_text(response))
+            if parsed is not None:
+                return ModelResponse(
+                    parsed,
+                    api_attempts=total_attempts,
+                    generic_retries=total_generic_retries,
+                    usage_limit_retries=total_usage_limit_retries,
+                    token_usage=usage_totals,
+                )
+            raise ModelClientError("模型响应不是有效 JSON，且没有可处理的工具调用")
+
+        raise ModelClientError("模型工具调用超过允许的会话轮数")
+
+    def _request_with_retries(
+        self, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], int, int, int]:
+        """发送一次请求并返回该请求的重试诊断。"""
+
+        generic_retries = 0
+        usage_limit_retries = 0
+        total_attempts = 0
+        while True:
+            total_attempts += 1
+            try:
+                return (
+                    self._request_json(payload),
+                    total_attempts,
+                    generic_retries,
+                    usage_limit_retries,
+                )
+            except Exception as error:
+                if self._is_usage_limit(error):
+                    if usage_limit_retries < self.config.usage_limit_retries:
+                        usage_limit_retries += 1
+                        continue
+                    self._attach_retry_context(
+                        error,
+                        total_attempts=total_attempts,
+                        generic_retries=generic_retries,
+                        usage_limit_retries=usage_limit_retries,
+                    )
+                    raise
+                if generic_retries >= self.config.max_retries or not self._retryable(error):
+                    self._attach_retry_context(
+                        error,
+                        total_attempts=total_attempts,
+                        generic_retries=generic_retries,
+                        usage_limit_retries=usage_limit_retries,
+                    )
+                    raise
                 generic_retries += 1
                 time.sleep((self.config.retry_delay_ms / 1000) * generic_retries)
 

@@ -11,8 +11,10 @@
 可用环境变量：
   WEREWOLF_HUMAN_PLAYER（默认 p1）、WEREWOLF_HUMAN_ROLE（留空为随机）、
   WEREWOLF_PLAYER_COUNT（默认 12）、WEREWOLF_GAME_SEED、WEREWOLF_RECORD_DIRECTORY、
-  WEREWOLF_TRAINING_ROUND、WEREWOLF_GAME_INDEX、WEREWOLF_DECISION_TIMEOUT_SECONDS、
+  WEREWOLF_ROUND、WEREWOLF_GAME_INDEX、WEREWOLF_DECISION_TIMEOUT_SECONDS、
   WEREWOLF_MODEL_MAX_IN_FLIGHT、WEREWOLF_HUMAN_SHOW_EVENTS。
+  WEREWOLF_TASK_MAX_TOOL_CALLS、WEREWOLF_TASK_MAX_TOOL_RESULT_TOKENS、
+  WEREWOLF_TASK_MAX_DECISION_RETRIES。
 
 人工玩家的身份不会在输入时主动显示给其他玩家；指定身份只改变引擎发牌约束，
 所有行动仍通过 GameEngine 校验。
@@ -31,9 +33,8 @@ if str(ROOT) not in sys.path:
 
 from werewolf_game import GameEngine, GameRunner, create_rules_for_player_count
 from werewolf_game.llm import ModelClient, ModelRequestCoordinator
-from werewolf_game.participants import HumanParticipant, LlmParticipant
+from werewolf_game.participants import HumanParticipant, TaskAgentParticipant
 from werewolf_game.records import RoundGameRecordStore
-from werewolf_game.prompts import RoleStrategyStore
 
 
 async def main() -> None:
@@ -46,6 +47,13 @@ async def main() -> None:
         os.environ.get("WEREWOLF_DECISION_TIMEOUT_SECONDS", "180")
     )
     max_in_flight = int(os.environ.get("WEREWOLF_MODEL_MAX_IN_FLIGHT", "8"))
+    max_decision_retries = max(
+        0, int(os.environ.get("WEREWOLF_TASK_MAX_DECISION_RETRIES", "2"))
+    )
+    max_tool_calls = int(os.environ.get("WEREWOLF_TASK_MAX_TOOL_CALLS", "1"))
+    max_tool_result_tokens = int(
+        os.environ.get("WEREWOLF_TASK_MAX_TOOL_RESULT_TOKENS", "800")
+    )
     show_events = int(os.environ.get("WEREWOLF_HUMAN_SHOW_EVENTS", "8"))
 
     if not human_player_id.startswith("p"):
@@ -75,7 +83,7 @@ async def main() -> None:
     if human_player_id not in player_ids:
         raise ValueError(f"人工玩家 {human_player_id} 不在当前 {player_count} 人局中")
 
-    requested_round = os.environ.get("WEREWOLF_TRAINING_ROUND")
+    requested_round = os.environ.get("WEREWOLF_ROUND")
     requested_game = os.environ.get("WEREWOLF_GAME_INDEX")
     if requested_round is None and requested_game is None:
         round_index, game_index = RoundGameRecordStore.next_available(record_directory)
@@ -83,7 +91,7 @@ async def main() -> None:
         round_index, game_index = int(requested_round), int(requested_game)
     else:
         raise ValueError(
-            "WEREWOLF_TRAINING_ROUND 与 WEREWOLF_GAME_INDEX 必须同时设置"
+            "WEREWOLF_ROUND 与 WEREWOLF_GAME_INDEX 必须同时设置"
         )
 
     game_id = os.environ.get(
@@ -100,16 +108,17 @@ async def main() -> None:
 
     task_model_client = ModelClient.from_env(profile="task")
     coordinator = ModelRequestCoordinator(max_in_flight=max_in_flight)
-    strategy_store = RoleStrategyStore()
     participants = {
         player["id"]: (
             HumanParticipant(player["id"], show_events=show_events)
             if player["id"] == human_player_id
-            else LlmParticipant(
+            else TaskAgentParticipant(
                 player_id=player["id"],
                 model_client=task_model_client,
-                strategy_store=strategy_store,
                 request_coordinator=coordinator,
+                max_decision_retries=max_decision_retries,
+                max_tool_calls_per_decision=max_tool_calls,
+                max_tool_result_tokens=max_tool_result_tokens,
             )
         )
         for player in players

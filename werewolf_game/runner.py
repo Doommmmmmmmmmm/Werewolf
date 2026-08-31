@@ -126,11 +126,6 @@ class GameRunner:
                 raise RuntimeError(f"Runner 不知道如何从阶段 {self.engine.phase} 继续")
             steps += 1
 
-        harness_trace = self._harness_trace()
-        if harness_trace:
-            self.pending_runner_events.append(
-                {"type": "TASK_AGENT_HARNESS_TRACE", "entries": harness_trace}
-            )
         await self._flush_events()
         model_token_usage = self._model_token_usage()
         if model_token_usage is not None:
@@ -327,6 +322,22 @@ class GameRunner:
                 value = getattr(exception, field, None)
                 if value is not None:
                     error[field] = value
+            # Task-Agent 最终放弃一份非法输出时，只将规范化后的 action 以有限长度
+            # 写入管理员审计事件，方便复盘格式问题。公开记录投影不会包含 runner_events。
+            details = getattr(exception, "details", None)
+            if isinstance(details, Mapping):
+                attempted = details.get("attempted_action")
+                if isinstance(attempted, Mapping):
+                    safe_attempt: dict[str, str] = {}
+                    for field in ("kind", "target_id", "text"):
+                        value = attempted.get(field)
+                        if isinstance(value, str):
+                            safe_attempt[field] = value[:1000]
+                    if safe_attempt:
+                        error["attempted_action"] = safe_attempt
+                validation_error = details.get("validation_error")
+                if isinstance(validation_error, str) and validation_error:
+                    error["validation_error"] = validation_error
         self.errors.append(error)
         # type 保持原有 participant_error / invalid_decision，方便旧记录查询；
         # event_class 标识它属于 Runner 的异常事件而不是规则事件。
@@ -387,9 +398,6 @@ class GameRunner:
                     agent_manifests[str(player_id)] = manifest
             if agent_manifests:
                 metadata["agent_manifests"] = agent_manifests
-            harness_catalog = self._harness_catalog()
-            if harness_catalog:
-                metadata["agent_harness_catalog"] = harness_catalog
             self.record_store.start(metadata)
             self.record_paths = self.record_store.paths()
         events = self.engine.audit_events(self.last_recorded_audit_event_seq)
@@ -402,37 +410,6 @@ class GameRunner:
         if events:
             self.last_recorded_audit_event_seq = events[-1]["seq"]
         self.pending_runner_events = []
-
-    def _harness_catalog(self) -> dict[str, Any]:
-        catalog: dict[str, Any] = {}
-        for participant in self.participants.values():
-            method = getattr(participant, "harness_catalog", None)
-            if not callable(method):
-                continue
-            try:
-                value = method()
-            except Exception:
-                continue
-            if not isinstance(value, dict):
-                continue
-            for fingerprint, spec in value.items():
-                if isinstance(spec, dict):
-                    catalog[str(fingerprint)] = spec
-        return catalog
-
-    def _harness_trace(self) -> list[dict[str, Any]]:
-        entries: list[dict[str, Any]] = []
-        for participant in self.participants.values():
-            method = getattr(participant, "harness_trace_snapshot", None)
-            if not callable(method):
-                continue
-            try:
-                value = method()
-            except Exception:
-                continue
-            if isinstance(value, list):
-                entries.extend(item for item in value if isinstance(item, dict))
-        return entries
 
     def _model_token_usage(self) -> dict[str, Any] | None:
         """汇总各 LLM 玩家报告的服务端实际 token usage。

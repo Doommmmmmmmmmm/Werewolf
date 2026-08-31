@@ -1,4 +1,4 @@
-"""文件记录存储：同时维护管理员审计版和公开版。"""
+"""对局记录存储：同时维护管理员审计版和公开版。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from typing import Any
 from .replay import project_public_record, render_audit_markdown, render_public_markdown
 
 
-GAMES_PER_TRAINING_ROUND = 10
+GAMES_PER_ROUND = 10
 
 
 def safe_file_part(value: object) -> str:
@@ -22,7 +22,7 @@ def safe_file_part(value: object) -> str:
 
 
 class FileGameRecordStore:
-    """每次 append 都原子更新四个文件，默认权限为 600。"""
+    """每次 append 都原子更新审计 JSON/Markdown 和公开 JSON/Markdown。"""
 
     def __init__(self, directory: str | Path = "records", record_id: str | None = None) -> None:
         self.directory = Path(directory).resolve()
@@ -118,11 +118,7 @@ class FileGameRecordStore:
 
 
 class RoundGameRecordStore(FileGameRecordStore):
-    """按训练 round 和 game 编号写入稳定命名的对局文件。
-
-    目录结构为 ``roundN/{public,full,review,skill,log}``。本类只写当前 game 的
-    public/full/log 文件；review 和 skill 版本由训练调度器写入。
-    """
+    """按 round 和 game 编号写入稳定命名的对局文件。"""
 
     def __init__(
         self,
@@ -133,8 +129,8 @@ class RoundGameRecordStore(FileGameRecordStore):
     ) -> None:
         self.round_index = self._validated_index(round_index, "round_index")
         self.game_index = self._validated_index(game_index, "game_index")
-        if self.game_index >= GAMES_PER_TRAINING_ROUND:
-            raise ValueError(f"game_index 必须在 0–{GAMES_PER_TRAINING_ROUND - 1} 之间")
+        if self.game_index >= GAMES_PER_ROUND:
+            raise ValueError(f"game_index 必须在 0–{GAMES_PER_ROUND - 1} 之间")
         super().__init__(
             directory=directory,
             record_id=f"round{self.round_index}-game{self.game_index}",
@@ -153,14 +149,6 @@ class RoundGameRecordStore(FileGameRecordStore):
         return self.round_directory / "full"
 
     @property
-    def review_directory(self) -> Path:
-        return self.round_directory / "review"
-
-    @property
-    def skill_directory(self) -> Path:
-        return self.round_directory / "skill"
-
-    @property
     def log_directory(self) -> Path:
         return self.round_directory / "log"
 
@@ -177,7 +165,7 @@ class RoundGameRecordStore(FileGameRecordStore):
         round_index = 0
         while True:
             log_directory = cls.round_directory_for(root, round_index) / "log"
-            for game_index in range(GAMES_PER_TRAINING_ROUND):
+            for game_index in range(GAMES_PER_ROUND):
                 if not (log_directory / f"full-game{game_index}.json").exists():
                     return round_index, game_index
             round_index += 1
@@ -191,8 +179,6 @@ class RoundGameRecordStore(FileGameRecordStore):
             self.round_directory,
             self.public_directory,
             self.full_directory,
-            self.review_directory,
-            self.skill_directory,
             self.log_directory,
         ):
             path.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -218,7 +204,7 @@ class RoundGameRecordStore(FileGameRecordStore):
             )
         now = datetime.now(timezone.utc).isoformat()
         record_metadata = deepcopy(metadata)
-        record_metadata["training_round"] = self.round_index
+        record_metadata["round"] = self.round_index
         record_metadata["game_index"] = self.game_index
         self.record = {
             "schema_version": 1,
@@ -244,91 +230,3 @@ class RoundGameRecordStore(FileGameRecordStore):
         if index < 0 or str(index) != str(value).strip():
             raise ValueError(f"{name} 必须是非负整数")
         return index
-
-
-def write_round_review(
-    directory: str | Path,
-    *,
-    round_index: int,
-    role: str,
-    review: dict[str, Any],
-    markdown: str,
-) -> dict[str, str]:
-    """把角色复盘同时写为可读 Markdown 与对应结构化 JSON。"""
-
-    round_directory = RoundGameRecordStore.round_directory_for(directory, round_index)
-    review_directory = round_directory / "review"
-    log_directory = round_directory / "log"
-    for path in (round_directory, review_directory, log_directory):
-        path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        try:
-            path.chmod(0o700)
-        except PermissionError:
-            pass
-    role_part = safe_file_part(role)
-    markdown_path = review_directory / f"role-{role_part}.md"
-    json_path = log_directory / f"review-{role_part}.json"
-    FileGameRecordStore._write_atomic(markdown_path, markdown.rstrip() + "\n")
-    FileGameRecordStore._write_atomic(
-        json_path,
-        json.dumps(review, ensure_ascii=False, indent=2) + "\n",
-    )
-    return {
-        "review_path": str(json_path),
-        "review_markdown_path": str(markdown_path),
-    }
-
-
-def write_round_review_manifest(
-    directory: str | Path,
-    *,
-    round_index: int,
-    reviews: list[dict[str, Any]],
-    skill_version_manifest_path: str | None = None,
-) -> str:
-    """标记一个 round 已完成复盘，防止第 10 局后的重复更新。"""
-
-    round_directory = RoundGameRecordStore.round_directory_for(directory, round_index)
-    log_directory = round_directory / "log"
-    log_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    try:
-        log_directory.chmod(0o700)
-    except PermissionError:
-        pass
-    manifest_path = log_directory / "round-review.json"
-    manifest = {
-        "schema_version": 1,
-        "round_index": round_index,
-        "game_count": GAMES_PER_TRAINING_ROUND,
-        "reviews": deepcopy(reviews),
-    }
-    if skill_version_manifest_path is not None:
-        manifest["skill_version_manifest_path"] = str(skill_version_manifest_path)
-    FileGameRecordStore._write_atomic(
-        manifest_path,
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-    )
-    return str(manifest_path)
-
-
-def write_round_log(
-    directory: str | Path,
-    *,
-    round_index: int,
-    name: str,
-    payload: dict[str, Any],
-) -> str:
-    """写入 round 级结构化诊断日志，沿用记录目录的权限与原子写入规则。"""
-
-    round_directory = RoundGameRecordStore.round_directory_for(directory, round_index)
-    log_directory = round_directory / "log"
-    log_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    try:
-        log_directory.chmod(0o700)
-    except PermissionError:
-        pass
-    path = log_directory / f"{safe_file_part(name)}.json"
-    FileGameRecordStore._write_atomic(
-        path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    )
-    return str(path)

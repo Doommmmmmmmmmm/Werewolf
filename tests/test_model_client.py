@@ -9,9 +9,11 @@ from werewolf_game.llm.client import (
     ModelClient,
     build_model_payload,
     extract_json,
+    extract_tool_calls,
     extract_token_usage,
     get_model_config,
     is_model_configured,
+    serialize_tool_result,
 )
 
 
@@ -182,3 +184,77 @@ class ModelClientTest(unittest.TestCase):
 
         self.assertEqual(result, {"kind": "pass"})
         self.assertEqual(result.token_usage, {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13})
+
+    def test_tool_payload_and_tool_loop_are_bounded(self) -> None:
+        client = self.configured_client(max_retries=0)
+        tool = {
+            "name": "read_current_round_dialogue",
+            "description": "读取本轮对话",
+            "parameters": {"type": "object", "properties": {}},
+        }
+        payload = build_model_payload(
+            "system",
+            [{"role": "user", "content": "hello"}],
+            32,
+            client.config,
+            tools=[tool],
+        )
+        self.assertEqual(payload["tools"][0]["name"], tool["name"])
+        self.assertEqual(
+            extract_tool_calls(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "tool_calls": [
+                                    {
+                                        "id": "call-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": tool["name"],
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "chat_completions",
+            )[0]["name"],
+            tool["name"],
+        )
+        responses = [
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool["name"],
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"message": {"content": '{"kind":"pass"}'}}]},
+        ]
+        with patch.object(client, "_request_json", side_effect=responses) as request:
+            result = client.complete_json(
+                system="system",
+                messages=[{"role": "user", "content": "hello"}],
+                max_tokens=32,
+                tools=[tool],
+                tool_executor=lambda _name, _arguments: {"dialogue": "x" * 100},
+                max_tool_calls=1,
+                max_tool_result_tokens=20,
+            )
+        self.assertEqual(result, {"kind": "pass"})
+        self.assertEqual(request.call_count, 2)
+        self.assertLessEqual(len(serialize_tool_result({"x": "y" * 100}, 20)), 20)

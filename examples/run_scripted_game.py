@@ -46,14 +46,14 @@ async def main() -> None:
     )
     rules = create_rules_for_player_count(player_count, optional_roles)
     record_directory = os.environ.get("WEREWOLF_RECORD_DIRECTORY", "records")
-    requested_round = os.environ.get("WEREWOLF_TRAINING_ROUND")
+    requested_round = os.environ.get("WEREWOLF_ROUND")
     requested_game = os.environ.get("WEREWOLF_GAME_INDEX")
     if requested_round is None and requested_game is None:
         round_index, game_index = RoundGameRecordStore.next_available(record_directory)
     elif requested_round is not None and requested_game is not None:
         round_index, game_index = int(requested_round), int(requested_game)
     else:
-        raise ValueError("WEREWOLF_TRAINING_ROUND 与 WEREWOLF_GAME_INDEX 必须同时设置")
+        raise ValueError("WEREWOLF_ROUND 与 WEREWOLF_GAME_INDEX 必须同时设置")
     record_store = RoundGameRecordStore(
         record_directory,
         round_index=round_index,

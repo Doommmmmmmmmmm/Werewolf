@@ -222,7 +222,7 @@ def project_public_record(audit_record: dict[str, Any]) -> dict[str, Any]:
         "metadata": {
             "game_id": audit_record.get("metadata", {}).get("game_id"),
             "players": deepcopy(audit_record.get("metadata", {}).get("players", [])),
-            "training_round": audit_record.get("metadata", {}).get("training_round"),
+            "round": audit_record.get("metadata", {}).get("round"),
             "game_index": audit_record.get("metadata", {}).get("game_index"),
         },
         "events": [

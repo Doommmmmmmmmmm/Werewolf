@@ -72,7 +72,6 @@ from .rules import RuleSet, create_default_rules
 
 
 _CHINESE_CHARACTER = re.compile(r"[\u3400-\u9fff]")
-_LATIN_LETTER = re.compile(r"[A-Za-z]")
 
 
 class GameEngine:
@@ -488,6 +487,11 @@ class GameEngine:
             "private_information": view["private_information"],
             "public_state": view["public_state"],
             "visible_events": view["visible_events"],
+            # 参与者可将此隔离资源绑定到受限工具；它不会被 Task-Agent 默认
+            # 拼进模型上下文。保留在行动包中是为了避免参与者直接访问引擎内部。
+            "tool_context": {
+                "current_round_dialogue": self.current_round_dialogue_for(player_id),
+            },
             "request": deepcopy(request),
             "latest_event_seq": view["latest_event_seq"],
         }
@@ -538,7 +542,6 @@ class GameEngine:
                     "max_chars": max_chars,
                     "language": "zh-CN",
                     "require_chinese": self.rules.require_chinese_speech,
-                    "allow_latin_letters": self.rules.allow_latin_letters_in_speech,
                 },
                 {"kind": ACTION_PASS},
             ],
@@ -751,7 +754,6 @@ class GameEngine:
                     "max_chars": self.rules.max_day_speech_chars,
                     "language": "zh-CN",
                     "require_chinese": self.rules.require_chinese_speech,
-                    "allow_latin_letters": self.rules.allow_latin_letters_in_speech,
                 },
                 {"kind": ACTION_PASS},
             ],
@@ -834,8 +836,6 @@ class GameEngine:
                 raise RuleViolationError("发言超过字数限制")
             if allowed.get("require_chinese") and not _CHINESE_CHARACTER.search(text):
                 raise RuleViolationError("发言必须包含中文")
-            if not allowed.get("allow_latin_letters", True) and _LATIN_LETTER.search(text):
-                raise RuleViolationError("发言不能包含英文字母")
 
         action: dict[str, Any] = {
             "request_id": request["request_id"],
@@ -1564,6 +1564,52 @@ class GameEngine:
 
     def audit_events(self, sequence: int = 0) -> list[dict[str, Any]]:
         return self.log.audit_since(sequence)
+
+    def current_round_dialogue_for(self, player_id: str) -> list[dict[str, Any]]:
+        """返回玩家当前轮依法可见的对话投影。
+
+        这是受限 ``read_current_round_dialogue`` 工具的唯一数据源。历史仍完整
+        保存在引擎记录中，但这里只返回当前轮的发言，并先经过玩家可见性过滤；
+        不暴露原始事件的 recipients、隐藏 payload 或其他审计字段。
+        """
+
+        self._require_player(player_id)
+        visible_events = self.events_for(player_id, 0)
+        all_events = self.audit_events(0)
+        round_markers = {
+            "NIGHT_STARTED",
+            "DAY_STARTED",
+            "SHERIFF_ELECTION_STARTED",
+        }
+        marker_sequences: list[int] = []
+        for event in all_events:
+            payload = event.get("payload") or {}
+            if (
+                event.get("type") in round_markers
+                and payload.get("round") == self.round
+            ):
+                marker_sequences.append(int(event["seq"]))
+        start_sequence = max(marker_sequences, default=0)
+        dialogue: list[dict[str, Any]] = []
+        for event in visible_events:
+            if int(event.get("seq", 0)) < start_sequence:
+                continue
+            if event.get("type") != "PLAYER_SPOKE":
+                continue
+            payload = event.get("payload") or {}
+            text = payload.get("text")
+            if not isinstance(text, str) or not text.strip():
+                continue
+            dialogue.append(
+                {
+                    "seq": int(event["seq"]),
+                    "speaker_id": str(payload.get("player_id", "")),
+                    "stage": str(payload.get("stage", "")),
+                    "channel": str(event.get("channel", "public")),
+                    "text": text,
+                }
+            )
+        return dialogue
 
     def role_assignments(self) -> dict[str, str]:
         return deepcopy(self.roles)

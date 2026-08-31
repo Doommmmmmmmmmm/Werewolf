@@ -68,6 +68,26 @@ def deterministic_strategy(packet: dict) -> dict:
 
 
 class GameEngineTest(unittest.TestCase):
+    def test_current_round_dialogue_is_role_filtered(self) -> None:
+        engine = engine_for("dialogue-tool")
+        engine.start()
+        wolves = engine.wolf_players()
+        wolf_id = wolves[0].player_id
+        villager_id = next(
+            player.player_id
+            for player in engine.players
+            if player.player_id not in {item.player_id for item in wolves}
+        )
+        for wolf in wolves:
+            request = engine.discussion_request(wolf.player_id, "wolf")
+            engine.accept_action(request, {"kind": ACTION_SPEAK, "text": "今晚先看票型"})
+
+        wolf_dialogue = engine.current_round_dialogue_for(wolf_id)
+        villager_dialogue = engine.current_round_dialogue_for(villager_id)
+        self.assertEqual(len(wolf_dialogue), len(wolves))
+        self.assertEqual({item["channel"] for item in wolf_dialogue}, {"wolf"})
+        self.assertEqual(villager_dialogue, [])
+
     def test_standard_presets_cover_seven_to_twelve_players(self) -> None:
         expected = {
             7: {"wolf": 2, "seer": 1, "witch": 1, "villager": 3},
@@ -137,6 +157,12 @@ class GameEngineTest(unittest.TestCase):
             engine.accept_action(wolf_request, {"kind": ACTION_SPEAK, "text": "我" * 31})
         with self.assertRaisesRegex(RuleViolationError, "中文"):
             engine.accept_action(wolf_request, {"kind": ACTION_SPEAK, "text": "hello"})
+        # 英文或协议编号可以作为中文发言的一部分；规则只要求至少含有中文，
+        # 不再把 p3 / Player 3 之类的自然对局文本误判为非法。
+        accepted = engine.accept_action(
+            wolf_request, {"kind": ACTION_SPEAK, "text": "我会重点关注 p3 的票型。"}
+        )
+        self.assertEqual(accepted["text"], "我会重点关注 p3 的票型。")
         with self.assertRaisesRegex(RuleViolationError, "目标"):
             engine.accept_action(wolf_request, {"kind": ACTION_PASS, "target_id": "p1"})
 

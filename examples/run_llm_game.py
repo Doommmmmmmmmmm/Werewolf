@@ -4,8 +4,10 @@
 可选环境变量：
   WEREWOLF_GAME_ID、WEREWOLF_GAME_SEED、WEREWOLF_QUIET=1、WEREWOLF_PLAYER_PERSONA、
   WEREWOLF_PLAYER_COUNT（7–12）、WEREWOLF_OPTIONAL_ROLES（如 guard,hunter）、
-  WEREWOLF_TRAINING_ROUND、WEREWOLF_GAME_INDEX、WEREWOLF_RECORD_DIRECTORY、
-  WEREWOLF_DECISION_TIMEOUT_SECONDS（默认 180）、WEREWOLF_MODEL_MAX_IN_FLIGHT（默认 8）
+  WEREWOLF_RECORD_DIRECTORY、WEREWOLF_DECISION_TIMEOUT_SECONDS（默认 180）、
+  WEREWOLF_MODEL_MAX_IN_FLIGHT（默认 8）、WEREWOLF_TASK_MAX_TOOL_CALLS（默认 1）、
+  WEREWOLF_TASK_MAX_TOOL_RESULT_TOKENS（默认 800）、
+  WEREWOLF_TASK_MAX_DECISION_RETRIES（默认 2）
 """
 
 from __future__ import annotations
@@ -22,13 +24,10 @@ if str(ROOT) not in sys.path:
 from werewolf_game import (
     GameEngine,
     GameRunner,
-    RoleStrategyReviewer,
-    RoundSkillVersionStore,
     create_rules_for_player_count,
-    review_completed_round,
 )
 from werewolf_game.llm import ModelClient, ModelRequestCoordinator
-from werewolf_game.participants import LlmParticipant
+from werewolf_game.participants import TaskAgentParticipant
 from werewolf_game.records import RoundGameRecordStore
 
 
@@ -46,17 +45,26 @@ async def main() -> None:
         os.environ.get("WEREWOLF_DECISION_TIMEOUT_SECONDS", "180")
     )
     model_max_in_flight = int(os.environ.get("WEREWOLF_MODEL_MAX_IN_FLIGHT", "8"))
+    max_decision_retries = max(
+        0, int(os.environ.get("WEREWOLF_TASK_MAX_DECISION_RETRIES", "2"))
+    )
+    max_tool_calls = int(os.environ.get("WEREWOLF_TASK_MAX_TOOL_CALLS", "1"))
+    max_tool_result_tokens = int(
+        os.environ.get("WEREWOLF_TASK_MAX_TOOL_RESULT_TOKENS", "800")
+    )
     rules = create_rules_for_player_count(player_count, optional_roles)
     record_directory = os.environ.get("WEREWOLF_RECORD_DIRECTORY", "records")
-    requested_round = os.environ.get("WEREWOLF_TRAINING_ROUND")
+    requested_round = os.environ.get("WEREWOLF_ROUND")
     requested_game = os.environ.get("WEREWOLF_GAME_INDEX")
     if requested_round is None and requested_game is None:
         round_index, game_index = RoundGameRecordStore.next_available(record_directory)
     elif requested_round is not None and requested_game is not None:
         round_index, game_index = int(requested_round), int(requested_game)
     else:
-        raise ValueError("WEREWOLF_TRAINING_ROUND 与 WEREWOLF_GAME_INDEX 必须同时设置")
-    game_id = os.environ.get("WEREWOLF_GAME_ID", f"round{round_index}-game{game_index}")
+        raise ValueError("WEREWOLF_ROUND 与 WEREWOLF_GAME_INDEX 必须同时设置")
+    game_id = os.environ.get(
+        "WEREWOLF_GAME_ID", f"round{round_index}-game{game_index}"
+    )
     record_store = RoundGameRecordStore(
         record_directory,
         round_index=round_index,
@@ -67,26 +75,16 @@ async def main() -> None:
         for index in range(1, player_count + 1)
     ]
     task_model_client = ModelClient.from_env(profile="task")
-    meta_model_client = ModelClient.from_env(profile="meta")
     request_coordinator = ModelRequestCoordinator(max_in_flight=model_max_in_flight)
-    reviewer = RoleStrategyReviewer(
-        model_client=meta_model_client, request_coordinator=request_coordinator
-    )
-    skill_versions = RoundSkillVersionStore(
-        record_directory, round_index=round_index
-    )
-    # 在当前对局开始前固化本 round 实际提供给玩家的角色 skill。
-    skill_versions.ensure_input(
-        roles=rules.role_deck,
-        strategy_store=reviewer.strategy_store,
-    )
     participants = {
-        player["id"]: LlmParticipant(
+        player["id"]: TaskAgentParticipant(
             player_id=player["id"],
             model_client=task_model_client,
             persona=persona,
-            strategy_store=reviewer.strategy_store,
             request_coordinator=request_coordinator,
+            max_decision_retries=max_decision_retries,
+            max_tool_calls_per_decision=max_tool_calls,
+            max_tool_result_tokens=max_tool_result_tokens,
         )
         for player in players
     }
@@ -116,26 +114,6 @@ async def main() -> None:
     print("Replay:", report["record_markdown_path"])
     print("Public record:", report["public_record_path"])
     print("Public replay:", report["public_record_markdown_path"])
-
-    # 单局可以连续运行十次；只有记录恰好收齐后才会调用复盘模型。
-    review_state = await review_completed_round(
-        record_directory=record_directory,
-        round_index=round_index,
-        reviewer=reviewer,
-    )
-    if review_state["completed"]:
-        if review_state["already_reviewed"]:
-            print("Role review: this round was already reviewed.")
-        else:
-            print("Role review completed:", review_state["manifest_path"])
-            for review in review_state["reviews"]:
-                print(
-                    " ",
-                    review["role"],
-                    "updated=" + str(review["updated"]),
-                    review["review_markdown_path"],
-                )
-            print("Skill versions:", review_state["skill_version_manifest_path"])
 
 
 if __name__ == "__main__":

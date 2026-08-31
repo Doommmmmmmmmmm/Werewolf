@@ -132,7 +132,6 @@ class RuleSet:
     max_day_speech_chars: int = 200
     max_wolf_speech_chars: int = 30
     require_chinese_speech: bool = True
-    allow_latin_letters_in_speech: bool = False
 
     def __post_init__(self) -> None:
         if len(self.role_deck) < 3:

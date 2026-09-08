@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .constants import ALL_ROLES
+from .core.constants import ALL_ROLES
 
 
 PROMPT_DIRECTORY = Path(__file__).with_name("prompts")

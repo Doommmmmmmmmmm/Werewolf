@@ -1,0 +1,140 @@
+{
+  "说明": "Season 2 Task-Agent 自进化实验配置。带下划线或说明字样的字段仅用于阅读，不参与运行逻辑。初始化 archive 后，实际配置会被冻结。",
+  "paths": {
+    "说明": "实验产物和运行依赖的路径。相对路径均相对于本配置文件所在目录 configs/ 解析。",
+    "参数说明": {
+      "archive_root": "进化树、节点元数据、Task-Agent 代码快照和祖先 patch。",
+      "evaluation_root": "每个节点的对局分配、逐局结果、完整回放和评测汇总。",
+      "operation_root": "每次进化步骤的节点选择、Meta-Agent 诊断、Pi 调用和结果。",
+      "external_knowledge_root": "Meta-Agent 可按工具读取的外部 Skill 卡片目录。",
+      "pi_root": "Pi 源码和可执行脚本所在目录；该目录只读挂载到 Pi 沙箱。"
+    },
+    "archive_root": "../records/season2/evolution/archive",
+    "evaluation_root": "../records/season2/evolution/evaluations",
+    "operation_root": "../records/season2/evolution/operations",
+    "external_knowledge_root": "../skills",
+    "pi_root": "../runtime/pi"
+  },
+  "evolution": {
+    "说明": "进化树和异步调度参数。每次 step 只选择一个角色和一个节点。",
+    "参数说明": {
+      "roles": "参与进化的角色；必须和评测牌组中的角色完全一致。",
+      "random_seed": "进化选择、对手抽取和对局复现使用的随机种子。",
+      "max_children_per_node": "单个节点最多生成的子节点数。",
+      "max_tree_depth": "进化树允许的最大深度，base 深度为 0。",
+      "max_generated_candidates_per_role": "每个角色最多创建的非 base 候选节点数，待评估、保留和舍弃都计入，用于限制资源消耗。",
+      "max_successful_evolutions_per_role": "每个角色最多成功保留的非 base 节点数；调度优先级也按该计数判断。",
+      "children_per_expansion": "选中 retained 父节点时，一次生成多少个独立子分支；每个分支单独调用一次 Meta-Agent。",
+      "role_scheduler": "角色选择策略；least_evolved_random 优先选择累计进化次数较少的角色。"
+    },
+    "roles": ["wolf", "villager", "seer", "witch", "guard", "hunter"],
+    "random_seed": "season2-evolution",
+    "max_children_per_node": 3,
+    "max_tree_depth": 6,
+    "max_generated_candidates_per_role": 60,
+    "max_successful_evolutions_per_role": 20,
+    "children_per_expansion": 3,
+    "role_scheduler": "least_evolved_random"
+  },
+  "evaluation": {
+    "说明": "Task-Agent 真实对局评测和资源限制。",
+    "参数说明": {
+      "games_per_pending_node": "每个 pending 节点需要运行的对局数。",
+      "player_count": "每局人数，当前支持 7 到 12 人。",
+      "optional_roles": "额外启用的可选角色；会替换牌组中的平民。",
+      "game_concurrency": "同时运行的 GameRunner 数量。",
+      "model_max_in_flight": "全局同时进行的模型请求数。",
+      "decision_timeout_seconds": "单次玩家决策的超时时间。",
+      "max_decision_retries": "Task-Agent 首次输出非法或调用失败后的额外重试次数。",
+      "max_tool_calls_per_decision": "Task-Agent 每次决策最多调用多少次受限工具。",
+      "max_tool_result_tokens": "Task-Agent 单次工具返回的最大预算。",
+      "max_prompt_chars": "Task-Agent 每次模型请求中 system 与 messages 的总字符上限；这是外部硬限制，策略 Prompt 仍可进化。",
+      "max_failed_games": "超过该失败局数，节点会被舍弃。",
+      "max_fallback_rate": "超过该 fallback 比例，节点会被舍弃。",
+      "max_invalid_decisions": "超过该非法行动数，节点会被舍弃。",
+      "discard_all_losses": "是否将全部完成对局均失败的节点舍弃。"
+    },
+    "games_per_pending_node": 20,
+    "player_count": 12,
+    "optional_roles": [],
+    "game_concurrency": 4,
+    "model_max_in_flight": 4,
+    "decision_timeout_seconds": 180,
+    "max_decision_retries": 2,
+    "max_tool_calls_per_decision": 5,
+    "max_tool_result_tokens": 1000,
+    "max_prompt_chars": 12000,
+    "max_failed_games": 18,
+    "max_fallback_rate": 0.2,
+    "max_invalid_decisions": 10,
+    "discard_all_losses": true
+  },
+  "meta": {
+    "说明": "Meta-Agent 的诊断、工具和输出限制。Meta-Agent 负责分析并提出修改方案，不直接修改候选代码。",
+    "参数说明": {
+      "max_output_tokens": "Meta-Agent 最终诊断 JSON 的最大输出 token 数。",
+      "max_tool_calls": "一次诊断最多调用只读工具的次数；分页和重复调用也计入。",
+      "max_tool_result_tokens": "Meta-Agent 单次工具返回的最大预算。",
+      "max_attempts": "Meta-Agent 输出不合法或调用失败时的最大完整尝试次数。",
+      "required_resources": "启动时直接注入 Meta-Agent 的必读资料名称。",
+      "enabled_tools": "Meta-Agent 可以按需调用的只读工具白名单。"
+    },
+    "max_output_tokens": 4000,
+    "max_tool_calls": 20,
+    "max_tool_result_tokens": 8000,
+    "max_attempts": 2,
+    "required_resources": ["task", "boundaries", "current_agent", "random_game_replay"],
+    "enabled_tools": [
+      "list_resources",
+      "read_current_agent",
+      "read_evolution_path",
+      "read_evolution_tree",
+      "read_evolution_contract",
+      "read_evaluation_summary",
+      "read_game_replay",
+      "read_other_branch",
+      "read_previous_diagnosis",
+      "list_skills",
+      "read_skill"
+    ]
+  },
+  "pi": {
+    "说明": "外部 Pi coding agent 的启动、模型和沙箱配置。provider/网关配置实际位于本机 .local/pi，不进入 Git。",
+    "参数说明": {
+      "command": "Pi 启动命令，相对于 pi_root 解析。",
+      "model": "传给 Pi 的模型标识，youdao/gpt-5.5 表示使用本地 models.json 中的 provider。",
+      "agent_dir": "本机 Pi 配置目录；包含 models.json，运行时只读挂载进 Pi 沙箱。",
+      "timeout_seconds": "单次 Pi 修改任务的最大运行时间。",
+      "max_attempts": "Pi 修改失败时的最大尝试次数。",
+      "use_bwrap": "是否使用 bwrap 隔离 Pi 的文件系统和进程环境。",
+      "candidate_smoke_test": "生成候选后是否运行不调用外部模型的最小完整对局检查。",
+      "readonly_paths": "额外允许 Pi 只读访问的路径列表。",
+      "allowed_files": "Pi 在候选工作区内可以修改的文件白名单。",
+      "environment_allowlist": "允许传入 Pi 进程的环境变量白名单；不应加入密钥之外的敏感变量。"
+    },
+    "command": ["./pi-test.sh"],
+    "model": "youdao/gpt-5.5",
+    "node_bin": "../../../../anaconda3/envs/wolf/bin/node",
+    "agent_dir": "../../.local/pi",
+    "timeout_seconds": 900,
+    "max_attempts": 1,
+    "use_bwrap": true,
+    "candidate_smoke_test": true,
+    "readonly_paths": [],
+    "allowed_files": ["task_agent.py", "task.md"],
+    "environment_allowlist": [
+      "PATH",
+      "LANG",
+      "LC_ALL",
+      "SSL_CERT_FILE",
+      "NODE_EXTRA_CA_CERTS",
+      "HTTP_PROXY",
+      "HTTPS_PROXY",
+      "NO_PROXY",
+      "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_OAUTH_TOKEN",
+      "GEMINI_API_KEY"
+    ]
+  }
+}

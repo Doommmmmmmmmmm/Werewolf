@@ -4,8 +4,8 @@ import asyncio
 import unittest
 
 from werewolf_game import GameEngine, GameRunner, create_rules_for_player_count
-from werewolf_game.constants import ACTION_SPEAK, ACTION_WOLF_KILL_VOTE, ROLE_WOLF
-from werewolf_game.participants import HumanParticipant
+from werewolf_game.core.constants import ACTION_SPEAK, ACTION_WOLF_KILL_VOTE, ROLE_WOLF
+from werewolf_game.agents.participants import HumanParticipant
 
 
 class HumanParticipantTest(unittest.TestCase):

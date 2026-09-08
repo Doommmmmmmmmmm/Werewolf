@@ -4,8 +4,8 @@ from dataclasses import replace
 import unittest
 from unittest.mock import patch
 
-from werewolf_game.errors import ModelClientError
-from werewolf_game.llm.client import (
+from werewolf_game.core.errors import ModelClientError
+from werewolf_game.agents.llm.client import (
     ModelClient,
     build_model_payload,
     extract_json,
@@ -145,7 +145,7 @@ class ModelClientTest(unittest.TestCase):
 
         with (
             patch.object(client, "_request_json", side_effect=request) as mocked_request,
-            patch("werewolf_game.llm.client.time.sleep") as mocked_sleep,
+            patch("werewolf_game.agents.llm.client.time.sleep") as mocked_sleep,
         ):
             result = client.complete_json(system="system", messages=[], max_tokens=32)
 
@@ -162,7 +162,7 @@ class ModelClientTest(unittest.TestCase):
 
         with (
             patch.object(client, "_request_json", side_effect=responses) as mocked_request,
-            patch("werewolf_game.llm.client.time.sleep") as mocked_sleep,
+            patch("werewolf_game.agents.llm.client.time.sleep") as mocked_sleep,
         ):
             result = client.complete_json(system="system", messages=[], max_tokens=32)
 

@@ -10,7 +10,7 @@ from werewolf_game import (
     LlmPublicNarrator,
     create_default_rules,
 )
-from werewolf_game.constants import (
+from werewolf_game.core.constants import (
     ROLE_GUARD,
     ROLE_HUNTER,
     ROLE_IDIOT,
@@ -19,9 +19,9 @@ from werewolf_game.constants import (
     ROLE_WITCH,
     ROLE_WOLF,
 )
-from werewolf_game.errors import ModelClientError
-from werewolf_game.participants import LlmParticipant
-from werewolf_game.llm.client import ModelClient, ModelResponse, get_model_config
+from werewolf_game.core.errors import ModelClientError
+from werewolf_game.agents.participants import LlmParticipant
+from werewolf_game.agents.llm.client import ModelClient, ModelResponse, get_model_config
 
 
 def players() -> list[dict[str, str]]:

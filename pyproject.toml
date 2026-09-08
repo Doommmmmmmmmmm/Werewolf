@@ -7,3 +7,7 @@ requires-python = ">=3.11"
 [tool.werewolf]
 test_command = "python3 -m unittest discover -s tests -v"
 
+# 归档赛季和 tmp/reference_sources 中可能包含同名测试模块或外部依赖；
+# 正式测试只收集当前项目根目录的 tests，避免历史代码污染导入路径。
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -15,7 +15,8 @@
 
 默认不会把更早轮次的发言、跨局记忆或策略资料放入当前上下文。你可以在需要时调用
 `{tool_name}`读取本轮已经发生且你依法可见的对话；该工具最多调用
-{max_tool_calls} 次，每次返回最多 {max_tool_result_tokens} 个长度单位。工具是只读的，
+{max_tool_calls} 次，每次返回最多 {max_tool_result_tokens} 个长度单位；每次模型请求的 system 与 messages
+总长度最多 {max_prompt_chars} 个 Unicode 字符。工具是只读的，
 不能读取文件、网络、隐藏状态或其他玩家无权知道的信息。调用工具不是最终行动；读取后
 仍须只提交一个最终 JSON 行动。
 

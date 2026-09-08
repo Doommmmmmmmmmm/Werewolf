@@ -1,14 +1,14 @@
 """狼人杀游戏引擎和参与者接口。"""
 
-from .engine import GameEngine
-from .llm import ModelRequestCoordinator
+from .core.engine import GameEngine
+from .agents.llm import ModelRequestCoordinator
 from .prompts import RoleProfile, RoleProfileStore, load_role_profile
-from .recorder import LlmPublicNarrator, PublicRecorder
-from .records import FileGameRecordStore, RoundGameRecordStore
-from .rules import RuleSet, create_default_rules, create_rules_for_player_count
-from .runner import GameRunner
-from .task_agent import TaskAgent
-from .participants import (
+from .recording.recorder import LlmPublicNarrator, PublicRecorder
+from .recording.records import FileGameRecordStore, RoundGameRecordStore
+from .core.rules import RuleSet, create_default_rules, create_rules_for_player_count
+from .core.runner import GameRunner
+from .agents.task_agent import TaskAgent
+from .agents.participants import (
     HumanParticipant,
     LlmParticipant,
     Participant,

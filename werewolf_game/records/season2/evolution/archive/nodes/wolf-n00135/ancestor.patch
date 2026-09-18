@@ -1,0 +1,643 @@
+--- wolf-n00043/task_agent.py
++++ wolf-n00135/task_agent.py
+@@ -157,7 +157,7 @@
+             return "发言必须包含中文"
+     target_ids = allowed.get("target_ids")
+     if target_ids:
+-        if action.get("target_id") not in target_ids:
++        if str(action.get("target_id")) not in {str(target_id) for target_id in target_ids}:
+             return "target_id 必须是 target_ids 中的一项"
+     elif action.get("target_id"):
+         return "该行动不能提供 target_id"
+@@ -318,6 +318,16 @@
+                 self._record_self_action(turn_packet, action)
+                 return action
+             if _attempt >= self.max_decision_retries:
++                # 最后一次只允许在本次 request 的 target_ids 内做一次安全修复；这不是
++                # 新的决策来源，只是避免模型把过期编号带进引擎。
++                repaired = self._repair_illegal_target(
++                    action,
++                    turn_packet["request"],
++                    self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue),
++                )
++                if repaired is not None and decision_error(repaired, turn_packet["request"]) is None:
++                    self._record_self_action(turn_packet, repaired)
++                    return repaired
+                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+                 # Runner 可将该行动存入管理员审计记录，便于定位 schema / 长度等问题，
+                 # 而不会泄露给公开记录。
+@@ -498,14 +508,14 @@
+             turn_packet.get("private_information"),
+             preferred_keys=("role", "team", "identity", "faction", "ability"),
+         )
+-        wolf_strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
++        current_digest = self._current_public_state_digest(turn_packet, memory_snapshot)
++        wolf_strategy = self._build_wolf_strategy(
++            turn_packet, memory_snapshot, current_dialogue, current_digest
++        )
+         state_digest = {
+-            "alive_players": (memory_snapshot.get("game") or {}).get("alive_players", [])[-6:],
+-            "dead_players": (memory_snapshot.get("game") or {}).get("dead_players", [])[-4:],
+-            "sheriff_id": (memory_snapshot.get("game") or {}).get("sheriff_id"),
++            **current_digest,
+             "recent_votes": memory_snapshot.get("recent_vote_summary", [])[-2:],
+             "sheriff_changes": (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:],
+-            "death_order": (memory_snapshot.get("game") or {}).get("death_order", [])[-3:],
+             "recent_public_texts": memory_snapshot.get("recent_public_texts", [])[-2:],
+             "recent_self_texts": memory_snapshot.get("recent_self_texts", [])[-2:],
+         }
+@@ -517,7 +527,7 @@
+                 "private_information": private_information,
+                 "state_digest": state_digest,
+                 "recent_dialogue": current_dialogue[-2:],
+-                "case_summary": self._decision_case_summary(wolf_strategy),
++                "case_summary": self._decision_case_summary(wolf_strategy, current_digest),
+                 "wolf_strategy": wolf_strategy,
+             }
+         }
+@@ -527,6 +537,7 @@
+         turn_packet: Mapping[str, Any],
+         memory_snapshot: Mapping[str, Any],
+         current_dialogue: list[dict[str, Any]],
++        current_digest: Mapping[str, Any] | None = None,
+     ) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+         phase = str(request.get("phase") or turn_packet.get("game", {}).get("phase") or "unknown")
+@@ -534,6 +545,7 @@
+         allowed_actions = request.get("allowed_actions") if isinstance(request.get("allowed_actions"), list) else []
+         target_actions = [item for item in allowed_actions if isinstance(item, Mapping) and item.get("target_ids")]
+         speech_actions = [item for item in allowed_actions if isinstance(item, Mapping) and item.get("kind") in _SPEECH_ACTION_KINDS]
++        current_digest = current_digest or self._current_public_state_digest(turn_packet, memory_snapshot)
+         phase_lower = phase.lower()
+         channel_lower = channel.lower()
+         is_night = any(token in phase_lower for token in ("night", "夜")) or any(
+@@ -578,14 +590,28 @@
+                 "strategy": plan,
+             }
+             return plan
++        day_target_kinds = [
++            str(item.get("kind") or "")
++            for item in allowed_actions
++            if isinstance(item, Mapping)
++            and any(token in str(item.get("kind") or "").lower() for token in ("day_vote", "sheriff_vote", "sheriff_candidate", "sheriff_candidacy", "vote", "candidate"))
++        ]
++        if day_target_kinds:
++            return self._build_day_target_strategy(
++                turn_packet,
++                memory_snapshot,
++                current_dialogue,
++                target_actions,
++                current_digest,
++            )
+         if speech_actions:
+-            day_focus = self._select_day_focus(turn_packet, memory_snapshot, current_dialogue, speech_actions)
++            day_focus = self._select_day_focus(turn_packet, memory_snapshot, current_dialogue, speech_actions, current_digest)
+             return {
+                 "stage": "day",
+                 "objective": "先固定对象、证据类型、下一步动作，再用一句解释补齐本局新证据",
+                 "must_include": ["对象", "证据类型", "下一步动作", "一句解释"],
+                 "day_focus": day_focus,
+-                "pressure_points": self._day_pressure_points(memory_snapshot),
++                "pressure_points": self._day_pressure_points(memory_snapshot, current_digest),
+                 "dialogue_focus": self._dialogue_focus(current_dialogue),
+                 "avoid_templates": self._anti_template_notes(),
+                 "anti_repeat": self._recent_self_texts[-1] if self._recent_self_texts else "",
+@@ -595,6 +621,346 @@
+             "objective": "只做当前合法行动，不额外发散",
+             "avoid_templates": self._anti_template_notes(),
+         }
++
++    def _current_sheriff_id(
++        self,
++        public_state: Any,
++        game: Any,
++        memory_snapshot: Mapping[str, Any] | None = None,
++    ) -> str | None:
++        for source in (public_state, game):
++            if not isinstance(source, Mapping):
++                continue
++            value = self._first_value(source, ("sheriff_id", "chairman_id"))
++            if value is None:
++                for key in ("sheriff", "chairman"):
++                    if isinstance(source.get(key), Mapping):
++                        value = self._first_value(source[key], ("player_id", "id", "seat", "seat_id"))
++                        if value is not None:
++                            break
++            if value is not None:
++                return str(value)
++        if isinstance(memory_snapshot, Mapping):
++            value = (memory_snapshot.get("game") or {}).get("sheriff_id")
++            if value is not None:
++                return str(value)
++        return None
++
++    def _current_alive_dead(
++        self,
++        public_state: Any,
++        game: Any,
++        memory_snapshot: Mapping[str, Any] | None = None,
++    ) -> dict[str, Any]:
++        """从本次行动包的最新公开状态提取存活/死亡事实。"""
++        alive: list[str] = []
++        dead: list[str] = []
++        players_alive_map: dict[str, bool] = {}
++
++        def add(values: Any, bucket: list[str], alive_value: bool) -> None:
++            ids = self._extract_id_list(values, preferred_keys=("players",)) if isinstance(values, Mapping) else []
++            if not ids:
++                raw = values.keys() if isinstance(values, Mapping) else values
++                if isinstance(raw, list):
++                    ids = [str(item) for item in raw if item is not None]
++                elif raw is not None and not isinstance(raw, (str, bytes)):
++                    ids = [str(item) for item in raw if item is not None]
++                elif raw is not None:
++                    ids = [str(raw)]
++            for pid in ids:
++                if pid not in bucket:
++                    bucket.append(pid)
++                players_alive_map[pid] = alive_value
++
++        def inspect_players(source: Any) -> None:
++            if isinstance(source, Mapping):
++                entries = source.items()
++            elif isinstance(source, list):
++                entries = []
++                for item in source:
++                    if isinstance(item, Mapping):
++                        pid = self._first_value(item, ("player_id", "id", "seat", "seat_id"))
++                        if pid is not None:
++                            entries.append((pid, item))
++                    elif item is not None:
++                        entries.append((item, {}))
++            else:
++                entries = []
++            for pid, info in entries:
++                pid = str(pid)
++                state = info if isinstance(info, Mapping) else {}
++                is_alive = self._is_alive_record(state)
++                if is_alive is not None:
++                    players_alive_map[pid] = is_alive
++                    bucket = alive if is_alive else dead
++                    if pid not in bucket:
++                        bucket.append(pid)
++
++        public_map = public_state if isinstance(public_state, Mapping) else {}
++        game_map = game if isinstance(game, Mapping) else {}
++        public_has_players = public_map.get("players") is not None
++        public_has_alive = public_map.get("alive_players") is not None or public_map.get("living_players") is not None
++        public_has_dead = public_map.get("dead_players") is not None or public_map.get("eliminated_players") is not None
++        inspect_players(public_map.get("players"))
++        if public_map.get("alive_players") is not None:
++            add(public_map.get("alive_players"), alive, True)
++        if public_map.get("living_players") is not None:
++            add(public_map.get("living_players"), alive, True)
++        if public_map.get("dead_players") is not None:
++            add(public_map.get("dead_players"), dead, False)
++        if public_map.get("eliminated_players") is not None:
++            add(public_map.get("eliminated_players"), dead, False)
++        # public_state 是本次行动包的最新事实源；game 只补齐它没有提供的类别，
++        # 防止夜间转徽/死亡后的旧 game 快照覆盖当前状态。
++        if not public_has_players:
++            inspect_players(game_map.get("players"))
++        if not public_has_alive:
++            add(game_map.get("alive_players"), alive, True)
++        if not public_has_dead and not public_has_alive:
++            add(game_map.get("dead_players"), dead, False)
++
++        if isinstance(memory_snapshot, Mapping):
++            old_game = memory_snapshot.get("game") or {}
++            if not alive:
++                add(old_game.get("alive_players"), alive, True)
++            if not dead:
++                add(old_game.get("dead_players"), dead, False)
++            for pid in old_game.get("alive_players") or []:
++                players_alive_map.setdefault(str(pid), True)
++            for pid in old_game.get("dead_players") or []:
++                players_alive_map[str(pid)] = False
++        dead_set = set(dead)
++        alive = [pid for pid in alive if pid not in dead_set]
++        death_order: list[str] = []
++        for source in (public_state, game):
++            if isinstance(source, Mapping):
++                raw = self._extract_id_list(source, preferred_keys=("death_order",))
++                for pid in raw:
++                    if pid not in death_order:
++                        death_order.append(pid)
++        for pid in dead:
++            if pid not in death_order:
++                death_order.append(pid)
++        return {
++            "alive_player_ids": alive,
++            "dead_player_ids": dead,
++            "recent_death_order": death_order[-4:],
++            "players_alive_map": {pid: bool(players_alive_map[pid]) for pid in sorted(players_alive_map)},
++        }
++
++    def _current_public_state_digest(
++        self,
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        public_state = turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {}
++        game = turn_packet.get("game") if isinstance(turn_packet.get("game"), Mapping) else {}
++        status = self._current_alive_dead(public_state, game, memory_snapshot)
++        round_value = self._safe_get(game, "round")
++        if round_value is None:
++            round_value = self._safe_get(public_state, "round")
++        phase_value = self._safe_get(game, "public_phase") or self._safe_get(game, "phase")
++        if phase_value is None:
++            phase_value = self._safe_get(public_state, "public_phase") or self._safe_get(public_state, "phase")
++        status.update({
++            "round": round_value,
++            "phase": phase_value,
++            "current_sheriff_id": self._current_sheriff_id(public_state, game, memory_snapshot),
++        })
++        # 兼容旧字段名，但 current_sheriff_id 是唯一应优先相信的徽位事实。
++        status["sheriff_id"] = status["current_sheriff_id"]
++        return status
++
++    def _wolf_team_ids(self, private_information: Any) -> list[str]:
++        if not isinstance(private_information, Mapping):
++            return []
++        found: list[str] = []
++        for key in ("wolf_ids", "wolves", "teammates", "known_wolves", "team_members"):
++            raw = private_information.get(key)
++            if isinstance(raw, Mapping):
++                values = raw.keys()
++            elif isinstance(raw, (list, tuple, set)):
++                values = raw
++            elif raw is None:
++                values = []
++            else:
++                values = [raw]
++            for value in values:
++                if value is not None and str(value) not in found:
++                    found.append(str(value))
++        return found
++
++    def _alive_wolf_ids(
++        self,
++        private_information: Any,
++        current_public_state_digest: Mapping[str, Any],
++    ) -> list[str]:
++        alive = {str(pid) for pid in current_public_state_digest.get("alive_player_ids") or []}
++        return [pid for pid in self._wolf_team_ids(private_information) if pid in alive]
++
++    def _build_day_target_strategy(
++        self,
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++        target_actions: list[Mapping[str, Any]],
++        current_digest: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        kinds = [str(item.get("kind") or "") for item in (turn_packet.get("request", {}).get("allowed_actions") or []) if isinstance(item, Mapping)]
++        lower_kinds = [kind.lower() for kind in kinds]
++        is_sheriff = any("sheriff" in kind and ("vote" in kind or "candidate" in kind) for kind in lower_kinds)
++        if is_sheriff:
++            return self._build_sheriff_vote_strategy(turn_packet, memory_snapshot, current_dialogue, target_actions, current_digest)
++        return self._build_day_vote_strategy(turn_packet, memory_snapshot, current_dialogue, target_actions, current_digest)
++
++    def _build_day_vote_strategy(
++        self,
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++        target_actions: list[Mapping[str, Any]],
++        current_digest: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        request = turn_packet.get("request") or {}
++        allowed = [item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)]
++        vote_action = next((item for item in allowed if "day_vote" in str(item.get("kind", "")).lower()), None)
++        if vote_action is None:
++            vote_action = next((item for item in target_actions if "vote" in str(item.get("kind", "")).lower()), None)
++        candidates = [str(pid) for pid in (vote_action or {}).get("target_ids", []) if pid is not None]
++        records = self._extract_player_records(turn_packet.get("public_state"), turn_packet.get("game"), memory_snapshot)
++        alive = set(current_digest.get("alive_player_ids") or [])
++        dead = set(current_digest.get("dead_player_ids") or [])
++        alive_known = bool(alive)
++        teammates = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        pressure: list[tuple[int, tuple[int, str], str, str]] = []
++        for pid in candidates:
++            if pid in dead or (alive_known and pid not in alive) or pid == self.player_id:
++                continue
++            record = records.get(pid, {})
++            score = 0
++            reasons: list[str] = []
++            mentions = self._recent_mention_count(pid)
++            votes = self._nonnegative_int(record.get("vote_count", record.get("votes")), fallback=0) or 0
++            if mentions:
++                score += min(8, mentions * 2); reasons.append("近期被多人提及")
++            if votes:
++                score += min(8, votes * 2); reasons.append("票型集中")
++            if self._public_claim_text(record):
++                score += 3; reasons.append("公开身份链")
++            if record.get("is_sheriff") or record.get("sheriff") or pid == current_digest.get("current_sheriff_id"):
++                score += 3; reasons.append("当前警徽位")
++            if not reasons:
++                reasons.append("公共压力较低")
++            pressure.append((score, self._seat_sort_value(record, pid), pid, ",".join(reasons[:3])))
++        pressure.sort(key=lambda item: (-item[0], item[1], item[2]))
++        non_wolves = [item for item in pressure if item[2] not in teammates]
++        wolf_top = pressure[0] if pressure and pressure[0][2] in teammates else None
++        text_blob = " ".join(str(item.get("text") or "") for item in current_dialogue[-6:])
++        hard_bus = bool(wolf_top and (
++            wolf_top[0] >= 8 or any(word in text_blob and wolf_top[2] in text_blob for word in ("查杀", "定狼", "出局", "归票"))
++        ))
++        pass_kind = next((str(item.get("kind")) for item in allowed if "pass" in str(item.get("kind", "")).lower()), None)
++        if wolf_top and not hard_bus and non_wolves:
++            chosen = non_wolves[0]; mode = "deflect"
++        elif wolf_top and hard_bus:
++            chosen = wolf_top; mode = "bus_teammate"
++        elif non_wolves:
++            chosen = non_wolves[0]; mode = "pressure_non_wolf"
++        elif pass_kind:
++            return {"stage": "day_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": list(teammates), "reason": "当前合法目标不足，保留弃票", "teammate_risk": {"alive_wolf_ids": sorted(teammates)}}
++        elif pressure:
++            chosen = pressure[0]; mode = "forced_legal_target"
++        else:
++            chosen = None; mode = "no_candidate"
++        backup = next((item for item in non_wolves if not chosen or item[2] != chosen[2]), None)
++        return {
++            "stage": "day_vote",
++            "recommended_kind": vote_action.get("kind") if vote_action else None,
++            "recommended_target_id": chosen[2] if chosen else None,
++            "backup_target_id": backup[2] if backup else None,
++            "avoid_target_ids": sorted(teammates),
++            "mode": mode,
++            "reason": chosen[3] if chosen else "没有可排序的合法目标",
++            "teammate_risk": {"alive_wolf_ids": sorted(teammates), "top_is_teammate": bool(wolf_top), "hard_bus": hard_bus},
++        }
++
++    def _build_sheriff_vote_strategy(
++        self,
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++        target_actions: list[Mapping[str, Any]],
++        current_digest: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        allowed = [item for item in (turn_packet.get("request", {}).get("allowed_actions") or []) if isinstance(item, Mapping)]
++        action = next((item for item in target_actions if "sheriff" in str(item.get("kind", "")).lower()), None)
++        candidates = [str(pid) for pid in (action or {}).get("target_ids", []) if pid is not None]
++        alive_wolves = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        blob = " ".join(str(item.get("text") or "") for item in current_dialogue[-6:]) + " " + " ".join(self._recent_public_texts[-4:])
++        avoid: list[str] = []
++        claimed_speakers = {
++            str(item.get("speaker") or item.get("player_id") or item.get("from"))
++            for item in current_dialogue[-6:]
++            if any(word in str(item.get("text") or "") for word in ("预言家", "查杀", "报杀", "验人"))
++        }
++        for pid in candidates:
++            if pid in alive_wolves and pid in blob:
++                avoid.append(pid)
++            elif pid in claimed_speakers:
++                avoid.append(pid)
++            elif pid in blob and any(word in blob for word in ("预言家", "查杀", "报杀", "验人")):
++                avoid.append(pid)
++        alive = set(current_digest.get("alive_player_ids") or [])
++        dead = set(current_digest.get("dead_player_ids") or [])
++        safe = [
++            pid for pid in candidates
++            if pid not in avoid and pid != self.player_id and pid not in dead
++            and (not alive or pid in alive)
++        ]
++        pass_kind = next((str(item.get("kind")) for item in allowed if "pass" in str(item.get("kind", "")).lower()), None)
++        if safe:
++            recommended = safe[0]
++            mode = "avoid_claimed_seer"
++        elif pass_kind:
++            return {"stage": "sheriff_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": avoid, "reason": "候选均与高风险查杀/预言家发言绑定", "teammate_risk": {"alive_wolf_ids": sorted(alive_wolves)}}
++        elif candidates:
++            recommended = candidates[0]; mode = "forced_legal_candidate"
++        else:
++            recommended = None; mode = "no_candidate"
++        backup = next((pid for pid in candidates if pid != recommended and pid not in avoid), None)
++        return {"stage": "sheriff_vote", "recommended_kind": action.get("kind") if action else None, "recommended_target_id": recommended, "backup_target_id": backup, "avoid_target_ids": avoid, "mode": mode, "reason": "优先避开公开跳预言家或报查杀的候选", "teammate_risk": {"alive_wolf_ids": sorted(alive_wolves)}}
++
++    def _repair_illegal_target(
++        self,
++        action: Mapping[str, Any],
++        request: Mapping[str, Any],
++        wolf_strategy: Mapping[str, Any] | None,
++    ) -> dict[str, Any] | None:
++        repaired = dict(action)
++        allowed = [item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)]
++        current = next((item for item in allowed if item.get("kind") == action.get("kind")), None)
++        target_ids = [str(pid) for pid in (current or {}).get("target_ids", []) if pid is not None]
++        pass_kind = next((str(item.get("kind")) for item in allowed if "pass" in str(item.get("kind", "")).lower()), None)
++        if current is not None and pass_kind and isinstance(wolf_strategy, Mapping) and wolf_strategy.get("mode") == "pass":
++            repaired.pop("target_id", None)
++            repaired["kind"] = pass_kind
++            return repaired
++        if not target_ids:
++            if action.get("target_id") and "vote" in str(action.get("kind", "")).lower() and pass_kind:
++                repaired.pop("target_id", None); repaired["kind"] = pass_kind
++                return repaired
++            return None
++        recommendations = []
++        if isinstance(wolf_strategy, Mapping):
++            for key in ("recommended_target_id", "backup_target_id"):
++                value = wolf_strategy.get(key)
++                if value is not None:
++                    recommendations.append(str(value))
++        for value in recommendations + target_ids:
++            if value in target_ids:
++                repaired["target_id"] = value
++                return repaired
++        return None
+ 
+     def _night_plan_signature(
+         self,
+@@ -814,6 +1180,8 @@
+     ) -> list[dict[str, Any]]:
+         public_state = turn_packet.get("public_state")
+         players = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
++        current_digest = self._current_public_state_digest(turn_packet, memory_snapshot)
++        dead_ids = {str(pid) for pid in current_digest.get("dead_player_ids") or []}
+         candidate_ids = self._collect_target_ids(target_actions)
+         discussion_signal = self._parse_wolf_discussion(current_dialogue, candidate_ids)
+         candidates: list[dict[str, Any]] = []
+@@ -825,6 +1193,8 @@
+                     continue
+                 seen.add(target)
+                 record = players.get(target, {})
++                if target in dead_ids or self._is_alive_record(record) is False:
++                    continue
+                 score, reason = self._score_target(target, record, memory_snapshot)
+                 candidates.append(
+                     {
+@@ -949,20 +1319,24 @@
+         memory_snapshot: Mapping[str, Any],
+         current_dialogue: list[dict[str, Any]],
+         speech_actions: list[Mapping[str, Any]],
++        current_digest: Mapping[str, Any] | None = None,
+     ) -> dict[str, Any]:
+         public_state = turn_packet.get("public_state")
+         records = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
++        current_digest = current_digest or self._current_public_state_digest(turn_packet, memory_snapshot)
++        current_sheriff_id = current_digest.get("current_sheriff_id")
++        dead_ids = {str(pid) for pid in current_digest.get("dead_player_ids") or []}
+         candidates: list[dict[str, Any]] = []
+         for pid, record in records.items():
+             if pid == self.player_id:
+                 continue
+             score = 0
+             reasons: list[str] = []
+-            if self._is_alive_record(record) is False:
++            if pid in dead_ids or self._is_alive_record(record) is False:
+                 continue
+-            if record.get("is_sheriff") or record.get("sheriff"):
++            if record.get("is_sheriff") or record.get("sheriff") or pid == current_sheriff_id:
+                 score += 8
+-                reasons.append("警长位")
++                reasons.append("当前持徽人")
+             claim_text = self._public_claim_text(record)
+             if claim_text:
+                 score += 7
+@@ -997,7 +1371,7 @@
+         chosen = candidates[0] if candidates else {}
+         target_id = chosen.get("player_id")
+         record = records.get(target_id, {}) if target_id else {}
+-        evidence = self._select_day_evidence(target_id, records, memory_snapshot, current_dialogue)
++        evidence = self._select_day_evidence(target_id, records, memory_snapshot, current_dialogue, current_digest)
+         next_action_text = self._day_next_action(evidence.get("kind"))
+         opening_guard = self._day_opening_guard()
+         one_sentence_hint = self._clip_text(
+@@ -1028,19 +1402,32 @@
+         records: Mapping[str, Mapping[str, Any]],
+         memory_snapshot: Mapping[str, Any],
+         current_dialogue: list[dict[str, Any]],
++        current_digest: Mapping[str, Any] | None = None,
+     ) -> dict[str, Any]:
+         ledger = memory_snapshot.get("public_ledger") or {}
++        current_digest = current_digest or {}
++        dead_ids = {str(pid) for pid in current_digest.get("dead_player_ids") or []}
++        current_sheriff_id = current_digest.get("current_sheriff_id")
++        if target_id and target_id in dead_ids:
++            return {"kind": "death", "text": f"{target_id}已死亡，不要求其继续发言、报查验或解释"}
+         if target_id and target_id in records:
+             record = records[target_id]
+             claim_text = self._public_claim_text(record)
+             if claim_text:
+-                return {"kind": "claim", "text": f"{target_id}公开身份:{claim_text}"}
++                historical = any(
++                    entry.get("from") == target_id or entry.get("to") == target_id
++                    for entry in (ledger.get("sheriff_changes") or [])[-3:]
++                    if isinstance(entry, Mapping)
++                )
++                label = "当前持徽人" if target_id == current_sheriff_id else ("曾持徽/警徽链相关" if historical else "公开身份")
++                return {"kind": "claim", "text": f"{target_id}{label}:{claim_text}"}
+             for entry in (ledger.get("votes") or [])[-4:]:
+                 if entry.get("player_id") == target_id or entry.get("voter") == target_id or entry.get("target_id") == target_id:
+                     return {"kind": "vote", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
+             for entry in (ledger.get("sheriff_changes") or [])[-2:]:
+                 if entry.get("to") == target_id or entry.get("from") == target_id:
+-                    return {"kind": "sheriff", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
++                    label = "当前持徽人" if target_id == current_sheriff_id else "曾持徽/警徽链相关"
++                    return {"kind": "sheriff", "text": f"{label}:{self._clip_text(json.dumps(entry, ensure_ascii=False), 40)}"}
+         for entry in (ledger.get("deaths") or [])[-2:]:
+             if isinstance(entry, Mapping):
+                 return {"kind": "death", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
+@@ -1102,18 +1489,26 @@
+             notes.append("优先处理夜间讨论中的高威胁公共目标")
+         return notes[:4]
+ 
+-    def _day_pressure_points(self, memory_snapshot: Mapping[str, Any]) -> list[str]:
++    def _day_pressure_points(
++        self,
++        memory_snapshot: Mapping[str, Any],
++        current_digest: Mapping[str, Any] | None = None,
++    ) -> list[str]:
+         points: list[str] = []
++        current_digest = current_digest or {}
+         game = memory_snapshot.get("game", {})
+-        dead_players = game.get("dead_players") or []
++        dead_players = current_digest.get("dead_player_ids") or game.get("dead_players") or []
+         if dead_players:
+             points.append(f"围绕最近死亡：{self._format_id_list(dead_players[-2:])}")
+         public_ledger = memory_snapshot.get("public_ledger") or {}
+         sheriff_changes = public_ledger.get("sheriff_changes") or []
++        current_sheriff = current_digest.get("current_sheriff_id")
++        if current_sheriff:
++            points.append(f"当前持徽人：{current_sheriff}")
+         if sheriff_changes:
+             last = sheriff_changes[-1]
+             if isinstance(last, Mapping):
+-                points.append(f"警徽变化：{last.get('from')}→{last.get('to')}")
++                points.append(f"最近警徽变化：{last.get('from')}→{last.get('to')}")
+         recent_votes = memory_snapshot.get("recent_vote_summary") or []
+         if recent_votes:
+             points.append("根据上一轮票型调整站边")
+@@ -1176,7 +1571,11 @@
+         raw_dialogue = tool_context.get("current_round_dialogue") or []
+         return self._summarize_dialogue(raw_dialogue)
+ 
+-    def _decision_case_summary(self, wolf_strategy: Mapping[str, Any]) -> dict[str, Any]:
++    def _decision_case_summary(
++        self,
++        wolf_strategy: Mapping[str, Any],
++        current_digest: Mapping[str, Any] | None = None,
++    ) -> dict[str, Any]:
+         stage = str(wolf_strategy.get("stage") or "other")
+         if stage == "night":
+             return {
+@@ -1185,6 +1584,7 @@
+                 "backup": wolf_strategy.get("backup_target"),
+                 "discussion_lock": (wolf_strategy.get("discussion_signal") or {}).get("consensus_target"),
+                 "reason": wolf_strategy.get("tie_break_reason"),
++                "current_sheriff_id": (current_digest or {}).get("current_sheriff_id"),
+             }
+         if stage == "day":
+             day_focus = wolf_strategy.get("day_focus")
+@@ -1195,7 +1595,19 @@
+                     "evidence": day_focus.get("evidence"),
+                     "next_action": day_focus.get("next_action"),
+                     "opening_guard": day_focus.get("opening_guard"),
++                    "current_sheriff_id": (current_digest or {}).get("current_sheriff_id"),
+                 }
++        if stage in {"day_vote", "sheriff_vote"}:
++            return {
++                "mode": stage,
++                "recommended_kind": wolf_strategy.get("recommended_kind"),
++                "recommended_target_id": wolf_strategy.get("recommended_target_id"),
++                "backup_target_id": wolf_strategy.get("backup_target_id"),
++                "avoid_target_ids": wolf_strategy.get("avoid_target_ids", []),
++                "strategy_mode": wolf_strategy.get("mode"),
++                "reason": wolf_strategy.get("reason"),
++                "current_sheriff_id": (current_digest or {}).get("current_sheriff_id"),
++            }
+         return {"mode": stage}
+ 
+     def _summarize_sync_packet(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
+@@ -1523,6 +1935,8 @@
+             return None
+         if record.get("alive") is True:
+             return True
++        if record.get("alive") is False:
++            return False
+         status = record.get("status")
+         if status in {"dead", "eliminated"}:
+             return False
+@@ -1532,6 +1946,8 @@
+             return False
+         if record.get("is_alive") is True:
+             return True
++        if record.get("is_alive") is False:
++            return False
+         return None
+ 
+     @staticmethod
+--- wolf-n00043/task.md
++++ wolf-n00135/task.md
+@@ -12,8 +12,10 @@
+ 
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序和警徽变化再表态，不要只讲泛泛原则。
++- 白天发言以当前公开状态为准：当前持徽人、存活/死亡名单和最近警徽转移不得凭旧记忆猜测；不能要求已死亡玩家继续解释、报查验或回应。
+ - 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
++- 投票前先区分目标是否属于狼队：除非队友已被硬查杀、票势不可逆或牺牲能换取明确叙事，否则优先把票压向非狼公共焦点；若牺牲队友，下一轮必须能用公开票型自然解释这一步。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
+ 
+ ## 发言约束

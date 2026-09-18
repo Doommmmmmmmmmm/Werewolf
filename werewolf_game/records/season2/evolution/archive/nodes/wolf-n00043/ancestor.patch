@@ -1,0 +1,453 @@
+--- wolf-n00020/task_agent.py
++++ wolf-n00043/task_agent.py
+@@ -458,18 +458,6 @@
+         memory_snapshot: Mapping[str, Any],
+         current_dialogue: list[dict[str, Any]],
+     ) -> dict[str, Any]:
+-        public_rules = self._compact_snapshot(
+-            turn_packet.get("public_rules"),
+-            preferred_keys=(
+-                "phase_rules",
+-                "vote_rules",
+-                "speech_limits",
+-                "action_limits",
+-                "public_information",
+-                "night_rules",
+-                "day_rules",
+-            ),
+-        )
+         game = self._compact_snapshot(
+             turn_packet.get("game"),
+             preferred_keys=(
+@@ -480,11 +468,8 @@
+                 "night",
+                 "alive_count",
+                 "dead_count",
+-                "players_alive",
+-                "players_dead",
+             ),
+         )
+-        public_state = self._compact_public_state(turn_packet.get("public_state"))
+         request = self._compact_snapshot(
+             turn_packet.get("request"),
+             preferred_keys=(
+@@ -514,16 +499,27 @@
+             preferred_keys=("role", "team", "identity", "faction", "ability"),
+         )
+         wolf_strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
++        state_digest = {
++            "alive_players": (memory_snapshot.get("game") or {}).get("alive_players", [])[-6:],
++            "dead_players": (memory_snapshot.get("game") or {}).get("dead_players", [])[-4:],
++            "sheriff_id": (memory_snapshot.get("game") or {}).get("sheriff_id"),
++            "recent_votes": memory_snapshot.get("recent_vote_summary", [])[-2:],
++            "sheriff_changes": (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:],
++            "death_order": (memory_snapshot.get("game") or {}).get("death_order", [])[-3:],
++            "recent_public_texts": memory_snapshot.get("recent_public_texts", [])[-2:],
++            "recent_self_texts": memory_snapshot.get("recent_self_texts", [])[-2:],
++        }
+         return {
+-            "game": game,
+-            "public_rules": public_rules,
+-            "self": self_state,
+-            "private_information": private_information,
+-            "public_state": public_state,
+-            "request": request,
+-            "memory": memory_snapshot,
+-            "wolf_strategy": wolf_strategy,
+-            "current_round_dialogue": current_dialogue,
++            "decision_state": {
++                "game": game,
++                "request": request,
++                "self": self_state,
++                "private_information": private_information,
++                "state_digest": state_digest,
++                "recent_dialogue": current_dialogue[-2:],
++                "case_summary": self._decision_case_summary(wolf_strategy),
++                "wolf_strategy": wolf_strategy,
++            }
+         }
+ 
+     def _build_wolf_strategy(
+@@ -544,30 +540,41 @@
+             token in channel_lower for token in ("night", "wolf")
+         )
+         if is_night and target_actions:
+-            signature = self._night_plan_signature(turn_packet, target_actions)
++            candidate_ids = self._collect_target_ids(target_actions)
++            discussion_signal = self._parse_wolf_discussion(current_dialogue, candidate_ids)
++            signature = self._night_plan_signature(turn_packet, target_actions, discussion_signal)
+             cached_plan = self._game_memory.get("wolf_plan")
+             if isinstance(cached_plan, Mapping) and cached_plan.get("signature") == signature:
+                 plan = cached_plan.get("strategy")
+                 if isinstance(plan, Mapping):
+                     return dict(plan)
+-            ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions)
++            ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions, current_dialogue)
+             primary = ranked_targets[0] if ranked_targets else None
+             backup = ranked_targets[1] if len(ranked_targets) > 1 else None
++            locked_plan = {
++                "primary_target_id": primary.get("player_id") if isinstance(primary, Mapping) else None,
++                "backup_target_id": backup.get("player_id") if isinstance(backup, Mapping) else None,
++                "consensus_target_id": discussion_signal.get("consensus_target"),
++                "discussion_primary_target_id": discussion_signal.get("primary_target"),
++                "discussion_backup_target_id": discussion_signal.get("backup_target"),
++            }
+             plan = {
+                 "stage": "night",
+-                "objective": "锁定一个主刀和一个备刀，并在重试时复用同一计划",
++                "objective": "先锁主刀与备刀；重试时复用同一锁定计划，只在候选合法性变化时重排",
+                 "primary_target": primary,
+                 "backup_target": backup,
+                 "tie_break_reason": primary.get("reason") if isinstance(primary, Mapping) else "优先高威胁公共目标，再按座位/ID固定顺序",
+                 "candidate_order": ranked_targets,
+-                "notes": self._night_notes(memory_snapshot, current_dialogue),
++                "discussion_signal": discussion_signal,
++                "locked_plan": locked_plan,
++                "notes": self._night_notes(memory_snapshot, current_dialogue, discussion_signal),
+                 "signature": signature,
+             }
+             self._game_memory["wolf_plan"] = {
+                 "signature": signature,
+-                "primary_target": plan.get("primary_target"),
+-                "backup_target": plan.get("backup_target"),
+-                "tie_break_reason": plan.get("tie_break_reason"),
++                "primary_target_id": locked_plan.get("primary_target_id"),
++                "backup_target_id": locked_plan.get("backup_target_id"),
++                "consensus_target_id": locked_plan.get("consensus_target_id"),
+                 "strategy": plan,
+             }
+             return plan
+@@ -575,8 +582,8 @@
+             day_focus = self._select_day_focus(turn_packet, memory_snapshot, current_dialogue, speech_actions)
+             return {
+                 "stage": "day",
+-                "objective": "用具体对象、具体证据和下一步动作维持可解释叙事",
+-                "must_include": ["具体对象", "具体证据", "下一步动作"],
++                "objective": "先固定对象、证据类型、下一步动作，再用一句解释补齐本局新证据",
++                "must_include": ["对象", "证据类型", "下一步动作", "一句解释"],
+                 "day_focus": day_focus,
+                 "pressure_points": self._day_pressure_points(memory_snapshot),
+                 "dialogue_focus": self._dialogue_focus(current_dialogue),
+@@ -593,20 +600,109 @@
+         self,
+         turn_packet: Mapping[str, Any],
+         target_actions: list[Mapping[str, Any]],
++        discussion_signal: Mapping[str, Any] | None = None,
+     ) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+         game = turn_packet.get("game") or {}
++        target_ids = self._collect_target_ids(target_actions)
++        signal = discussion_signal or self._parse_wolf_discussion([], target_ids)
++        return {
++            "round": self._safe_get(game, "round"),
++            "phase": str(request.get("phase") or self._safe_get(game, "phase") or "unknown"),
++            "channel": str(request.get("channel") or "unknown"),
++            "targets": sorted(target_ids),
++            "discussion": {
++                "primary_target": signal.get("primary_target"),
++                "backup_target": signal.get("backup_target"),
++                "consensus_target": signal.get("consensus_target"),
++                "locked_target": signal.get("locked_target"),
++                "has_disagreement": bool(signal.get("has_disagreement")),
++                "candidate_targets": list(signal.get("candidate_targets") or [])[:3],
++            },
++        }
++
++    def _collect_target_ids(self, target_actions: list[Mapping[str, Any]]) -> list[str]:
+         target_ids: list[str] = []
+         for action in target_actions:
+             for target_id in action.get("target_ids") or []:
+                 target = str(target_id)
+                 if target not in target_ids:
+                     target_ids.append(target)
++        return target_ids
++
++    def _parse_wolf_discussion(
++        self,
++        current_dialogue: list[dict[str, Any]],
++        candidate_ids: list[str],
++    ) -> dict[str, Any]:
++        candidate_ids = [str(item) for item in candidate_ids if str(item)]
++        if not current_dialogue or not candidate_ids:
++            return {
++                "candidate_targets": candidate_ids[:3],
++                "mention_counts": {},
++                "primary_target": None,
++                "backup_target": None,
++                "consensus_target": None,
++                "locked_target": None,
++                "disagreement_targets": [],
++                "discussion_lines": [],
++                "has_disagreement": False,
++            }
++        target_mentions: Counter[str] = Counter()
++        primary_mentions: Counter[str] = Counter()
++        backup_mentions: Counter[str] = Counter()
++        consensus_mentions: Counter[str] = Counter()
++        discussion_lines: list[str] = []
++        primary_target: str | None = None
++        backup_target: str | None = None
++        consensus_target: str | None = None
++        for item in current_dialogue[-6:]:
++            text = item.get("text") or item.get("content") or item.get("message")
++            if not text:
++                continue
++            text_value = str(text)
++            hits = [candidate for candidate in candidate_ids if candidate in text_value]
++            if not hits:
++                continue
++            discussion_lines.append(self._clip_text(text_value, 48))
++            for candidate in hits:
++                target_mentions[candidate] += 1
++            if any(keyword in text_value for keyword in ("主刀", "先刀", "第一刀", "主目标", "优先刀", "先处理")):
++                primary_target = hits[0]
++                primary_mentions[hits[0]] += 2
++            if any(keyword in text_value for keyword in ("备刀", "次刀", "保底", "兜底", "备选", "替补")):
++                backup_target = hits[0]
++                backup_mentions[hits[0]] += 2
++            if any(keyword in text_value for keyword in ("定", "锁", "一致", "统一", "拍板", "最后", "就刀", "就打")):
++                consensus_target = hits[0]
++                consensus_mentions[hits[0]] += 2
++        if primary_target is None and primary_mentions:
++            primary_target = primary_mentions.most_common(1)[0][0]
++        if primary_target is None and target_mentions:
++            primary_target = target_mentions.most_common(1)[0][0]
++        if backup_target is None and backup_mentions:
++            backup_target = backup_mentions.most_common(1)[0][0]
++        if backup_target is None:
++            backup_target = next((target for target, _ in target_mentions.most_common() if target != primary_target), None)
++        if consensus_target is None and consensus_mentions:
++            consensus_target = consensus_mentions.most_common(1)[0][0]
++        if consensus_target is None:
++            consensus_target = primary_target
++        candidate_order = [target for target, _ in target_mentions.most_common()]
++        for target in (primary_target, backup_target, consensus_target):
++            if target and target not in candidate_order:
++                candidate_order.insert(0, target)
++        disagreement_targets = [target for target in candidate_order if target_mentions.get(target, 0) > 0 and target != consensus_target]
+         return {
+-            "round": self._safe_get(game, "round"),
+-            "phase": str(request.get("phase") or self._safe_get(game, "phase") or "unknown"),
+-            "channel": str(request.get("channel") or "unknown"),
+-            "targets": sorted(target_ids),
++            "candidate_targets": candidate_order[:5],
++            "mention_counts": dict(target_mentions),
++            "primary_target": primary_target,
++            "backup_target": backup_target,
++            "consensus_target": consensus_target,
++            "locked_target": consensus_target or primary_target,
++            "disagreement_targets": disagreement_targets[:3],
++            "discussion_lines": discussion_lines[-3:],
++            "has_disagreement": len(target_mentions) > 1,
+         }
+ 
+     def _update_public_ledger(self, sync_packet: Mapping[str, Any], summary: Mapping[str, Any]) -> None:
+@@ -714,9 +810,12 @@
+         turn_packet: Mapping[str, Any],
+         memory_snapshot: Mapping[str, Any],
+         target_actions: list[Mapping[str, Any]],
++        current_dialogue: list[dict[str, Any]],
+     ) -> list[dict[str, Any]]:
+         public_state = turn_packet.get("public_state")
+         players = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
++        candidate_ids = self._collect_target_ids(target_actions)
++        discussion_signal = self._parse_wolf_discussion(current_dialogue, candidate_ids)
+         candidates: list[dict[str, Any]] = []
+         seen: set[str] = set()
+         for action in target_actions:
+@@ -733,12 +832,55 @@
+                         "score": score,
+                         "reason": reason,
+                         "seat": self._seat_sort_value(record, target),
++                        "base_reason": reason,
+                     }
+                 )
+         candidates.sort(key=lambda item: (-int(item["score"]), item["seat"], item["player_id"]))
++        base_pool = candidates[:5]
++        base_lookup = {item["player_id"]: item for item in candidates}
++        pool_ids = [item["player_id"] for item in base_pool]
++        for target in discussion_signal.get("candidate_targets", [])[:3]:
++            if target in base_lookup and target not in pool_ids:
++                pool_ids.append(target)
++        locked_plan = self._game_memory.get("wolf_plan") if isinstance(self._game_memory.get("wolf_plan"), Mapping) else {}
++        adjusted: list[dict[str, Any]] = []
++        for target in pool_ids:
++            item = base_lookup[target]
++            score = int(item["score"])
++            reasons = [item["base_reason"]]
++            if target == discussion_signal.get("consensus_target"):
++                score += 12
++                reasons.append("夜间最后一致目标")
++            if target == discussion_signal.get("primary_target"):
++                score += 8
++                reasons.append("狼队主刀共识")
++            if target == discussion_signal.get("backup_target"):
++                score += 4
++                reasons.append("狼队备刀共识")
++            if target in set(discussion_signal.get("disagreement_targets") or []):
++                score += 1
++                reasons.append("讨论中反复出现")
++            if target == locked_plan.get("primary_target_id"):
++                score += 2
++                reasons.append("沿用已锁主刀")
++            if target == locked_plan.get("backup_target_id"):
++                score += 1
++                reasons.append("沿用已锁备刀")
++            if any(tag in item["base_reason"] for tag in ("公开", "票型", "警徽", "身份")):
++                score += 1
++                reasons.append("容易公开解释")
++            adjusted.append(
++                {
++                    "player_id": target,
++                    "score": score,
++                    "reason": ",".join(reasons[:4]),
++                    "seat": item["seat"],
++                }
++            )
++        adjusted.sort(key=lambda item: (-int(item["score"]), item["seat"], item["player_id"]))
+         return [
+             {"player_id": item["player_id"], "reason": item["reason"]}
+-            for item in candidates[:3]
++            for item in adjusted[:3]
+         ]
+ 
+     def _score_target(
+@@ -853,15 +995,30 @@
+             )
+         candidates.sort(key=lambda item: (-int(item["score"]), self._seat_sort_value(records.get(item["player_id"], {}), item["player_id"]), item["player_id"]))
+         chosen = candidates[0] if candidates else {}
+-        evidence = self._select_day_evidence(chosen.get("player_id"), records, memory_snapshot, current_dialogue)
+-        next_action = self._day_next_action(evidence.get("kind"))
+-        anti_repeat = self._recent_self_texts[-1] if self._recent_self_texts else ""
++        target_id = chosen.get("player_id")
++        record = records.get(target_id, {}) if target_id else {}
++        evidence = self._select_day_evidence(target_id, records, memory_snapshot, current_dialogue)
++        next_action_text = self._day_next_action(evidence.get("kind"))
++        opening_guard = self._day_opening_guard()
++        one_sentence_hint = self._clip_text(
++            f"围绕{target_id or '当前焦点'}的{evidence.get('kind', 'fallback')}，先点证据，再接下一步动作：{next_action_text}",
++            120,
++        )
+         return {
+-            "target": chosen,
++            "object": {
++                "player_id": target_id,
++                "seat": record.get("seat", record.get("seat_id")),
++                "claim": chosen.get("claim"),
++                "reason": chosen.get("reason"),
++            },
+             "evidence": evidence,
+-            "next_action": next_action,
+-            "anti_repeat": anti_repeat,
+-            "candidates": candidates[:3],
++            "next_action": {
++                "kind": evidence.get("kind"),
++                "text": next_action_text,
++            },
++            "one_sentence_hint": one_sentence_hint,
++            "opening_guard": opening_guard,
++            "candidate_order": candidates[:3],
+             "speech_budget": speech_actions[0].get("max_chars") if speech_actions else None,
+         }
+ 
+@@ -912,6 +1069,7 @@
+         self,
+         memory_snapshot: Mapping[str, Any],
+         current_dialogue: list[dict[str, Any]],
++        discussion_signal: Mapping[str, Any] | None = None,
+     ) -> list[str]:
+         notes: list[str] = []
+         game = memory_snapshot.get("game", {})
+@@ -925,9 +1083,24 @@
+         recent_votes = memory_snapshot.get("recent_vote_summary") or []
+         if recent_votes:
+             notes.append("结合最近票型收敛刀口")
+-        if current_dialogue:
++        if discussion_signal:
++            primary = discussion_signal.get("primary_target")
++            backup = discussion_signal.get("backup_target")
++            locked = discussion_signal.get("consensus_target") or discussion_signal.get("locked_target")
++            if locked:
++                notes.append(f"狼队锁定{self._clip_text(str(locked), 18)}")
++            if backup and backup != locked:
++                notes.append(f"备刀{self._clip_text(str(backup), 18)}")
++            if discussion_signal.get("has_disagreement"):
++                notes.append("讨论有分歧时优先沿用最后一致目标")
++            elif primary:
++                notes.append(f"主刀{self._clip_text(str(primary), 18)}")
++            lines = discussion_signal.get("discussion_lines") or []
++            if lines:
++                notes.append(f"讨论原文:{lines[-1]}")
++        elif current_dialogue:
+             notes.append("优先处理夜间讨论中的高威胁公共目标")
+-        return notes[:3]
++        return notes[:4]
+ 
+     def _day_pressure_points(self, memory_snapshot: Mapping[str, Any]) -> list[str]:
+         points: list[str] = []
+@@ -955,6 +1128,26 @@
+                 focus.append(f"{speaker}:{self._clip_text(str(text), 28)}")
+         return focus
+ 
++    def _day_opening_guard(self) -> dict[str, Any]:
++        banned_openings: list[str] = []
++        for text in self._recent_self_texts[-2:]:
++            opening = self._leading_clause(text)
++            if opening and opening not in banned_openings:
++                banned_openings.append(opening)
++        return {
++            "banned_openings": banned_openings,
++            "note": "不要复用这些开场或其同义句，必须换成本局新证据。",
++        }
++
++    @staticmethod
++    def _leading_clause(text: str) -> str:
++        value = str(text).strip()
++        for separator in ("。", "，", "：", ":", "；", ";", "、", "\n"):
++            if separator in value:
++                value = value.split(separator, 1)[0].strip()
++                break
++        return value[:24]
++
+     def _anti_template_notes(self) -> list[str]:
+         corpus = self._recent_public_texts[-4:] + self._recent_self_texts[-4:]
+         repeated: list[str] = []
+@@ -982,6 +1175,28 @@
+         tool_context = turn_packet.get("tool_context") or {}
+         raw_dialogue = tool_context.get("current_round_dialogue") or []
+         return self._summarize_dialogue(raw_dialogue)
++
++    def _decision_case_summary(self, wolf_strategy: Mapping[str, Any]) -> dict[str, Any]:
++        stage = str(wolf_strategy.get("stage") or "other")
++        if stage == "night":
++            return {
++                "mode": "night",
++                "primary": wolf_strategy.get("primary_target"),
++                "backup": wolf_strategy.get("backup_target"),
++                "discussion_lock": (wolf_strategy.get("discussion_signal") or {}).get("consensus_target"),
++                "reason": wolf_strategy.get("tie_break_reason"),
++            }
++        if stage == "day":
++            day_focus = wolf_strategy.get("day_focus")
++            if isinstance(day_focus, Mapping):
++                return {
++                    "mode": "day",
++                    "object": day_focus.get("object"),
++                    "evidence": day_focus.get("evidence"),
++                    "next_action": day_focus.get("next_action"),
++                    "opening_guard": day_focus.get("opening_guard"),
++                }
++        return {"mode": stage}
+ 
+     def _summarize_sync_packet(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
+         if not isinstance(sync_packet, Mapping):
+--- wolf-n00020/task.md
++++ wolf-n00043/task.md
+@@ -7,6 +7,7 @@
+ - 每次夜间决策都要显式锁定主刀与备刀；同一夜重试时优先复用上一次锁定结果，只有候选合法性变化时再重新排序。
+ - 首夜优先处理公开威胁高、发言强、容易带队的人。
+ - 如果有人已经明显暴露身份、对跳、被查杀或成为票型焦点，优先把这些信息纳入刀口判断。
++- 当狼队讨论给出明确主刀/备刀时，Task-Agent 以该共识作为第一排序信号，只有与公共威胁明显冲突时才改写；白天发言必须显式复用最近一次票型或警徽链里的新证据。
+ - 队友意见不一致时，按“高威胁公共目标 > 警长/神职概率高 > 更难被队友解释 > 固定座位/最后一致目标”收敛。
+ 
+ ## 白天

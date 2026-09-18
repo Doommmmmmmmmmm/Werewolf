@@ -1,0 +1,71 @@
+你正在修改狼人杀角色 hunter 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "hunter-n00058 的主要问题不是缺少一般猎人策略，而是公开证据账本没有可靠接入真实事件结构，导致猎人临死反应时 target_ranking 很可能证据为空或偏薄，模型仍选择 pass。随机回放中 p9 作为猎人在已被多数票推出、且公开存在 p4/p8/p10/p11 等警上候选和后续强带节奏链条的情况下跳过开枪；随后遗言还称“猎人已开枪带走一人”，与实际 HUNTER_SHOT_SKIPPED 矛盾。下一代应做最小代码修复：让 observe 能解析引擎事件包装的 payload/type；把当前轮对话和刚发生的公开投票/死亡/警徽信息纳入一次决策内的临时证据；在 hunter_reaction 中把 pass 作为有条件动作而非默认，并提供一个结构化的 target_scores/forced_recommendation 给模型。避免继续扩大复杂正则推断，优先保证公开事实、票型和当前轮发言被准确记录。",
+  "evidence": [
+    "评测摘要显示 hunter-n00058 在 20 局中仅 4 胜 16 负，胜率 0.2；focus_role_only 下 fallback_count 和 invalid_decision_count 均为 0，说明问题主要是策略/证据组织而不是 schema 失败。",
+    "随机回放 game16 中 p9 为 hunter。第 3 天 p9 公开称“我是猎人，昨晚没有验人功能”（seq268），随后被 p1/p4/p6/p8/p10/p11 六票推出（seq273-293）。",
+    "p9 的猎人反应在 seq299 返回 {kind: pass}，公开结果为 HUNTER_SHOT_SKIPPED（seq300），没有带走任何人。最终狼人胜利，存活 p10/p11 均为狼，p8 也曾接到 p9 传徽且实际为狼。",
+    "p9 遗言 seq308 称“猎人已开枪带走一人”，但审计 seq299-301 明确显示开枪被跳过；这说明模型的行动阶段理解或记忆简表与实际动作发生了脱节。",
+    "当前代码 _extract_public_events 的 walk 逻辑中，_looks_like_public_event 对包含 type 的事件包装会返回 true，但 build_record 只从顶层读取 speaker/player_id/text/target/role 等字段；真实回放事件这些字段大多在 payload 内，例如 PLAYER_SPOKE、VOTE_CAST、PLAYER_ELIMINATED、SHERIFF_BADGE_TRANSFERRED。因此很多关键公开事件可能被摘要为空而不再下钻 payload。",
+    "当前 _decision_brief 只把 current_round_dialogue 做成 current_round_dialogue_preview，未调用 _note_public_record 解析本轮完整发言；猎人反应通常发生在本轮投票刚结束后，若 observe 只在轮次同步时运行，临死前当天发言和票型不会进入 _player_notes。",
+    "祖先路径显示 hunter-n00008 引入短记忆和猎人目标排序；hunter-n00040 增加 player_notes、票链、身份与清白标记；hunter-n00058 又进一步扩展 role_links、claim_chain、death_chain 和 pass 条件。复杂度增加但随机回放仍出现 pass，指向数据入口/证据质量问题，而非再加更多抽象策略即可解决。",
+    "可用技能 official-hunter-shoot、official-hunter-anti-bait、information-reliability、vote-analysis 均强调开枪前要基于多来源证据、区分引擎事实与玩家声称、复盘票型。当前代码试图实现这些思想，但真实事件解析和当前轮证据接入不足。"
+  ],
+  "root_causes": [
+    "事件包装解析缺陷：真实审计/公开事件常为 {type, payload}，而当前 build_record 主要读取顶层字段；walk 在看到 type 后把包装当成事件处理，不再递归到 payload，导致 PLAYER_SPOKE、VOTE_CAST、PLAYER_ELIMINATED、SHERIFF_* 等关键公开事实丢失或摘要失败。",
+    "当前轮证据未进入结构化账本：decide 中 current_round_dialogue 只作为 3 条 preview 给模型，不更新 _player_notes。猎人被推出后需要依据当天所有发言、投票和刚刚的处决结果开枪，但 target_ranking 主要依赖跨轮 observe 记忆，容易落后一个白天。",
+    "pass 约束仍然偏软：_hunter_target_ranking 只给 skip_recommended/skip_condition，最终仍完全交给模型。若 ranking 为空、分数偏低或证据文本噪声大，模型会保守 pass；随机回放中 p9 明明在遗言点名 p4/p6/p8，却反应阶段没有执行枪击。",
+    "信息可信度混淆：当前解析会把发言中的“金水/好人/支持”等词较容易记为 soft_clear，且对玩家声称、引擎事实、预言家遗言、警徽传递没有明确来源分层。这可能让被带节奏或警徽链包装的人在排序中被错误降分。",
+    "角色自我表述与实际行动状态没有反馈：猎人 reaction pass 后，last_words 仍能说“猎人已开枪带走一人”。Task-Agent 没有在 action 返回后记录自身猎人反应结果，也没有在 last_words brief 中提醒不要声称未发生的开枪。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "修复 _extract_public_events/build_record：当 item 是事件包装且含 payload Mapping 时，先把 payload 与顶层 type/channel/round 合并成规范记录；将常见 type 映射为内部 kind，例如 PLAYER_SPOKE->speak，PLAYER_PASSED->pass，VOTE_CAST/SHERIFF_VOTE_CAST->vote，PLAYER_ELIMINATED/PLAYER_DIED->death，PLAYER_LAST_WORDS->last_words，SHERIFF_BADGE_TRANSFERRED->badge，SHERIFF_ELECTED->sheriff。actor 从 payload.player_id/voter_id/from_player_id 读取，target 从 target_id/to_player_id/dead_player_ids 读取，text 从 payload.text 读取。",
+      "rationale": "当前代码最可能漏掉真实公开事件的 payload。先保证公开发言、投票、死亡和警徽事实能进入 _public_memory/_player_notes，比继续增加推理规则更关键。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 decide 中构造 decision_brief 前，基于 current_dialogue 生成临时本轮记录并传入 _decision_brief；不要永久写入跨行动记忆以免重复膨胀，可新增 _current_dialogue_records(current_dialogue, round, phase) 和 _evidence_snapshot(extra_records=...)，或在 _decision_brief 内复制 _player_notes 后临时 note 当前发言。",
+      "rationale": "猎人反应、白天投票和发言判断高度依赖本轮刚发生的公开话语。只给 3 条 preview 不足以让目标排序利用当天所有玩家的站边、追问和身份声明。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "从 turn_packet.public_state 和 request 中提取当前合法存活目标、死亡/出局状态、警长、公开 revealed_role，并在 hunter_reaction 的 target_ranking 中过滤已死目标、标注警长链、标注公开硬身份。若 public_state.players 中 alive=false 或 revealed_role 为明确好人，给 clear/protect 分；若玩家刚投出猎人或连续推动错误处决，给 vote_pressure/anti_hunter_vote 分。",
+      "rationale": "猎人开枪必须只比较合法 target_ids，并避免误伤公开硬清；同时，被推出猎人的票型本身是最相关的即时证据。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _recent_vote_against_self_or_eliminated_hunter 逻辑：在 hunter_reaction 时，如果当前死亡者是 self.player_id，统计最近一次 DAY_VOTE_RESOLVED/VOTE_CAST 中投 self 的玩家；这些玩家在 target_ranking 中获得明确理由“投出猎人/冲猎人票”。若其中又有身份矛盾、警徽链异常、对真预言家施压等第二证据，则设置 shoot_recommended_target 为最高分目标。",
+      "rationale": "随机回放中的直接失败点是猎人被多人投出后 pass。投出已跳猎人的票是强相关公开证据，应当成为开枪排序的核心特征。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "调整 _hunter_target_ranking 的 pass 策略：当最高分目标存在至少两个核心信号，或存在“投出猎人票 + 非硬清”组合时，skip_recommended=False，并在 brief 中加入 explicit_instruction: '若 shoot_recommended_target 非空，除非目标是硬清，否则不要 pass'。保留 pass 仅用于所有合法目标无票型、无身份冲突、无死亡/警徽链、无当前轮攻击链时。",
+      "rationale": "不改变行动 schema，也不强行替模型提交动作，但显著降低模型在有明显差异时默认跳过的概率，符合任务说明中“如果已经出现明显证据差异，即使分数不高也不要把跳过当默认”。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "加入轻量 self-action memory：当 decide 返回 hunter_reaction 且 kind 为 pass 或带 target_id 时，记录 self._last_hunter_action_summary；在后续 last_words 的 decision_brief 中加入 'actual_hunter_action'，明确如果上一步 pass，则不得声称已带走人。",
+      "rationale": "解决回放中遗言与实际动作矛盾的问题，提升公开遗言可复盘性。该状态只来自自身刚提交的公开/审计动作，不越权。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充一小段节点专用执行要求：猎人反应前按三层证据排序——A 引擎事实（刚刚谁投你、谁死亡、谁接/传警徽、公开翻牌），B 角色声称（预言家查验、女巫/守卫/猎人自报），C 推断话术。开枪优先选 A+B 或 A+C 同时指向且非硬清的合法目标；只有没有 A 层差异时才 pass。遗言必须与刚才实际是否开枪一致。",
+      "rationale": "用 prompt 约束信息可靠性和开枪阈值，避免模型把玩家声称与事实等权，也避免 pass 后遗言虚构开枪。"
+    }
+  ],
+  "risks": [
+    "解析 payload 后记忆量会增加，可能接近 12000 字符预算；需要保持摘要短、只保留最近和结构化 top 项，不要把完整历史注入 prompt。",
+    "加强“投出猎人票”可能误伤被狼带票的好人；因此应要求第二证据或非硬清条件，并结合 official-hunter-anti-bait 的多来源原则。",
+    "玩家公开声称的预言家/女巫/守卫可能是假的；代码不能把自称直接当硬清。hard_clear 应主要来自引擎 revealed_role 或强规则事实，玩家发言只应是 soft/source_claim。",
+    "如果 Runtime 的 sync_packet 结构与完整回放不同，payload 解析需保持兼容旧字段，不能删除现有顶层解析路径。",
+    "在 decide 中临时解析 current_dialogue 时若永久写入 _player_notes，重试或多次决策可能重复计数；建议使用临时副本或去重 key。"
+  ],
+  "code_agent_brief": "请在 hunter-n00058 的 task_agent.py/task.md 上做最小可执行修改，目标是修复猎人临死反应证据缺失和过度 pass。不要改 Game Engine、规则、schema、工具、预算或可见性。重点实现：1) _extract_public_events 能解析真实事件包装 {type,payload}，把 PLAYER_SPOKE、VOTE_CAST、PLAYER_ELIMINATED/PLAYER_DIED、PLAYER_LAST_WORDS、SHERIFF_BADGE_TRANSFERRED、SHERIFF_ELECTED 等映射为现有 _note_public_record 可理解的 actor/target/kind/text/role/summary；保留旧顶层格式兼容。2) hunter_reaction 的 _decision_brief/_hunter_target_ranking 要纳入当前轮 dialogue 和刚刚投票事实，尤其统计投出本猎人的玩家，作为 target_ranking 的核心信号；合法目标中若某人有“投出猎人票 + 另一条冲突/警徽/身份/攻击链证据”且不是硬清，则 skip_recommended 必须为 false，并给出 shoot_recommended_target/explicit_instruction。3) 明确信息来源分层：引擎 revealed_role/死亡/投票/警徽为强事实，玩家自称为 claim/soft，不要因发言含“好人/金水/支持”轻易 hard_clear。4) 记录自身 hunter_reaction 实际动作，并在后续 last_words brief 中提示不得虚构已开枪。5) task.md 增加简短说明：猎人开枪按引擎事实、角色声称、推断三层证据排序；有多源差异时不默认 pass；遗言必须与实际动作一致。保持 prompt 简洁，避免完整历史注入。"
+}

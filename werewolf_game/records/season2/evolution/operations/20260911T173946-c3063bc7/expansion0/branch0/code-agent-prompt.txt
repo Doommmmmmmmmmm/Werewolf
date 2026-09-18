@@ -1,0 +1,73 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00043 是一个已保留且强度不错的节点（20局15胜，胜率0.75），核心优势是夜间能较好服从狼队共识并形成主刀/备刀。但下一代不应继续堆泛化策略，而应修复两个会在失败局放大的工程性问题：第一，公开叙事缺少“事实一致性护栏”，会把死人、未声明身份的人、旧警徽链当成当前可追问对象，导致白天发言出现明显假信息；第二，行动输出仍完全依赖模型遵守 target_ids，非法目标只靠重试，偶发 fallback/invalid。建议最小修改是在 task_agent.py 中加入公开事实核验层、合法目标确定性修复层，并吸收兄弟分支 wolf-n00044 的夜刀失败记忆思路，但保持现有提示结构和预算边界。",
+  "evidence": [
+    "评测汇总显示 wolf-n00043：20局完整，15胜5负，focus fallback 4次、focus invalid 4次，推荐状态 retained。这说明节点总体有效，但仍有可优化的稳定性问题。",
+    "随机回放 game1 中夜间共识执行较好：R1 狼队讨论 seq23-26 一致刀 p1，实际 seq28-31 四狼均投 p1；R2 seq154-156 一致刀 p11，seq158-160 全投 p11；R4 seq301-302 一致刀 p8，seq304-305 全投 p8。",
+    "同一回放暴露事实一致性问题：R2 白天 p3 在 seq182 称“12也跳了预言家还和11互查杀”，p4 seq183 继续按“12敢跟11互查杀”发言，但在此前公开事件中 p12 并未真实跳预言家或报查杀；p12 遗言 seq218 明确指出“我从未跳过预言家，也没查杀过任何人”。",
+    "回放中多个狼发言追问已死亡对象或错误警徽链：p11 在 seq245-248 夜死，seq251 警徽转给 p8；但 R3 白天 p4 seq262 仍要求“11当场说清这枚警徽”，p9 seq266 说“今天我不跟票4，先挂p11”。这些发言虽然未必导致非法 action，但会显著降低伪装可信度。",
+    "R4 白天 p8 已在 seq314-317 夜死且警徽转给 p1，但 p9 seq328 仍说“要求p8先回答……今天票先压在p8的警徽链上”，说明公开发言策略没有强制过滤 dead_players。",
+    "R6 夜间狼频道 p9 seq425 说“刀8，徽刚转我手，他最懂链子”，但 p8 早已死亡；实际 action seq427 选择 p5，说明模型最终行动可能被 allowed_actions 拉回合法目标，但私聊叙事仍会暴露状态记忆混乱。",
+    "当前代码 _select_day_focus 会从 records 中挑 alive 非 False 的对象，但当记录缺失或文本信号混乱时，day_focus/evidence 仍可能给模型留下追问死人或不存在身份链的空间；系统没有在发言前生成“禁止提问/禁止投票 dead_ids”的明确约束。",
+    "当前 normalize_decision + decision_error 只做校验和重试；评测中 focus invalid 仍出现，例如 game2 focus error：p5 的 wolf_kill_vote target_id=p1 不在 target_ids；game4 focus error：p12 day_vote p5、p7 day_vote p3 非法。说明需要本地确定性 fallback，而不是只让模型重答。",
+    "兄弟分支 wolf-n00044 的 patch 引入 resolved_night_memory、_update_night_resolution、_night_target_adjustment，用于在上一夜无死亡或刀口失败后给旧主刀/备刀降权；这直接对应 game1 中 R2 刀 p11 被守、R3 仍重复刀 p11 的风险场景，值得吸收但需精简。",
+    "祖先 wolf-n00020 诊断显示从 0.65 胜率提升到 n00043 的 0.75，现有狼队讨论解析和 compact prompt 是有效基础，不应大改架构或增加外部状态。"
+  ],
+  "root_causes": [
+    "公开发言的对象选择和证据选择只偏向“有信号/被提及/警徽相关”，但没有强约束：对象必须当前存活、证据必须来自公开记录中真实出现的事件、不得追问已死亡玩家。这使模型可把压缩记忆或其他角色幻觉继续放大成公共叙事。",
+    "代码对自然语言声明的处理过于弱：_public_ledger 的 claims 主要依赖 public_state 中结构化字段，无法可靠确认“谁跳预言家、谁报查杀、谁互查杀”；而 day_focus 又会把 current_dialogue 的短片段交给模型自由解释，导致模型根据场上流言生成错误身份链。",
+    "状态摘要存在信息压缩损失：state_digest 只给 alive_players 后6个、dead_players 后4个，recent_dialogue 只给后2条；残局或长局时模型更容易遗忘 p8/p11/p12 已死亡、警徽已转移等事实。",
+    "夜刀策略缺少“上一刀结果”反馈。n00043 会执行当前狼队共识，但没有记录上一夜主刀是否被守/被救/死亡未发生，因此可能继续追同一高威胁目标而忽略守卫风险或胜利条件下更优刀口。",
+    "非法行动恢复机制过于依赖模型重试。即使 render_action_contract 列出 target_ids，模型仍会偶发输出不在候选中的目标；最终抛 RuleViolationError 造成 fallback，而 Task-Agent 本地已有足够信息选择合法候选。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个轻量 public_fact_guard：在 _build_compact_turn_prompt 的 decision_state.state_digest 中明确加入 alive_ids、dead_ids、sheriff_id、last_deaths、forbidden_public_targets，并在 day 阶段的 wolf_strategy 中加入 hard_constraints，例如“公开发言不得要求 dead_ids 回答；不得把 dead_ids 作为今天可投对象；若引用身份声明，必须来自 verified_claims 或 recent_dialogue 原文”。不要增加工具或外部状态。",
+      "rationale": "回放中 p4/p9 多次追问 p11/p8 等已死玩家，核心不是一般策略问题，而是 prompt 没把公开事实作为硬约束前置。显式 dead/alive 护栏能降低明显穿帮。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _verified_public_claims(current_dialogue, memory_snapshot) 方法，只从最近公开发言原文中用保守关键词抽取声明：如“我是预言家/守卫/女巫/猎人/平民”“查杀X”“金水X”“对跳”。抽取结果要包含 speaker、claim_type、target_id、source_text，并只保留最近3-5条。_select_day_evidence 优先引用 verified_public_claims；若没有验证到，不要让 day_focus 生成“互查杀/跳预言家”这种强身份结论，只使用“某人质疑/某人投票/某人死亡”等弱事实。",
+      "rationale": "p12 被错误塑造成对跳预言家并造成白天叙事崩坏，说明需要区分真实声明与场上推测。保守抽取可以用现有可见 dialogue，不越权，也不会修改规则。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _select_day_focus 和 _select_day_evidence：候选对象必须通过 _is_alive_record(record) is not False，且若 target_id 在 dead_players/death_order 中则降到最低或移除；evidence 若引用 dialogue，必须带 speaker 存活状态，若 speaker 已死，则只能描述为“遗言/旧发言证据”，不得生成“请他回答/今天挂他”动作。_day_next_action 增加 dead-speaker 分支：改为“复盘其遗言/死亡前发言并转向活人受益者”。",
+      "rationale": "这直接修复追问死人、挂死人、把死亡警徽链当实时对话的问题，同时仍允许狼利用死人发言做叙事。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 decide 中 action 校验失败且错误为 target_id 非法时，最后一次重试前或重试耗尽前调用 _repair_illegal_target(action, request, prompt)：如果 kind 合法但 target_id 不合法，则从 allowed_actions 对应 target_ids 中选择一个确定性合法目标。优先顺序：夜间使用 wolf_strategy.locked_plan.primary_target_id/backup_target_id/candidate_order 中第一个仍合法者；白天投票使用 day_focus.object.player_id 若合法，否则 candidate_order 中首个合法者；否则取 allowed target_ids[0]。保留原 request_id/player_id/kind。",
+      "rationale": "评测已有 focus invalid/fallback；本地 deterministic repair 不改变 action schema，只是在提交前选择合法候选，可降低无谓 fallback。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "吸收 wolf-n00044 的最小夜刀结果记忆，但不要完整复制大 patch：在 _game_memory 中加入 resolved_night_memory 和上次 observe 的 round/phase/dead_players；observe 从夜转昼时比较 dead_players 增量，记录上一 wolf_plan 的 primary/backup 是否造成 dawn death、no_death 或 other_death；_rank_targets 对最近 no_death 的旧主刀施加中等降权，连续两次失败再强降权。",
+      "rationale": "n00043 已能执行共识，但没有利用上一夜结果。R2 刀 p11 被守后 R3 继续刀 p11，虽然最终成功，但在其他局可能浪费刀口。加入结果反馈可减少重复撞守。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "减少 prompt 中可能诱导幻觉的字段：case_summary/day_focus 的 one_sentence_hint 不要写“互查杀/对跳/查杀”除非来自 verified_public_claims；把 recent_dialogue 从后2条提升为后3条，但相应把 candidate_order 截断为2-3项以保持 12000 字符预算。",
+      "rationale": "当前压缩会丢失关键纠错信息，模型用旧假设补全。增加一条最近原文比增加泛化策略更有效；同时控制字段长度避免超预算。"
+    },
+    {
+      "file": "task.md",
+      "change": "追加很短的角色任务补充：公开发言必须先核对当前存活名单和最近死亡；不得要求已死亡玩家回答或把已死亡玩家作为今天投票对象；引用“跳身份/查杀/金水/互查杀”时必须来自当前可见发言原文，否则只能表述为推测或质疑。",
+      "rationale": "把代码护栏同步到角色任务，减少模型绕过结构化提示继续输出强假事实。"
+    }
+  ],
+  "risks": [
+    "过度过滤身份声明可能让狼人错过可利用的模糊舆论，例如别人误传“某人对跳”时狼原本可以顺势带节奏。建议只禁止把未验证信息说成事实，允许说“有人在传/我怀疑这条链不实”。",
+    "确定性修复非法 target_id 可能在个别场景选择次优目标，但比触发 RuleViolationError/fallback 更稳定；应只在模型已失败或目标非法时启用，不替代正常模型决策。",
+    "夜刀失败降权如果过强，可能错过连续刀真预言家/警长的机会。建议 no_death 降权中等，连续失败才强降权，并保留狼队明确共识加分。",
+    "增加 verified_claims 和 fact_guard 会占用少量 prompt 字符；需通过截断 candidate_order、source_text 控制长度，避免触发 12000 字符预算问题。",
+    "当前随机回放是胜局，不能把其中所有行为都视为失败原因；修改目标应聚焦跨局稳定性和非法/穿帮减少，而不是推翻现有夜间共识机制。"
+  ],
+  "code_agent_brief": "请在候选工作区只修改 task_agent.py 和 task.md，基于 wolf-n00043 做最小稳定性增强，不要改 Game Engine、规则、schema、工具或预算。目标：1）为公开发言加入事实一致性护栏：在 prompt/state_digest 中明确 alive_ids、dead_ids、forbidden_public_targets；day_focus 不得选择 dead_players，若证据来自死人只允许复盘，不允许“请他回答/今天挂他”。2）新增保守的 _verified_public_claims，从最近公开 dialogue 原文抽取 speaker 的身份声明、查杀/金水/对跳，并让 _select_day_evidence 只在 verified_claims 存在时使用强身份词；未验证时改用“质疑/票型/死亡/警徽变化”等弱事实。3）在 decide 校验非法 target_id 时增加本地 _repair_illegal_target：优先用 wolf_strategy 的合法 primary/backup/candidate_order 或 day_focus 合法对象，否则取 allowed target_ids[0]，以减少 RuleViolationError/fallback。4）精简吸收 wolf-n00044 的夜刀结果记忆：observe 夜转昼时记录上一 wolf_plan 的主刀/备刀和 dawn_deaths/no_death，_rank_targets 对最近无死亡的旧主刀降权，连续失败更强降权，但狼队明确共识仍可覆盖。5）task.md 增加一句短约束：公开发言先核对存活/死亡，不能追问死人；身份链必须来自可见原文，否则标为推测。保持现有工具调用、max tokens、prompt 长度预算不变。"
+}

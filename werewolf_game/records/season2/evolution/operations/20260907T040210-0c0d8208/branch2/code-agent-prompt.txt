@@ -1,0 +1,58 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00027 在行动合法性上基本稳定，但把查验信息转成可信公共压力的能力仍然不足；20 局仅 7 胜。随机回放里，预言家 p6 明确拿到 p3、p11 两个狼查验，却在公开发言中把 p11 说成“对跳过”，这类未被证实的历史叙述会直接损害信用并削弱带票能力。",
+  "evidence": [
+    "评测汇总：game_count=20，win_count=7，loss_count=13，win_rate=0.35；fallback_count=1、invalid_decision_count=1，说明主问题不是大规模 schema 崩坏，而是决策质量与信息转化。",
+    "随机回放 game4 中，p6 在第 1 夜验出 p3=wolf，第 2 夜验出 p11=wolf，但第 2 天游说时直接使用了“p11对跳过”的说法；回放公开记录并没有支持这一点，说明公共发言把未核实记忆当成了事实。",
+    "同一回放里，p6 的查杀链虽然正确，但在 p11 仍未形成真实对跳事实时就把其放入对跳框架，给了对方反打空间；随后 p6 被放逐，狼队继续控票直到获胜。",
+    "当前 task_agent.py 的 SeerMemory 主要保存 inspected、declared_claims、challenged_players、recent_vote_summary 等摘要型字段，缺少带来源的 claim timeline / vote timeline / accusation provenance，导致“谁真的自证、谁只是被提到”难以区分。",
+    "_update_claims_from_dialogue 和 _update_claims_and_challenges_from_packet 都依赖关键词命中（如“预言家”“对跳”“查验”“狼”“冲票”）来记忆，过于宽松，容易把泛讨论、转述和真正的身份声明混在一起。",
+    "_turn_instruction 虽然区分了 night_inspect / day_speech / vote 等模式，但没有硬性约束“只能引用已记录的事实来源、不要推断不存在的对跳链”，所以模型仍可能编造或误用公共历史。"
+  ],
+  "root_causes": [
+    "记忆结构偏摘要化，缺少事件级 provenance，无法稳定维护“公开声明原文—发言者—轮次—票型”的可回看链条。",
+    "声明与质疑识别规则过宽，关键词命中就会被当成 claim / challenge，导致后续推断建立在噪声记忆上。",
+    "发言模板约束不够硬，没把“事实优先、来源可验证、未核实不外推”写成强制骨架。",
+    "夜验目标排序虽然已有启发式，但与“当前未解对跳链”“最近票型转折”“已经建立的可信证据链”联动不够，难以持续把查验转成同一条压票线。",
+    "高压场景下缺少显式的自保子模式，容易在被集火时仍输出过长、过散、包含未经验证细节的发言。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "把 SeerMemory 从摘要列表升级为事件级结构，新增 claim_timeline、vote_timeline、pressure_events、inspection_by_target 等字段，并记录每条信息的 source_event / round / speaker / target / raw_text。",
+      "rationale": "让后续判断基于可回看的证据链，而不是仅靠去重后的文本碎片。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _update_claims_from_dialogue 与 _update_claims_and_challenges_from_packet：只把明确的自证句式或 public_state 中已结构化的声明记为 claim；把“被提到”“被质疑”“被投票”与“自称身份”拆开存储，避免关键词误判。",
+      "rationale": "减少把转述、吐槽和真正对跳混为一谈的问题，避免记忆污染。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 _turn_instruction / _build_seer_brief，为 day_speech、sheriff_election_speech、vote、self_risk 提供固定骨架：1 个已证实事实、1 个可验证推断、1 个明确票向；高压时强制短模板，并明确禁止引用未记录来源的对跳历史。",
+      "rationale": "把“事实先行、来源可查、不要编造”从建议变成硬约束，直接针对 game4 那类失信发言。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "优化 _rank_inspect_targets：优先级改为未解对跳链 > 与已知查验冲突的目标 > 关键票型枢纽 > 高发言但立场不清者，并在 seer_brief 中输出 target_reasons 供发言直接引用。",
+      "rationale": "让夜验与白天施压形成闭环，而不是只做静态高分目标排序。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充一条明确规则：公开发言只能使用已查验结果、已记录公开发言原文和可验证票型，不得把“被提到”“被质疑”自动升级成“已对跳”或“已自证”；高压局必须优先短发言。",
+      "rationale": "把正确的证据标准写进角色任务层，降低模型自行脑补公共历史的概率。"
+    }
+  ],
+  "risks": [
+    "把 claim 识别收紧后，可能漏掉一些口语化但真实的自证表达，导致信息收集变慢。",
+    "更强的结构化记忆会增加 prompt 体积和实现复杂度，需要注意仍然满足 12000 字符上限。",
+    "高压短模板如果过于保守，可能让预言家在有足够信息时也说得不够锋利，降低压票效率。",
+    "改动记忆结构时需要保证 reset、序列化和旧字段兼容，否则可能引入跨回合状态残留。"
+  ],
+  "code_agent_brief": "请只修改 task_agent.py 和 task.md，不要动引擎、规则或工具。目标是修复 seer-n00027 的核心失误：当前 agent 会把泛讨论误记成对跳/自证，进而在公开发言中使用未验证的“历史事实”，导致查杀虽真、信用却掉。请实现事件级记忆和 provenance：区分 self-claim、被提及、被质疑、真实投票、真实查验；收紧关键词式 claim/challenge 识别；把 day_speech / sheriff_election_speech / vote 改成强骨架输出；高压时只允许短模板，且明确禁止引用未记录来源的对跳历史。完成后确保现有 TaskAgent 构造接口、工具预算和 JSON 行动契约不变，并检查语法。"
+}

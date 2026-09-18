@@ -1,0 +1,67 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00015 不是动作合法性问题，而是“持续公开叙事和证据链一致性”问题。评测 20 局仅 4 胜，低于已知 base 的 6/20；当前修改只把查验结果和阶段提示塞进单次 prompt，但 TaskAgent 仍不维护跨行动的公开承诺、发言历史和投票链。随机回放中预言家首验查杀并当选警长，本应优势很大，却在后续发言中忘记自己警上已跳、颠倒查验时间线，并在被日放后说成“被狼人刀了”，导致好人对其信息可信度下降、第二天反被推出。下一代应做最小代码增强：修复 seer_known_results 对 inspections 映射的解析；新增小型、可见信息来源的 SeerState，专门记录自己的公开身份声明、查验公开历史、警徽流、归票目标、投票结果摘要和死亡原因；在发言/投票/警徽阶段把这些压缩为 bounded brief 注入，而不是注入完整历史。",
+  "evidence": [
+    "评测汇总：seer-n00015 game_count=20, complete_game_count=20, win_count=4, loss_count=16, win_rate=0.2；focus_fallback_rate≈0.0078，focus invalid_decision_count=2，说明主要失败不是非法行动或崩溃，而是策略/表达质量。",
+    "进化路径显示 n00015 相对 base 的主要修改是：注入 _seer_phase_hint，以及尝试从 private_information 抽取 seer_known_results；没有增加跨行动公开记忆或投票/发言状态建模。",
+    "当前 _extract_seer_known_results 只能解析形如 {'target_id':..., 'team':...} 的对象或列表；但回放 final audit_state 中 p12 的查验状态是 role_state.p12.inspections={'p7':'wolf','p2':'village'} 这种 target->team 映射。该函数对这种映射不会 add_entry，因此 seer_known_results 很可能没有真正提供有效结构化查验列表。",
+    "随机回放 game2 中 p12 第 1 夜验 p7=wolf，seq65 警上发言明确说“我是预言家，首验7号，查杀”，并给出主票 p7、警徽流 p10/后置位，且 seq93 当选警长；这是非常有利开局。",
+    "同一回放 seq114，p12 白天又说“竞选时没跳是想先听一圈狼坑”，与 seq65 已经公开跳预言家的事实矛盾。该矛盾会显著削弱真预言家可信度。",
+    "同一回放 seq190，p12 说“昨夜验p7，结果是狼；此前验过p2是金水”，但实际顺序是第 1 夜验 p7，第 2 夜验 p2。其查验事实结果正确但时间线颠倒，暴露缺少顺序记忆。",
+    "同一回放第 2 天投票 seq214：p12 作为真预言家且警长，仍被 4.0 票推出，p7 查杀只得到 3.5 票；说明公开身份与归票没有形成稳定可信链。",
+    "同一回放 seq223，p12 日间被放逐后的遗言说“我是预言家，被狼人刀了”，但事件 seq214-217 显示其死因是白天放逐。这不是夜间信息伪造，但属于公开事实错误，进一步证明状态记忆和事实校验不足。",
+    "当前 observe(sync_packet) 直接 del sync_packet；decide 每次只把 current_state、private_information 和 current_round_dialogue 工具给模型。工具又只能读当前昼夜轮次中已发生发言，不能覆盖上一轮自己曾如何跳身份、归票、留警徽流，因此模型容易在多轮后自相矛盾。"
+  ],
+  "root_causes": [
+    "跨行动状态缺失：代码保留 Python 对象但 observe 不记录任何公开同步；每次模型会话只能看当前状态和当前轮对话，无法稳定记住自己上一轮公开报过什么、归过谁、警徽流是什么。",
+    "结构化查验提取存在格式盲区：当前 _extract_seer_known_results 未处理 inspections 为 target_id -> team 的常见映射，削弱了 n00015 新增 seer_known_results 的实际效果。",
+    "发言提示只给原则，不做事实一致性约束：_seer_phase_hint 要求公开查验、警徽流和主票，但没有强制“沿用已公开身份声明和查验顺序，不得改口说自己没跳过”。",
+    "没有区分公开事实、私有查验与自我承诺的持久摘要：TaskAgent 无法在发言前自动列出 death_reason、own_claim_history、announced_inspections、announced_vote_target 等关键约束，导致日放遗言说成被刀、查验时间线颠倒。",
+    "预言家归票链不够刚性：虽然提示说 day_vote 优先执行公开归票，但缺少对“当前已公开查杀仍存活时必须继续压查杀”的高优先级状态，真查杀 p7 在第 1、2 天没有被持续推出。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "修复 _extract_seer_known_results：在 walk 处理 Mapping 时，若没有 target/team 字段且该 mapping 的 value 是字符串标量，则把每个 key 当 target_id、value 当 team 加入结果；保留现有对象/列表递归逻辑，并按插入顺序去重。",
+      "rationale": "当前回放里的私有查验状态是 {'p7':'wolf','p2':'village'}，现实现无法抽取。修复后模型会稳定看到结构化查验事实，减少查验遗漏和顺序混乱。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增一个小型内存结构 self._seer_state，仅保存依法可见且高度压缩的信息：own_public_claims、announced_inspections、announced_vote_targets、announced_badge_flows、last_day_vote_counts、death_events、sheriff_history。不要保存完整发言文本；每类最多保留最近 6-12 条。",
+      "rationale": "解决每次新模型会话导致的公开承诺遗忘，同时遵守不得自动注入完整历史的预算边界。保存的是公共同步/自身发言的摘要，不访问隐藏信息。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "实现 observe(sync_packet) 的保守解析：从公开同步包或事件列表中提取 PLAYER_SPOKE/PLAYER_LAST_WORDS 中自己的发言、DAY_VOTE_RESOLVED/VOTE_CAST、PLAYER_ELIMINATED/PLAYER_DIED、SHERIFF_ELECTED/SHERIFF_BADGE_TRANSFERRED 等公开事件；若 sync_packet 结构不含事件则静默跳过，不影响兼容性。",
+      "rationale": "利用运行时已经传给 agent 的可见公开信息，建立跨行动一致性；结构未知时不报错，避免破坏现有接口。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 decide 构造 prompt 时加入 seer_state_brief，内容包括：private seer_known_results、自己曾公开声称的身份、公开报过的查验目标/结果/顺序、上一轮公开主票、仍存活的已验狼、已验金水、最近死亡原因摘要。总长度控制在约 1200-1800 字符以内。",
+      "rationale": "模型发言前获得必要的事实一致性锚点，避免再次出现“警上已跳却说没跳”“被放逐却说被刀”等自损可信度错误。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 _seer_phase_hint：当 private 中存在 wolf 查验且目标仍在 allowed day_vote target_ids 中时，day_vote 提示明确为“必须优先投已验狼”；当发言阶段已公开过预言家身份时，提示“不要否认或改写已公开跳身份事实；沿用已公开查验顺序”。last_words 阶段提示根据公开 death_events 区分“被放逐/夜死”，未知则说“我死亡后”。",
+      "rationale": "把最关键的预言家硬信息转成投票刚性和发言事实校验，减少模型自由发挥导致的可信度崩塌。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充一节“公开承诺一致性”：预言家一旦公开跳身份，后续所有发言必须承认已跳；查验结果必须按真实顺序复述；遗言只能说公开可确认的死亡方式，若不确定则使用中性表述；已验狼存活时主票优先级高于普通发言推断。",
+      "rationale": "n00015 的失败样本不是不会跳，而是跳后自相矛盾。task.md 层明确约束可让模型在 prompt 中形成稳定行为。"
+    }
+  ],
+  "risks": [
+    "observe(sync_packet) 的具体结构未在必读资料中完整给出；实现必须防御式解析，任何字段缺失都应跳过，不能假设有完整审计日志。",
+    "加入 seer_state_brief 会增加 prompt 长度；必须压缩、限条数，不能把完整历史或完整发言自动注入。",
+    "过强的“已验狼必须投”规则在极少数复杂局面可能忽略更高可信的公开事实，但对预言家总体收益通常更高，且可保留“除非目标不合法或已死亡”的例外。",
+    "维护内存可能因重复同步导致重复记录；需要用 event seq 或简单内容 key 去重，或者接受 bounded 去重，避免 brief 膨胀。",
+    "如果 public_state 已经包含部分历史但 observe 不收到事件列表，新增状态收益会有限；因此修复 private inspections 映射和发言提示仍应作为最小稳定改进。"
+  ],
+  "code_agent_brief": "请只修改 task_agent.py 和 task.md，设计 seer-n00015 的下一代。目标不是改规则，而是修复预言家跨轮公开叙事不一致的问题。必须保留 TaskAgent 类和现有构造接口，不访问网络/文件/环境/进程，不修改 core。具体实现：1) 修复 _extract_seer_known_results，使其能解析 private 中 inspections={'p7':'wolf','p2':'village'} 这类 target->team 映射，同时保留现有列表/对象解析。2) 在 TaskAgent.__init__ 中增加小型 self._seer_state 字典或 dataclass，仅保存可见公开摘要和自己的公开承诺，限长。3) 改造 observe(sync_packet)，防御式解析可见公开事件：自己的 PLAYER_SPOKE/PLAYER_LAST_WORDS 中是否声称预言家、公开报验人、主票/警徽流；公开 VOTE_CAST/DAY_VOTE_RESOLVED；PLAYER_ELIMINATED/PLAYER_DIED；SHERIFF_ELECTED/SHERIFF_BADGE_TRANSFERRED。结构不匹配时静默跳过。不要保存完整历史文本。4) 在 decide 的 prompt 中加入 seer_state_brief，列出结构化查验、已公开身份、已公开查验顺序、当前仍存活已验狼/金水、上一主票和死亡原因摘要，控制在约 1800 字符内。5) 增强 _seer_phase_hint：发言阶段提醒不得否认已公开跳身份，不得颠倒查验顺序；投票阶段若 allowed target 中有已验狼且仍存活，强提示优先投该目标；last_words 阶段根据已知公开死亡事件避免把白天放逐说成被狼人刀，未知则说“我死亡后”。6) 在 task.md 增加“公开承诺一致性”小节，强调已跳后不改口、查验按真实顺序复述、已验狼存活优先归票、死亡方式不确定时用中性说法。重点保持改动小、语法正确、预算友好。"
+}

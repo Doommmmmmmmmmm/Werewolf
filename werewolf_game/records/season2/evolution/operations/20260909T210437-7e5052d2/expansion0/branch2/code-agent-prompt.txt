@@ -1,0 +1,167 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00079 保留了较强的行动合法性与隐私提示，但其女巫专用判断层存在关键的信息源错误：代码没有从 private_information 读取当夜真实狼刀目标，却把公共状态、历史死亡、请求和工具上下文混合扫描来推断刀口。结果是模型在本应至少评估救人或毒人的夜晚连续 pass，药水始终未使用，最终女巫阵营以 4/20 胜率结束。下一代应优先修复“私密刀口识别”和“公共证据结构化”两条链，而不是继续增加关键词、分数或嫌疑名单。",
+  "evidence": [
+    {
+      "fact": "当前节点评测为 20 局 4 胜 16 负，胜率 0.2，焦点角色决策 248 次，非法决策和 fallback 均为 0。",
+      "source": "read_evaluation_summary",
+      "interpretation": "协议可靠性良好，但策略效果明显低于其父节点 witch-n00060 的 7/20、0.35 胜率；这更像判断层退化而不是输出格式问题。"
+    },
+    {
+      "fact": "当前代码的 _extract_current_night_death_targets 只扫描 public_state、game、request、tool_context，没有扫描 private_information。",
+      "source": "current_agent.py",
+      "interpretation": "这与任务规则中“引擎在女巫行动阶段私下提供当夜狼人目标”直接不匹配。女巫无法可靠区分当前真实刀口、历史死亡和没有刀口。"
+    },
+    {
+      "fact": "当前代码通过 _collect_structured_targets 对包含“死亡、投票、查杀、警长”等关键词的任意子树序列化后提取全部 p\\d+，再把这些玩家累计到 death_chain、vote_pressure、claim_conflict 或 role_chain。",
+      "source": "current_agent.py",
+      "interpretation": "这不是结构化证据解析，而是关键词命中后的全量玩家 ID 污染；一个投票列表、发言对象列表或嵌套事件可能同时给多个玩家加分，违背 task.md 对“单一文本片段、自生成嫌疑名单不能作为毒药依据”的约束。"
+    },
+    {
+      "fact": "current replay 中 p3 是女巫，夜间第 1、2、3、4、5、6 轮的行动均为 pass；最终 audit role_state 显示 p3 的 antidote_available 和 poison_available 仍为 true。",
+      "source": "random_game_replay，seq 39、164、238、304、362、411，以及 final_snapshot",
+      "interpretation": "当前代理不是因为药水耗尽而 pass，而是没有形成可行动的可靠候选。"
+    },
+    {
+      "fact": "replay 第 2 夜狼人目标为 p11；p11 已公开竞选并持续声明预言家，且第 1 夜查杀 p6 被公开放逐。虽然守卫当夜保护了 p11，救药不一定应使用，但这是一个必须被当前夜刀与公开神职价值共同评估的目标。",
+      "source": "random_game_replay，seq 111、136、146-167",
+      "interpretation": "当前系统无法从私密刀口建立这项评估，只能依赖不可靠的公共扫描。"
+    },
+    {
+      "fact": "replay 第 4 夜狼人目标为女巫本人 p3，守卫保护的是 p10；p3 未使用解药，随后在 seq 307 被狼刀死亡。",
+      "source": "random_game_replay，seq 288-307",
+      "interpretation": "这是最明确的漏救机会：规则允许女巫自救，真实刀口命中自身且没有守卫保护。是否必然改变整局胜负仍不确定，但代理至少应识别为高优先级救人候选，而不是无条件 pass。"
+    },
+    {
+      "fact": "第 2 天公开存在 p11 的预言家查杀 p8、p5 的预言家金水 p8 的直接冲突；p11 随后被投出，p5 接过警徽并继续以预言家身份带队，狼队最终包含 p5、p8、p12。",
+      "source": "random_game_replay，seq 179-196、207-217、253-258、324-343",
+      "interpretation": "这是可供毒药判断使用的多源公开冲突链，但当前实现没有可靠地将 claim speaker、claimed target、冲突关系和后续票型绑定到同一目标。"
+    },
+    {
+      "fact": "当前 _build_witch_decision_context 的 recommendation 在存在 high_value_rescue_targets 时优先输出 heal，否则才考虑 poison，但它没有把当前 phase、当前 allowed action kind、私密刀口是否未知作为硬前置条件。",
+      "source": "current_agent.py",
+      "interpretation": "推荐层可能在夜间之外或刀口未知时制造错误的行动暗示；模型仍需从长 packet 中自行纠正。"
+    },
+    {
+      "fact": "current_agent.py 已有隐私提示、行动 schema 前置、pass fallback 和 poison 分数/证据类型门槛；当前评测没有 invalid decision 或 fallback 问题。",
+      "source": "current_agent.py 与 read_evaluation_summary",
+      "interpretation": "不应重写通用协议处理，也不应放宽输出校验；修改应集中在女巫上下文构建、证据记账和任务提示。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "私密信息源错误",
+      "detail": "任务要求的真实狼刀目标位于 private_information，但当前代码的 current_night_death_targets 从公共或混合上下文推断，导致没有刀口时可能误认历史死亡，有刀口时又可能完全看不到当前目标。"
+    },
+    {
+      "cause": "把历史公开死亡和当前夜刀混为一谈",
+      "detail": "死亡关键词扫描没有 round、phase、event type 或 current-night 边界；旧的 PLAYER_DIED、DAY_VOTE_RESOLVED 或死亡名单都可能被当作当夜目标。"
+    },
+    {
+      "cause": "证据账本不是实体级结构化账本",
+      "detail": "_collect_structured_targets 在关键词命中后从整个子树提取所有玩家 ID，无法表达“谁说了什么、针对谁、是否冲突、是否被票型验证”。这会同时造成 false positive poison 候选和 false negative，因为真正的冲突关系没有被保留。"
+    },
+    {
+      "cause": "救人价值判断依赖污染后的嫌疑账本",
+      "detail": "_rank_witch_rescue_targets 要求目标先出现在 ledger 并满足 score/evidence 类型条件。即使 private_information 明确给出刀口，只要该目标未被错误账本命中，救药就不会进入候选。"
+    },
+    {
+      "cause": "代码安全门槛与任务规则没有完全对齐",
+      "detail": "poison gate 只检查累计 score 和 evidence_type_count，不能证明证据来自独立、公开、同一目标的事件；heal gate 没有将“当前真实刀口存在”作为唯一入口，也没有显式处理 self-save。"
+    },
+    {
+      "cause": "长上下文中的推荐与原始 packet 并列",
+      "detail": "模型同时接收完整 private_information、public_state、request、compact_memory、witch_decision_context 和 safety_notes。推荐字段如果错误，模型需要自行发现冲突；当前节点没有一个可靠的、可审计的决策顺序来压制错误推荐。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增严格的 _extract_private_wolf_target(private) 和 _extract_private_resource_state(private)；只从明确的私密字段别名读取狼刀目标，例如 wolf_target、night_kill_target、night_attack_target、attack_target、attacked_player_id、victim_id，并保留 unknown、none、具体 player_id 三种状态。不要使用 generic target_id 作为狼刀目标。将 _build_witch_decision_context 中的 current_night_death_targets 改为只由该私密读取结果产生；private_information 未提供明确目标时返回空集合和 target_status=unknown。",
+      "rationale": "直接对齐规则规定的信息来源，消除把公共历史死亡当作当前刀口的根本错误。unknown 必须与“没有刀”区分，避免在字段缺失时错误救药或毒药。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _extract_current_night_death_targets，使其不再扫描 public_state、game、request、tool_context 的死亡关键词。保留该方法仅作为兼容包装，内部调用私密目标解析，或将其改名为 _extract_private_current_night_target 并更新所有调用点。",
+      "rationale": "任务明确要求“没有当前夜真实夜死/狼刀目标时默认 pass”；公共状态只能用于价值判断，不能用于确认私密刀口。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "将 _collect_structured_targets 从通用关键词全量抓取改为事件级解析。至少为 death、vote、claim_conflict、role_chain 分别实现字段白名单和实体关系：保留 speaker_id、target_id、claimed_role/team、voter_id、vote_target_id、round、phase、conflicts、supports 等字段；禁止从任意字符串或整个嵌套子树提取所有玩家 ID 作为同一证据。",
+      "rationale": "使账本真正表达独立公开证据，而不是关键词污染；这是满足 task.md“结构化、多源、一致证据”要求的必要条件。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为每个候选建立按目标分桶的公开证据集合，而不是简单累计分数。证据类型只能在同一目标上分别出现；poison 候选至少要求两类独立公开证据，并且至少一类来自显式 claim conflict、显式查杀/对跳冲突或已解析的集中票型。普通 mention、被多人提及、模糊发言和自生成 suspect list 不得增加 poison 资格。",
+      "rationale": "当前 score>=4 且 evidence_type_count>=2 仍可能由污染后的同一文本产生。集合和来源类型约束能降低误毒，同时保留强对跳和集中票型场景。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _rank_witch_rescue_targets：先要求 resource_state.antidote_available is True、当前 action contract 包含合法 heal/save/antidote 行动、target_status 为 concrete；再将当前刀口与公开价值信号结合。公开身份明确为 seer、sheriff、guard、hunter 或其他关键带队位，或者当前目标为女巫本人且规则允许 self-save 时，进入高价值候选。若当前刀口 concrete 但没有价值证据，则只输出可供模型审慎判断的 rescue_target_candidates，不自动推荐救药。",
+      "rationale": "保证救药永远绑定真实当前刀口，并覆盖 replay 中 p3 自身被刀的漏救情形；同时避免把普通历史死亡当作救人目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_witch_decision_context 中加入明确的 decision_gate 字段：phase_is_witch_action、pass_kind、heal_kind、poison_kind、target_status、antidote_available、poison_available、rescue_candidates、poison_candidates。recommendation 只能按以下顺序生成：非女巫动作或无 pass 则不生成；target_status=unknown/none 时 pass；concrete target 且满足高价值救人时 heal；否则只有满足 poison gate 才 poison；其余 pass。",
+      "rationale": "把规则顺序变成可检查的中间表示，减少模型从长 packet 自行推理协议和私密状态的负担。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "收紧 _apply_role_safe_fallback：heal 只有在 action target 等于 private current target 且该目标通过 rescue gate 时才放行；poison 只有在 target 通过事件级 poison gate 且 target 属于当前合法 poison target_ids 时才放行。若 target_status unknown 或 gate 不满足，优先返回合法 pass。记录 fallback_reason 时区分 private_target_unknown、no_current_attack、low_value_rescue、low_confidence_poison。",
+      "rationale": "当前 fallback 对 heal 主要检查 ledger rescue_targets，对 poison 主要检查污染后的 score；新门槛应直接约束最终动作，防止模型偶然输出高风险药水动作。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _reset_compact_memory 中保留当前账本的游戏隔离逻辑，但将账本字段改为结构化 evidence records，并限制每个目标最多保留少量去重事件。不要把完整历史自动注入 prompt，只向模型注入压缩后的目标级事实和证据类型。",
+      "rationale": "保持当前工作区的预算和隐私边界，同时避免长历史造成 token 浪费和错误关联。"
+    },
+    {
+      "file": "task.md",
+      "change": "将女巫决策清单改成显式顺序：先检查 phase/allowed_actions；再从 private_information 确认当夜 target_status；target_status 为 unknown 或 none 必须 pass；有 concrete target 才评估救药；救药优先关键公开神职、警长/归票核心或 self-save；毒药必须使用目标级、多源、公开、独立证据；任何仅来自 mention、发言片段、自动嫌疑名单或历史死亡的证据都不能用毒。",
+      "rationale": "让模型提示与代码中间表示一致，降低代码修复后模型仍按旧的“扫描公共死亡”直觉行动的风险。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加纯函数级测试或至少加入可被 coding agent 验证的案例：private wolf target=p3 且 self-save 合法时 rescue candidate 包含 p3；private wolf target 缺失而 public_state 有历史 dead p1 时必须 pass；claim conflict 只提到 p8 但没有结构化 speaker/target 关系时不得生成 poison candidate；两类独立冲突均指向 p5 时才允许 p5 进入 poison candidates。",
+      "rationale": "当前问题主要是输入解释和边界条件错误，测试应直接锁定这些回归点，而不是只测试 JSON schema。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "私密字段别名推断可能不完整",
+      "impact": "如果实际行动包使用未覆盖的字段名，修复后会把可用刀口误判为 unknown，导致过度 pass。",
+      "mitigation": "coding agent 应只依据现有代码、task packet schema 和可见测试确认字段名；可支持多个精确别名，但不要退回 generic target_id 或公共关键词扫描。"
+    },
+    {
+      "risk": "救药门槛过严会错过普通村民但具有轮次价值的救人",
+      "impact": "如果关键轮次价值未显式编码，代理可能保守。",
+      "mitigation": "把“公开关键身份”和“残局/轮次临界”作为独立、可解释的 public_value 信号；没有可靠公开信息时宁可保留，符合当前任务的保守规则。"
+    },
+    {
+      "risk": "毒药仍可能受到模型对公开文本的主观总结影响",
+      "impact": "即使代码 gate 正确，模型可能声称存在冲突并输出毒药。",
+      "mitigation": "最终 fallback 必须只信代码产生的结构化 poison_candidates，不信模型自行拼出的候选；模型只能从合法 target_ids 中选择。"
+    },
+    {
+      "risk": "当前 public_state 的具体字段结构未在必读资料中完整展开",
+      "impact": "过度假设 claims/votes 的字段名可能导致解析器失效。",
+      "mitigation": "实现字段白名单时保留精确别名映射，并对缺失字段安全降级为无证据；不要修改 engine、可见性或行动 schema。"
+    },
+    {
+      "risk": "父节点 witch-n00060 的较高胜率可能来自随机对局差异，而非全部是当前代码退化",
+      "impact": "不能把 0.35 到 0.2 的差异完全归因于单一 bug。",
+      "mitigation": "将私密刀口修复视为高置信根因，将具体救毒时机视为 replay 支持的机会分析；后续评测应关注 focus win rate、药水使用正确率、误毒率和当前刀口识别率。"
+    },
+    {
+      "risk": "加入更多上下文字段可能增加 prompt 长度和模型请求成本",
+      "impact": "当前已有较高输入 token 使用量，过度扩展可能影响预算下的稳定性。",
+      "mitigation": "只注入压缩后的 decision_gate、最多少量目标级证据和最近公共摘要；不要注入完整历史或完整审计回放。"
+    }
+  ],
+  "code_agent_brief": "请在候选工作区中改进 witch Task-Agent，不得修改 Game Engine、规则、身份能力、胜负裁决、信息可见性、工具实现、行动 schema、审计记录或任何外部预算。核心问题是：当前 task_agent.py 的 _extract_current_night_death_targets 错误地从 public_state/game/request/tool_context 的死亡关键词推断当前刀口，却没有从 private_information 读取引擎私下提供的当夜狼刀；同时 _collect_structured_targets 会在关键词命中的任意子树中提取全部玩家 ID，污染 poison/heal evidence ledger。请优先实现精确的 private wolf-target/resource 解析，区分 unknown、none、concrete；重写当前刀口入口，使没有 concrete 私密刀口时最终动作默认合法 pass；将救药候选绑定到 concrete 当前刀口，并支持公开关键神职、警长核心和合法 self-save；将毒药候选改为目标级、事件级、多源独立公开证据，普通 mention、单段文本、自生成嫌疑名单和历史死亡不得通过；收紧最终 fallback，只放行通过结构化 gate 且在 allowed target_ids 中的 heal/poison，否则返回 pass。同步更新 task.md，使模型按 phase/action contract、私密刀口、救人价值、毒药证据顺序决策。请增加针对以下情形的测试或等价可验证逻辑：1) private target=p3、self-save 合法时 p3 可成为救人候选；2) private target 缺失但 public_state 有历史死亡时必须 pass；3) 无明确 speaker/target 关系的文本不得产生毒药候选；4) 两类独立公开冲突共同指向同一目标时该目标才可进入 poison candidates。保持现有 JSON 合法性、重试、隐私提示和预算行为不变。"
+}

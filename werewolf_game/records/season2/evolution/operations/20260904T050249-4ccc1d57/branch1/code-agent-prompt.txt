@@ -1,0 +1,71 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-base 的主要问题不是行动 schema，而是女巫专属决策几乎完全交给通用 LLM：白天发言缺席或影响力弱，夜间毒药缺少硬约束，临终信息会因无跨轮记忆而编错。随机回放中女巫首夜救平民可接受，但随后白天没有保护真预言家阵营、第三夜把毒药用在当夜狼刀目标 p6 上，实际没有增加击杀且毒中好人；被放逐后的遗言还声称毒了 p8，与审计事实矛盾。下一代应做最小修改：在 task.md 中加入女巫阶段化优先级和公开发言模板；在 task_agent.py 中为 witch 夜间决策注入私密摘要与安全护栏，尤其禁止或强烈避免“毒狼刀目标/无证据毒人”，并在遗言/公开发言中提供只使用当前 private_information 的药水事实核对，避免编造历史。",
+  "evidence": [
+    "评测汇总：witch-base 20 局仅 4 胜 16 负，胜率 0.2；decision_count=3256，fallback_count=21，invalid_decision_count=21，因 invalid_decisions=21 > 10 被推荐 discarded。注意这些 invalid 多来自其他角色 guard 的非法 guard_protect，未必能通过修改 witch 直接解决。",
+    "当前代码是通用最小 TaskAgent：observe 不保存跨行动状态；每次 decide 都是新会话；只提供当前状态和 current_round_dialogue 工具，不做角色专属摘要、药水事实校验或夜间行动后处理。",
+    "随机回放 game1：p1 为女巫。seq39 女巫首夜 heal p6，seq43 夜间无死亡；这本身可解释为保护村民，但之后没有转化为有效白天信息或带队。",
+    "game1 seq105：p1 在第一天 day_discussion 直接 pass；seq118 白天投票也 pass。当天真预言家 p3 被 p2/p7/p10/p11 等票推出局，p1 没有通过发言或投票帮助维护更可信的预言家线。",
+    "game1 seq252：第三夜 p1 提交 witch_poison target_id=p6；seq247 狼队目标也是 p6；seq256 结果 p6 死因 wolf_attack，poison_targets 也为 p6。p6 真实身份为 villager，因此毒药既没有杀狼，也没有额外改变死亡结果。",
+    "game1 seq195：p1 白天发言称“双死不一定就是刀加毒，也可能是守卫守错导致刀穿、加上女巫救人的组合”，逻辑混乱，且容易把场上讨论引向关于女巫药水的错误推断。",
+    "game1 seq294-295：p1 遗言称“毒药毒了p8”，但审计显示 p8 是第二天被白天放逐的 hunter，女巫实际第三夜毒的是 p6。这说明无跨轮记忆下模型会在公开遗言中编造或错报私密药水历史。",
+    "game1 结局 seq382：狼队胜利，存活 p5/p10/p11 三狼和 p9/p12；女巫 p1 已死亡且两药耗尽，没有留下可信可用的药水信息。"
+  ],
+  "root_causes": [
+    "女巫行动没有角色专属硬约束：当前 agent 只让模型从 allowed_actions 里选，不会阻止低价值毒法，例如毒当夜狼刀目标、毒缺少公开证据的玩家、或在好人落后时浪费毒药。",
+    "无跨行动状态与无事实核对导致公开叙述失真：当前 observe 明确不保存状态，遗言/发言只能依赖当前包和模型记忆，容易错报自己过去用药对象。",
+    "白天参与度过低：女巫作为强神在首日直接 pass 发言和投票，未使用公开警上发言、票型、死亡信息来支持可信预言家或锁定狼坑。",
+    "prompt 对私密信息边界只强调不要泄露，但缺少“何时可以在死亡遗言中准确报药”“公开只能说可由公共信息推出的内容”的操作化规则，导致既可能过度隐藏，也可能胡乱暗示药水。",
+    "评测中的 invalid_decision_count 主要由其他角色基线引起，修改 witch 节点本身可能无法消除该筛选风险；因此下一代重点应提升 witch 胜率和减少 witch 自身幻觉，同时承认全局 invalid 不是本节点完全可控。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task.md",
+      "change": "加入女巫夜间优先级：首夜通常优先救被刀的非强狼嫌疑目标；解药用完后，毒药只在有至少两类公开证据时使用，例如明确假预言家、冲票/票型异常、白天强带错方向、与已知死亡/遗言矛盾；禁止把毒药用在当夜狼刀目标，除非唯一目标且明确需要防止特殊收益，但默认 pass。",
+      "rationale": "随机回放中最严重的女巫错误是第三夜毒 p6，而 p6 同时是狼刀目标且为村民。增加明确规则能减少无收益毒和误伤。"
+    },
+    {
+      "file": "task.md",
+      "change": "加入白天发言规则：女巫存活且有发言机会时不要无理由 pass；必须给出 2-3 个基于公开发言/票型的怀疑点和一个暂定投票方向；在多预言家对跳局中优先支持查验链、警徽行为、票型更自洽的一方，不盲目弃票。",
+      "rationale": "game1 中 p1 首日发言和投票都 pass，未帮助真预言家 p3 抵抗狼队冲票，削弱好人阵营信息整合能力。"
+    },
+    {
+      "file": "task.md",
+      "change": "加入公开信息边界与遗言规则：存活时不得把狼刀目标、药水余量、用药对象当公开事实；若自己已死亡且有 last_words，可准确公开自己真实角色与实际用药历史，但只能依据 private_information 中当前可见的药水状态/行动确认，不确定则说“不确定/以审计不可见为准”，禁止编造具体毒救对象。",
+      "rationale": "game1 遗言错称毒了 p8，实际毒 p6；这是事实幻觉，会误导好人。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 decide 构造 prompt 前，为 witch 增加一个只读的 strategy_hints/role_private_summary 字段：从 turn_packet['private_information'] 和 turn_packet['request']['allowed_actions'] 提取 role、antidote_available、poison_available、wolf_target/current night target、当前合法 witch_heal/witch_poison/pass 目标，并用短文本列出“不要公开这些私密字段”。不要访问任何隐藏文件或引擎外状态。",
+      "rationale": "当前长包中关键信息可能被模型忽略。将当晚狼刀、药水余量、合法行动集中呈现，可让模型先确认事实再行动，同时不改变可见性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 witch 夜间安全后处理函数，例如 _safe_witch_action(action, turn_packet)：仅在 private role 为 witch 且 request phase/kind 为 night_witch 时启用；如果模型选择 witch_poison 且 target_id 等于 private_information 中的 wolf_target/current_wolf_target/night.wolf_target，则改为 pass；如果 poison 可用但没有任何公开证据摘要或当前轮对话为空，也优先 pass。保留 decision_error 校验，确保改写后的 action 是 allowed_actions 中合法 kind。",
+      "rationale": "这是最小可执行的确定性护栏，直接防止 game1 中“毒狼刀目标”的低价值误伤。必须只使用行动包内已经提供给女巫的私密信息，不绕过可见性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 witch 的 speech/last_words 增加 prompt 片段或 role_public_speech_hints：存活发言要基于 public_state 和当前轮 dialogue，不要 pass；死亡遗言如果 private_information 含历史药水确认则逐项核对，否则不要给具体对象。若无法可靠取得历史确认，不要让代码臆造。",
+      "rationale": "降低公开发言空转和遗言错报风险。由于当前 agent 无长期记忆，必须把“不知道就不要编”写进每次提示。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "可选地增加一个轻量的 action fallback，不改变 engine schema：当模型最终非法且当前 allowed_actions 中存在 pass 时，在抛 RuleViolationError 前仅对 witch 自身决策返回 pass；不要对其他角色或引擎做改动。",
+      "rationale": "评测对 invalid_decisions 敏感。虽然当前 invalid 多来自 guard，witch 节点可至少避免自身非法导致 fallback。但需谨慎，不能掩盖策略错误，也不能修改其他角色规则。"
+    }
+  ],
+  "risks": [
+    "如果过度禁止毒药，女巫可能错过需要主动追刀狼人的关键夜晚，导致好人输出不足；因此规则应是“缺证据或毒狼刀目标则 pass”，而不是永不毒。",
+    "task_agent.py 的确定性改写如果错误识别 private_information 中 wolf_target 字段名，可能不起效或误改合法行动；coding agent 应兼容多个可能键名并在字段不存在时不改写。",
+    "遗言准确报药依赖 turn_packet 是否仍包含足够私密历史。如果引擎只提供当前药水余量而不提供历史对象，不能通过隐藏状态补齐，只能提示模型不要编具体对象。",
+    "全局 invalid_decision_count 在 witch-base 摘要中主要来自其他角色 guard 的非法目标；witch 子节点只能修改 witch 的 task_agent.py/task.md，未必能解决节点因其他角色 fallback 被 discarded 的问题。",
+    "更强的女巫公开发言可能暴露神职身份，使狼队更早刀女巫；需要强调存活时使用普通好人视角表达，只有临死或残局必要时再明确跳身份。"
+  ],
+  "code_agent_brief": "请在 witch 候选工作区只修改 task_agent.py 和 task.md，目标是让下一代女巫减少低价值用药和公开信息幻觉。task.md 增加女巫专属阶段化策略：首夜可救非强狼嫌疑刀口；毒药必须有公开证据，默认不要毒当夜狼刀目标；白天不要无理由 pass，要基于公开发言/票型给怀疑点和投票方向；存活时不泄露狼刀和药水，死亡遗言只在 private_information 明确支持时准确报药，否则不要编造对象。task_agent.py 在 decide 中为 witch 构造短的 role_private_summary/strategy_hints，集中列出药水余量、当夜 wolf_target、合法 heal/poison/pass 目标和私密信息边界；新增 _safe_witch_action，在 normalize_decision 后、decision_error 前调用：若当前角色是 witch 且夜间女巫阶段，模型选择 witch_poison 且 target_id 等于行动包私密字段中的 wolf_target/current_wolf_target/night.wolf_target，则把 action 改为同 request_id/player_id 的 pass（仅当 pass 在 allowed_actions 中合法）；字段不存在时不改写。不要访问网络、文件、shell或引擎隐藏状态，不改 Game Engine、行动 schema、可见性、规则、模型网关或评测逻辑。"
+}

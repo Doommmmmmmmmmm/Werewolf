@@ -1,0 +1,518 @@
+--- witch-n00003/task_agent.py
++++ witch-n00061/task_agent.py
+@@ -191,8 +191,10 @@
+         }
+         self._memory_game_id: str | None = None
+         self._recent_public_summaries: list[str] = []
++        self._recent_public_structures: list[dict[str, Any]] = []
+         self._last_public_round_phase: str = ""
+         self._last_private_resource_summary: str = ""
++        self._last_witch_context: dict[str, Any] = {}
+         self._last_decision_audit: dict[str, Any] | None = None
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+@@ -210,6 +212,12 @@
+             if not self._recent_public_summaries or self._recent_public_summaries[-1] != digest:
+                 self._recent_public_summaries.append(digest)
+                 self._recent_public_summaries = self._recent_public_summaries[-6:]
++        structured = self._build_public_structure(sync_packet)
++        if structured:
++            structured_text = self._safe_json_dump(structured)
++            if not self._recent_public_structures or self._safe_json_dump(self._recent_public_structures[-1]) != structured_text:
++                self._recent_public_structures.append(structured)
++                self._recent_public_structures = self._recent_public_structures[-4:]
+         self._last_public_round_phase = self._build_round_phase_tag(sync_packet)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+@@ -224,6 +232,8 @@
+             self._last_private_resource_summary = private_state
+         compact_memory = self._compact_memory_snapshot()
+         safety_notes = self._build_safety_notes(private)
++        witch_context = self._build_witch_context(turn_packet, private, compact_memory)
++        self._last_witch_context = witch_context
+ 
+         system = self._system_prompt(private)
+         prompt = {
+@@ -236,6 +246,7 @@
+             "compact_memory": compact_memory,
+             "private_resource_state": private_state,
+             "safety_notes": safety_notes,
++            "witch_context": witch_context,
+             "history_policy": {
+                 "default_context": "current_state_only",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -388,6 +399,8 @@
+         snapshot: dict[str, Any] = {
+             "recent_public": self._recent_public_summaries[-4:],
+         }
++        if self._recent_public_structures:
++            snapshot["recent_public_structured"] = self._recent_public_structures[-2:]
+         if self._last_public_round_phase:
+             snapshot["last_public_round_phase"] = self._last_public_round_phase
+         if self._last_private_resource_summary:
+@@ -419,6 +432,189 @@
+             "任何内部状态都不能被说成已公开事实。"
+         )
+ 
++    def _build_witch_context(
++        self,
++        turn_packet: Mapping[str, Any],
++        private: Mapping[str, Any],
++        compact_memory: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        if self.profile.role != "witch" and str(private.get("role")) != "witch":
++            return {}
++        request = turn_packet.get("request") or {}
++        allowed_actions = [item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)]
++        legal_targets = list(
++            dict.fromkeys(
++                str(item.get("target_id"))
++                for item in allowed_actions
++                if item.get("target_id")
++            )
++        )
++        resources = {
++            "antidote_available": self._truthy_scalar(
++                self._extract_first_scalar(private, ("antidote_available", "save_available", "heal_available"))
++            ),
++            "poison_available": self._truthy_scalar(
++                self._extract_first_scalar(private, ("poison_available", "poison_left", "kill_available"))
++            ),
++            "antidote_used": self._truthy_scalar(
++                self._extract_first_scalar(private, ("antidote_used", "used_antidote", "save_used"))
++            ),
++            "poison_used": self._truthy_scalar(
++                self._extract_first_scalar(private, ("poison_used", "used_poison", "kill_used"))
++            ),
++        }
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
++        current_dialogue_text = self._safe_json_dump(current_dialogue) if current_dialogue else ""
++        text_blobs: list[str] = [
++            self._safe_json_dump(turn_packet.get("public_state") or {}),
++            self._safe_json_dump(turn_packet.get("game") or {}),
++            self._safe_json_dump(request),
++            self._safe_json_dump(compact_memory),
++            current_dialogue_text,
++        ]
++        for item in self._recent_public_structures[-2:]:
++            text_blobs.append(self._safe_json_dump(item))
++
++        night_victim = self._extract_first_scalar(
++            private,
++            (
++                "night_kill_target",
++                "night_target",
++                "victim",
++                "save_target",
++                "heal_target",
++                "wolf_target",
++                "knife_target",
++            ),
++        )
++        if night_victim is None:
++            night_victim = self._extract_first_scalar(
++                turn_packet.get("public_state"),
++                ("night_kill_target", "night_target", "victim", "save_target", "heal_target"),
++            )
++
++        recent_deaths = self._collect_context_ids(
++            text_blobs,
++            ("死亡", "出局", "淘汰", "夜刀", "狼刀", "night kill", "wolf kill", "被刀"),
++        )
++        vote_pressure = self._collect_context_ids(
++            text_blobs,
++            ("投票", "票型", "归票", "票压", "vote", "ballot"),
++        )
++        counterclaims = self._collect_context_ids(
++            text_blobs,
++            ("悍跳", "对跳", "查杀", "验出", "假跳", "claim", "counterclaim", "wolf", "狼人"),
++        )
++        sheriff_chain = self._collect_context_ids(
++            text_blobs,
++            ("警长", "警徽", "上警", "移交", "归票", "sheriff", "badge"),
++        )
++        protected = self._collect_context_ids(
++            text_blobs,
++            ("金水", "好人", "站边", "确认好", "clear", "town", "safe"),
++        )
++
++        candidate_scores = self._score_witch_candidates(
++            legal_targets,
++            recent_deaths=recent_deaths,
++            vote_pressure=vote_pressure,
++            counterclaims=counterclaims,
++            sheriff_chain=sheriff_chain,
++            protected=protected,
++            night_victim=str(night_victim or ""),
++            text_blobs=text_blobs,
++        )
++        heal_policy = self._build_heal_policy(
++            legal_targets,
++            resources=resources,
++            night_victim=str(night_victim or ""),
++            candidate_scores=candidate_scores,
++        )
++        poison_policy = self._build_poison_policy(
++            legal_targets,
++            resources=resources,
++            candidate_scores=candidate_scores,
++        )
++        return {
++            "phase": self._last_public_round_phase,
++            "decision_order": ["recent_deaths", "vote_pressure", "counterclaims", "sheriff_chain", "resources", "legal_targets"],
++            "resources": resources,
++            "legal_targets": legal_targets[:8],
++            "night_victim": str(night_victim or ""),
++            "signals": {
++                "recent_deaths": recent_deaths,
++                "vote_pressure": vote_pressure,
++                "counterclaims": counterclaims,
++                "sheriff_chain": sheriff_chain,
++                "protected": protected,
++            },
++            "candidate_scores": candidate_scores[:4],
++            "heal_policy": heal_policy,
++            "poison_policy": poison_policy,
++        }
++
++    def _build_heal_policy(
++        self,
++        legal_targets: list[str],
++        *,
++        resources: Mapping[str, Any],
++        night_victim: str,
++        candidate_scores: list[dict[str, Any]],
++    ) -> dict[str, Any]:
++        score_map = {str(item.get("target_id")): int(item.get("score", 0)) for item in candidate_scores}
++        preferred_target = night_victim if night_victim in legal_targets else ""
++        preferred_score = score_map.get(preferred_target, 0)
++        should_heal = bool(resources.get("antidote_available") and preferred_target and preferred_score >= 2)
++        reason = ""
++        if should_heal:
++            reason = "night_victim_high_value"
++        elif not resources.get("antidote_available"):
++            reason = "antidote_unavailable"
++        elif not preferred_target:
++            reason = "no_legal_victim"
++        else:
++            reason = "victim_not_high_value_enough"
++        return {
++            "available": bool(resources.get("antidote_available")),
++            "target_id": preferred_target,
++            "score": preferred_score,
++            "should_heal": should_heal,
++            "reason": reason,
++        }
++
++    def _build_poison_policy(
++        self,
++        legal_targets: list[str],
++        *,
++        resources: Mapping[str, Any],
++        candidate_scores: list[dict[str, Any]],
++    ) -> dict[str, Any]:
++        available = bool(resources.get("poison_available"))
++        top = candidate_scores[0] if candidate_scores else {}
++        target_id = str(top.get("target_id") or "")
++        score = int(top.get("score", 0) or 0)
++        should_poison = bool(available and target_id and target_id in legal_targets and score >= 4)
++        reason = ""
++        if should_poison:
++            reason = "high_confidence_target"
++        elif not available:
++            reason = "poison_unavailable"
++        elif not target_id:
++            reason = "no_ranked_target"
++        elif target_id not in legal_targets:
++            reason = "target_not_legal"
++        else:
++            reason = "score_below_threshold"
++        return {
++            "available": available,
++            "target_id": target_id if target_id in legal_targets else "",
++            "score": score,
++            "threshold": 4,
++            "should_poison": should_poison,
++            "reason": reason,
++        }
++
+     def _apply_role_safe_fallback(
+         self,
+         action: dict[str, Any],
+@@ -426,90 +622,163 @@
+         raw_response: object,
+     ) -> dict[str, Any]:
+         kind = str(action.get("kind", ""))
+-        if not self._is_poison_action_kind(kind):
++        request = turn_packet["request"]
++        if not (self._is_poison_action_kind(kind) or self._is_heal_action_kind(kind)):
+             self._last_decision_audit = {
+                 "raw_response": raw_response,
+                 "normalized_action": action,
+             }
+             return action
+ 
+-        target_id = str(action.get("target_id") or "").strip()
+-        if not target_id:
++        pass_action = self._find_pass_action(request.get("allowed_actions", []), request)
++        if not action.get("target_id"):
+             self._last_decision_audit = {
+                 "raw_response": raw_response,
+                 "normalized_action": action,
+-                "fallback_reason": "witch_poison_missing_target",
++                "fallback_reason": f"witch_{kind or 'action'}_missing_target",
+             }
+-            return action
+-
+-        pass_action = self._find_pass_action(turn_packet["request"].get("allowed_actions", []), turn_packet["request"])
+-        if pass_action is None:
+-            self._last_decision_audit = {
+-                "raw_response": raw_response,
+-                "normalized_action": action,
+-            }
+-            return action
+-
+-        confidence_targets = self._high_confidence_targets(turn_packet)
+-        if target_id in confidence_targets:
+-            self._last_decision_audit = {
+-                "raw_response": raw_response,
+-                "normalized_action": action,
+-                "high_confidence_targets": sorted(confidence_targets),
+-            }
+-            return action
+-
+-        fallback_reason = "witch_poison_low_confidence"
++            return pass_action or action
++
++        context = self._build_witch_context(turn_packet, turn_packet.get("private_information") or {}, self._compact_memory_snapshot())
++        self._last_witch_context = context
++        target_id = str(action.get("target_id") or "").strip()
++        if self._is_heal_action_kind(kind):
++            heal_policy = context.get("heal_policy") or {}
++            if target_id and heal_policy.get("should_heal") and target_id == heal_policy.get("target_id"):
++                self._last_decision_audit = {
++                    "raw_response": raw_response,
++                    "normalized_action": action,
++                    "heal_policy": heal_policy,
++                }
++                return action
++            fallback_reason = "witch_heal_low_value"
++        else:
++            poison_policy = context.get("poison_policy") or {}
++            if target_id and poison_policy.get("should_poison") and target_id == poison_policy.get("target_id"):
++                self._last_decision_audit = {
++                    "raw_response": raw_response,
++                    "normalized_action": action,
++                    "poison_policy": poison_policy,
++                    "candidate_scores": context.get("candidate_scores", []),
++                }
++                return action
++            fallback_reason = "witch_poison_low_confidence"
++
+         self._last_decision_audit = {
+             "raw_response": raw_response,
+             "normalized_action": action,
+             "fallback_action": pass_action,
+             "fallback_reason": fallback_reason,
+-            "high_confidence_targets": sorted(confidence_targets),
+-        }
+-        return pass_action
++            "witch_context": context,
++        }
++        return pass_action or action
+ 
+     def _high_confidence_targets(self, turn_packet: dict[str, Any]) -> set[str]:
+-        texts: list[str] = []
+-        texts.extend(self._recent_public_summaries[-4:])
+-        texts.append(self._last_public_round_phase)
+-        texts.append(self._last_private_resource_summary)
+-        for key in ("public_state", "game", "request"):
+-            value = turn_packet.get(key)
+-            if value is not None:
+-                texts.append(self._safe_json_dump(value))
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue")
+-        if current_dialogue:
+-            texts.append(self._safe_json_dump(current_dialogue))
+-
+-        combined = " \n ".join(text for text in texts if text)
+-        combined_lower = combined.lower()
+-        if not combined:
+-            return set()
+-
+-        confidence_markers = (
+-            "查杀",
+-            "狼人",
+-            "悍跳",
+-            "刀口",
+-            "狼刀",
+-            "验出",
+-            "强狼",
+-            "明狼",
+-            "必狼",
+-            "高置信",
+-            "可毒",
+-            "毒他",
+-            "刀他",
+-            "wolf",
+-            "kill",
+-            "poison",
+-            "suspicious",
+-        )
+-        if not any(marker.lower() in combined_lower for marker in confidence_markers):
+-            return set()
+-        return set(_PLAYER_ID_PATTERN.findall(combined))
++        context = self._build_witch_context(
++            turn_packet,
++            turn_packet.get("private_information") or {},
++            self._compact_memory_snapshot(),
++        )
++        targets: set[str] = set()
++        for item in context.get("candidate_scores", []):
++            if not isinstance(item, Mapping):
++                continue
++            target_id = str(item.get("target_id") or "").strip()
++            score = self._nonnegative_int(item.get("score"), fallback=0) or 0
++            if target_id and score >= 4:
++                targets.add(target_id)
++        return targets
++
++    def _collect_context_ids(self, texts: list[str], keywords: tuple[str, ...]) -> list[str]:
++        counts: dict[str, int] = {}
++        for text in texts:
++            if not text:
++                continue
++            lowered = text.lower()
++            for keyword in keywords:
++                keyword_lower = keyword.lower()
++                start = 0
++                while True:
++                    index = lowered.find(keyword_lower, start)
++                    if index == -1:
++                        break
++                    window = text[max(0, index - 40) : min(len(text), index + max(80, len(keyword) + 45))]
++                    for player_id in self._extract_player_ids(window):
++                        counts[player_id] = counts.get(player_id, 0) + 1
++                    start = index + max(1, len(keyword_lower))
++        return [player_id for player_id, _count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:4]]
++
++    def _score_witch_candidates(
++        self,
++        legal_targets: list[str],
++        *,
++        recent_deaths: list[str],
++        vote_pressure: list[str],
++        counterclaims: list[str],
++        sheriff_chain: list[str],
++        protected: list[str],
++        night_victim: str,
++        text_blobs: list[str],
++    ) -> list[dict[str, Any]]:
++        scores: dict[str, int] = {target_id: 0 for target_id in legal_targets}
++        evidence: dict[str, set[str]] = {target_id: set() for target_id in legal_targets}
++
++        def bump(target_id: str, value: int, reason: str) -> None:
++            if target_id not in scores:
++                return
++            scores[target_id] += value
++            evidence[target_id].add(reason)
++
++        for target_id in recent_deaths:
++            bump(target_id, 3, "death")
++        for target_id in vote_pressure:
++            bump(target_id, 2, "vote")
++        for target_id in counterclaims:
++            bump(target_id, 3, "counterclaim")
++        for target_id in sheriff_chain:
++            bump(target_id, 2, "sheriff")
++        for target_id in protected:
++            bump(target_id, -2, "protected")
++        if night_victim:
++            bump(night_victim, 2, "night_victim")
++
++        combined_text = " \n ".join(text for text in text_blobs if text)
++        combined_lower = combined_text.lower()
++        if combined_text:
++            for target_id in legal_targets:
++                if target_id in combined_text:
++                    if any(marker in combined_lower for marker in ("查杀", "悍跳", "对跳", "wolf", "kill", "poison", "狼人")):
++                        bump(target_id, 1, "local_claim")
++                    if any(marker in combined_lower for marker in ("金水", "好人", "站边", "clear", "safe")):
++                        bump(target_id, -1, "local_safe")
++
++        ranked = [
++            {
++                "target_id": target_id,
++                "score": score,
++                "reasons": sorted(evidence.get(target_id, set())),
++            }
++            for target_id, score in scores.items()
++            if score > 0
++        ]
++        ranked.sort(key=lambda item: (-int(item.get("score", 0) or 0), str(item.get("target_id") or "")))
++        return ranked
++
++    @staticmethod
++    def _truthy_scalar(value: Any) -> bool:
++        if isinstance(value, bool):
++            return value
++        if value is None:
++            return False
++        if isinstance(value, (int, float)):
++            return value != 0
++        text = str(value).strip().lower()
++        return text not in {"", "0", "false", "none", "null", "no", "off"}
++
++    @staticmethod
++    def _is_heal_action_kind(kind: str) -> bool:
++        normalized = kind.lower().strip()
++        return normalized in {"antidote", "heal", "save", "witch_heal", "witch_save"} or "heal" in normalized or "save" in normalized or "antidote" in normalized
+ 
+     def _find_pass_action(
+         self,
+@@ -551,8 +820,10 @@
+     def _reset_compact_memory(self, game_id: str | None) -> None:
+         self._memory_game_id = game_id
+         self._recent_public_summaries = []
++        self._recent_public_structures = []
+         self._last_public_round_phase = ""
+         self._last_private_resource_summary = ""
++        self._last_witch_context = {}
+         self._last_decision_audit = None
+ 
+     def _build_public_digest(self, sync_packet: Mapping[str, Any]) -> str:
+@@ -577,6 +848,20 @@
+             return ""
+         return self._truncate_text(" | ".join(parts), 260)
+ 
++    def _build_public_structure(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
++        serialized = self._safe_json_dump(sync_packet)
++        structure: dict[str, Any] = {"round": self._build_round_phase_tag(sync_packet)}
++        for label, keywords in (
++            ("death", ("死亡", "出局", "淘汰", "night kill", "wolf kill", "被刀")),
++            ("vote", ("投票", "票型", "归票", "票压", "vote", "ballot")),
++            ("sheriff", ("警长", "警徽", "上警", "移交", "sheriff", "badge")),
++            ("claim", ("查杀", "悍跳", "对跳", "金水", "claim", "验出")),
++        ):
++            ids = self._collect_context_ids([serialized], keywords)
++            if ids:
++                structure[label] = ids
++        return {key: value for key, value in structure.items() if value}
++
+     def _build_round_phase_tag(self, packet: Mapping[str, Any]) -> str:
+         round_value = self._extract_first_scalar(packet, ("round", "day", "night", "turn"))
+         phase_value = self._extract_first_scalar(packet, ("phase", "public_phase", "stage", "channel"))
+--- witch-n00003/task.md
++++ witch-n00061/task.md
+@@ -26,6 +26,8 @@
+ 
+ ## 决策习惯
+ 
+-- 每次决策都结合最近几天的票型、死亡信息、警长归票和公开发言摘要。
+-- 不要固定首夜必用药；要根据局势判断救、毒、留。
++- 每次行动先按这个顺序看局势：最近死亡/夜刀、票型与票压、公开对跳与查杀链、警徽归属或转移、再看当前可用药水和合法目标。
++- 女巫的判断不要只靠关键词命中；“看到狼/刀/查杀”本身不等于高置信，必须结合公开证据链和目标是否仍合法。
++- 解药只在确实能救到关键夜刀、并且这次救人有明显局势价值时使用；否则优先保留。
++- 毒药只打结构化证据支持下的高置信目标；证据不足、候选太散或只剩文本噪声时，优先保留或合法弃权。
+ - 目标不清晰时，宁可保留，也不要把药水浪费在低置信对象上。

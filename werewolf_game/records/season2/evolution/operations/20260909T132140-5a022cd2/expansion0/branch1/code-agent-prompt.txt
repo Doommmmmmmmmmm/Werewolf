@@ -1,0 +1,105 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00022 已从基础节点的 20% 胜率提升到 30%，且 20 局全部完成、女巫焦点决策无非法行动或 fallback；但相较父节点 witch-n00001 的 35% 胜率仍有下降。当前主要问题不是协议可靠性，而是跨局状态隔离、药水余量字段归一化、候选目标评分偏差以及在目标非法时静默改投第一个合法目标。下一代应保留当前节点的结构化决策摘要和保密约束，但将行动建议改为“硬约束安全层 + 证据分层”，避免启发式误导模型或误用药水。",
+  "evidence": [
+    "当前节点评测为 20 局、6 胜 14 负、胜率 0.30；complete_game_count=20，failed_game_count=0，focus_decision_count=253，focus_fallback_count=0，focus_invalid_decision_count=0，说明当前实现的运行稳定性良好，但策略质量仍有限。",
+    "父节点 witch-n00001 的评测为 20 局、7 胜 13 负、胜率 0.35；因此 witch-n00022 的新增复杂逻辑没有在现有样本上证明优于父节点。",
+    "基础节点 witch-base 胜率为 0.20，且有 21 次非法行动；witch-n00022 继承的状态、摘要、候选排序和行动契约改进确实解决了协议稳定性问题，但主要收益体现在减少错误，而非稳定提高胜率。",
+    "审计回放 game14 中，p10 首夜收到狼队目标 p5，p5 实际为预言家；p10 提交 witch_heal p5，夜间无人死亡，说明一次救药行动与高价值神职保护一致。之后第二夜 p5 再次被狼刀但被守卫保护，p10 pass；第三夜 p5 被狼刀且守卫保护 p1，p10 仍 pass，最终 p5 死亡。该局好人仍获胜，但回放显示女巫行动依赖当前规则和守卫联动，不能只用“曾经救过/高价值”模板做决定。",
+    "当前代码的 _update_private_state 只直接读取 can_heal、can_poison、heal_used、poison_used 等字段；同一份回放最终 audit role_state 使用 antidote_available=false、poison_available=true。若运行时私有行动包采用 available/antidote 字段而不是当前代码的 canonical 字段，_recommend_witch_action 可能把可用资源误判为未知或可用状态。",
+    "当前 witch-n00022 没有 witch-n00023 中的 _current_game_id、_extract_game_id 和 _reset_game_memory。若 TaskAgent 实例跨局复用，_compact_history、_known_private_state、_last_witch_action 会把上一局信息带入下一局；即使当前 harness 通常新建实例，也应显式隔离以避免隐性依赖。",
+    "当前 _rank_witch_candidates 将 recent_votes_against 直接计为目标的狼人分数；被多人投票可能只是好人共识、被悍跳带节奏或处于争议位，不能单独作为毒药证据。代码还把 claim_named_wolf、claim_conflict、claim_supported 等异质证据简单线性相加，没有区分公开查杀、真实身份验证、多人重复怀疑和普通票压。",
+    "当前 _recommend_witch_action 在首选目标不合法时调用 _select_legal_target，若 preferred 不在合法目标列表，会静默返回 legal_targets[0]。这会把“目标证据不足或已死亡”转换成对另一个无关玩家的行动，尤其对唯一毒药属于高风险行为。合法目标不应自动改投第一个候选。",
+    "当前代码把 recommendation 放入 prompt，但没有对模型输出进行真正的女巫安全策略校验；_apply_witch_safety_fallback 不存在于 witch-n00022，模型仍可能覆盖结构化建议，当前实现仅依赖模型遵守长提示。",
+    "当前 _build_save_priority 将 night_attack_target、attack_target、attacked_player_id、save_target、heal_target 等字段按优先级串接；其中 save_target 或 heal_target 未必表示当夜狼刀目标。若私有字段语义不同，可能把历史或引擎辅助字段误当作当前夜杀目标。",
+    "当前游戏的 winner=village 不能证明女巫策略本身成功；game14 中三名狼分别通过白天查杀、票型和对跳链被推出，女巫只明确使用了首夜解药且没有使用毒药，因此该回放更适合证明行动合法和高价值救药判断，而不能证明现有毒药排序正确。"
+  ],
+  "root_causes": [
+    {
+      "cause": "状态模型不够可靠",
+      "detail": "药水状态使用多个可能字段但没有统一 canonical 解析，且当前节点没有显式跨局重置。状态错误会直接改变 heal_available/poison_available 判断，并可能让模型看到过期的资源或历史事件。"
+    },
+    {
+      "cause": "启发式评分把弱公开信号当成强毒药证据",
+      "detail": "投票被简单加分、不同类型的查杀和冲突被简单相加，缺少事件去重、时间衰减、死亡过滤、身份链一致性和“至少两个独立来源”的明确判定。结果是候选列表可能看起来很确定，但实际只由普通票型或重复转述构成。"
+    },
+    {
+      "cause": "目标选择存在危险的静默重定向",
+      "detail": "当证据目标不在当前合法 target_ids 时，代码选择第一个合法目标，而不是返回 pass。这违反了保留唯一药水的风险控制原则，可能产生与证据无关的毒杀或救人。"
+    },
+    {
+      "cause": "结构化建议和最终行动之间缺少硬闸门",
+      "detail": "witch_decision_summary 只是 prompt 上下文，不能保证模型最终选择推荐行动；没有对“毒药必须达到高置信阈值”“救药必须是当前夜杀且合法”“非女巫阶段不得执行药水行动”等内容做本地安全层约束。"
+    },
+    {
+      "cause": "当前任务规约强调保药，但没有把残局、强对跳和警长权重转化为可计算的行动价值",
+      "detail": "task.md 的规则是方向性文字；代码虽加入 endgame_pressure，却只按存活人数和轮次粗略切档，没有计算药水行动对下一次白天票型、警长票权、已知神职生存和狼人数的边际影响。"
+    },
+    {
+      "cause": "上下文压缩仍可能制造伪证据",
+      "detail": "claims、claim_threads、votes 和 current dialogue 来自不同来源，字段语义不统一；_compact_value 保留 role/team/result 等字段，但没有标记“公开声明”“系统验证”“普通推测”，模型容易将玩家自称或重复复述当作已验证事实。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 __init__ 中增加 _current_game_id，并在 observe 或 decide 开始处从 packet、game、public_state 中提取 game_id；发现新局时清空 _compact_history、_last_observe_signature、_known_private_state 和 _last_witch_action。",
+      "rationale": "防止跨局污染；该改动已在同角色 witch-n00023 中有先例，属于低风险的生命周期修复。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _update_private_state，建立统一字段：antidote_available、poison_available、antidote_used、poison_used、current_attack_target。读取 can_heal/heal_available/antidote_available/has_antidote、can_poison/poison_available/has_poison、heal_used/antidote_used/used_heal 和 poison_used/used_poison 等别名；优先使用明确的 available 字段，并将 used 与 available 的冲突保守地解释为不可用。只把明确命名为当夜狼刀目标的字段写入 current_attack_target。",
+      "rationale": "避免把不同运行时字段误判为资源状态，也避免将 heal_target/save_target 等不确定字段误当作当夜攻击目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _build_save_priority：只有 current_attack_target 存在、目标在当前 heal target_ids 中、目标存活且解药可用时才生成救药候选；不再把 save_target、heal_target 作为无条件的夜杀替代字段。根据公开警长、公开神职声明和残局压力增加理由，但不把公开自称身份视为已验证身份。",
+      "rationale": "救药的私密事实必须来自引擎提供的当夜狼刀目标；公开身份只能影响价值排序，不能替代夜杀事实。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _rank_witch_candidates，区分 evidence_type：公开验证结果、明确公开查杀、强对跳冲突、独立多人指向、普通投票、普通质疑。普通投票和单个质疑不得单独达到 poison 阈值；重复同一来源的转述去重；目标已死亡、自己、非当前合法 target_ids 的候选直接丢弃。建议使用离散等级而非简单累加，例如 hard=3、independent_support=2、weak=1，并要求毒药至少一个 hard 证据或两个真正独立的中强证据。",
+      "rationale": "毒药是一次性资源，必须避免把“被投票多”误认为高置信狼人；这直接修复当前代码对 recent_votes_against 的过度加分。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _select_legal_target：preferred 不在 legal_targets 时返回 None，不得自动返回 legal_targets[0]。在 _recommend_witch_action 中，若毒药候选无合法目标则 pass；若救药候选无合法目标则继续评估毒药或 pass。",
+      "rationale": "禁止危险的静默改投。合法性失败应导致保药，而不是对无证据目标行动。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加一个轻量 _safe_witch_action 或等价本地闸门，在模型输出规范化后执行：仅在 night_witch 阶段允许 heal/poison；heal 必须有明确 current_attack_target 或被 recommendation 明确标记为残局保命且目标合法；poison 必须命中高置信候选且目标合法；任一条件不满足时改为当前合法 pass/wait。不要改变引擎 schema，只在提交前选择已有合法行动。",
+      "rationale": "把任务规约中的保密和保药原则从 prompt 约束提升为候选代码内的安全约束，降低模型偶发偏离的损失。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "将 _witch_decision_summary 的输出压缩为清晰的字段：phase、round、alive_count、resource_state、current_attack_target、legal_heal_targets、legal_poison_targets、verified_public_evidence、weak_public_evidence、save_candidate、poison_candidate、default_action。明确标注“玩家自称不等于验证”“投票是弱证据”“私密夜杀不可公开发言”。",
+      "rationale": "当前摘要同时包含多套候选、历史和重复 claim_threads，容易增加模型负担；更小的证据分层上下文更适合 900 token 输出预算。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充可执行优先级：资源状态以行动包为准；当夜攻击目标优先于公开推测；毒药需要硬证据或两个独立中强证据；普通票型、单人质疑、自称身份和重复复述不足以用毒；首选目标不合法时必须 pass；不同游戏必须视为全新记忆。",
+      "rationale": "让自然语言规约与代码安全层一致，并减少模型在摘要缺失或字段命名变化时自行发挥。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加单元测试或纯函数测试，覆盖：availability 字段别名归一化；新 game_id 清空状态；死亡/非法目标不重定向；仅投票压力不触发毒药；明确公开查杀加独立票型可触发毒药；当前夜狼刀目标缺失时不自动救 heal_target；非 night_witch 阶段 recommendation 为 pass。",
+      "rationale": "这些测试不需要修改引擎，能够直接验证本次改动的核心风险，并防止后续进化重新引入基础节点的协议问题。"
+    }
+  ],
+  "risks": [
+    "安全闸门过于严格可能降低毒药使用率，使女巫在真实高置信狼人局面中保留毒药直到游戏结束；应优先采用离散高置信阈值并记录候选理由，而不是永久禁止边界情形。",
+    "不同运行时行动包字段可能仍存在未覆盖别名；代码应保持未知字段保守处理，并避免把不确定字段强行解释为当前夜杀。",
+    "将普通投票降为弱证据可能错过通过稳定票型暴露的深水狼；因此应允许多个独立轮次、明确同向票型和对跳冲突共同达到阈值，但必须去重同一条叙事的重复转述。",
+    "本地安全层如果错误识别阶段字符串或行动 kind，可能把合法行动改成 pass；测试应使用真实 allowed_actions 样例，且不得改动 decision_error、引擎 schema 或行动名称。",
+    "显式跨局重置会清除所有记忆；这是正确的生命周期行为，但如果 Runtime 在同一局重置 game_id 或缺少 game_id，代码需要仅在确认新非空标识时重置，不能按普通缺失值反复清空。",
+    "当前样本只有 20 局，胜率从 30% 到下一版本的变化可能受随机角色、其他节点和模型随机性影响，不能把单个回放的好人胜利当作策略因果证明。",
+    "修改过多会再次增加 prompt 长度和启发式复杂度；建议优先实施状态隔离、字段归一化、非法目标不重定向和毒药证据分层，暂不复制 witch-n00024 的大规模文本扫描逻辑。"
+  ],
+  "code_agent_brief": "请在候选工作区中修改 witch 的 task_agent.py 和 task.md，不得触碰 Game Engine、规则、信息过滤、行动 schema、工具实现、审计或预算。目标是构建比 witch-n00022 更可靠的女巫 Task-Agent：1）加入 game_id 感知的跨局状态重置；2）将 can_heal/heal_available/antidote_available/has_antidote 等字段归一化为统一药水状态，并只把明确的当夜狼刀字段作为 current_attack_target；3）救药候选必须基于当前明确夜杀目标且目标合法，公开身份只用于价值排序；4）毒药评分必须区分硬查杀、强对跳/身份链冲突、独立多人证据和普通票型，普通投票或单一质疑不能单独触发毒药；5）preferred target 不合法时返回 None，绝不能静默改投 target_ids[0]；6）在模型输出规范化后增加女巫本地安全闸门，非 night_witch 阶段、毒药无高置信目标、救药无明确夜杀目标时选择现有合法 pass/wait；7）压缩 witch_decision_summary，明确标注私密事实、公开验证事实和弱推测，避免把自称身份或重复转述当作验证；8）更新 task.md 与上述安全层保持一致；9）添加针对字段别名、跨局重置、非法目标、弱证据毒药、明确夜杀救药和非女巫阶段的测试。保持现有 JSON 输出和重试机制不变。"
+}

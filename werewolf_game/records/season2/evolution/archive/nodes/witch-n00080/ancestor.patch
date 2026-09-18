@@ -1,0 +1,507 @@
+--- witch-n00023/task_agent.py
++++ witch-n00080/task_agent.py
+@@ -192,6 +192,8 @@
+         self._current_game_id: str | None = None
+         self._known_private_state: dict[str, Any] = {}
+         self._last_witch_action: dict[str, Any] = {}
++        self._witch_ledger: dict[str, dict[str, Any]] = {}
++        self._current_witch_context: dict[str, Any] = {}
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+         """接收公开同步，并保留极简跨回合摘要。"""
+@@ -220,6 +222,10 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         self._update_private_state(private)
++        witch_context = self._extract_current_witch_private_context(
++            private, turn_packet.get("request") or {}, turn_packet.get("game") or {}
++        )
++        witch_summary = self._witch_decision_summary(turn_packet)
+         system = self._system_prompt(private)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -230,7 +236,7 @@
+             "request": turn_packet["request"],
+             "compact_memory": self._render_compact_memory(),
+             "self_resource_state": dict(self._known_private_state),
+-            "witch_decision_summary": self._witch_decision_summary(turn_packet),
++            "witch_decision_summary": witch_summary,
+             "speech_safety": (
+                 "所有发言只能基于公开事实；不要把药水余量、夜刀目标、自己未公开的用药结果、"
+                 "或未公开身份链说成既成事实。"
+@@ -246,7 +252,7 @@
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+-        system = system + "\n\n【女巫专用决策规约】\n先复盘最近票型与死亡，再看自己药水状态。救药优先保留给能明显改变轮次的高价值夜死；毒药只在强对跳、稳定票型压缩、公开身份链冲突或终局倒计时等高置信情形下优先使用。证据不足时默认保留资源。公开发言只谈公开事实，不得泄露药水余量、夜间目标或自己未公开的用药结果。"
++        system = system + "\n\n【女巫内部决策顺序】先读 witch_decision_summary.hard_facts 和 resource_state，再检查 recommendation 与合法模板，最后才参考当前轮对话。夜间只输出最短 JSON；白天发言只能使用公开事实，绝不泄露私密刀口、药量或未公开用药。"
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -291,6 +297,7 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            action = self._apply_witch_action_guard(action, turn_packet, witch_summary)
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 self._remember_witch_action(turn_packet, action)
+@@ -363,10 +370,15 @@
+             "poison_used": ("poison_used", "used_poison"),
+         }
+         for canonical, aliases in alias_groups.items():
++            if not any(alias in private for alias in aliases):
++                # A missing field is not permission to reuse an old resource guess.
++                self._known_private_state.pop(canonical, None)
+             value = self._pick_first_mapping_value(private, *aliases)
+             if value is not None:
+                 normalized = self._coerce_bool(value)
+-                extracted[canonical] = normalized if normalized is not None else value
++                extracted[f"{canonical}_raw"] = value
++                if normalized is not None:
++                    extracted[canonical] = normalized
+ 
+         if "can_heal" in extracted:
+             extracted["antidote_available"] = extracted["can_heal"]
+@@ -380,6 +392,10 @@
+ 
+         for key, value in extracted.items():
+             self._known_private_state[key] = value
++        if any(key in extracted for key in ("can_heal", "can_poison")):
++            self._known_private_state["resource_source"] = "engine_private"
++        elif self._last_witch_action:
++            self._known_private_state["resource_source"] = "last_action_only"
+ 
+     def _extract_game_id(self, packet: Mapping[str, Any]) -> str | None:
+         sources: list[tuple[Mapping[str, Any], tuple[str, ...]]] = [(packet, ("game_id", "gameId", "match_id", "matchId"))]
+@@ -402,6 +418,8 @@
+         self._last_observe_signature = ""
+         self._known_private_state.clear()
+         self._last_witch_action.clear()
++        self._witch_ledger.clear()
++        self._current_witch_context.clear()
+ 
+     @staticmethod
+     def _coerce_bool(value: Any) -> bool | None:
+@@ -417,7 +435,9 @@
+                 return True
+             if normalized in {"false", "0", "no", "n", "off", "used", "spent", "dead"}:
+                 return False
+-        return bool(value)
++            # 未知字符串不能因为“非空”而被当作资源可用或存活。
++            return None
++        return None
+ 
+     @staticmethod
+     def _pick_first_mapping_value(source: Mapping[str, Any], *names: str) -> Any:
+@@ -488,6 +508,15 @@
+                 "vote_target_id",
+                 "result",
+                 "role",
++                "claimed_role",
++                "role_claim",
++                "claim_role",
++                "claim_type",
++                "counterclaim",
++                "against_id",
++                "checked_id",
++                "seer_result",
++                "check_result",
+                 "team",
+                 "type",
+                 "action",
+@@ -509,16 +538,357 @@
+     def _remember_witch_action(self, turn_packet: Mapping[str, Any], action: dict[str, Any]) -> None:
+         request = turn_packet.get("request") or {}
+         phase = str(turn_packet.get("game", {}).get("public_phase", turn_packet.get("game", {}).get("phase", "")))
+-        if "witch" not in phase and "witch" not in str(request.get("kind") or ""):
++        if self.profile.role != "witch":
+             return
++        if not any(token in str(action.get("kind") or "") for token in ("heal", "antidote", "poison", "pass", "wait")):
++            return
++        kind = action.get("kind")
++        explicit_resource = (
++            self._known_private_state.get("can_heal")
++            if "heal" in str(kind)
++            else self._known_private_state.get("can_poison")
++            if "poison" in str(kind)
++            else None
++        )
+         self._last_witch_action = {
++            "round": turn_packet.get("game", {}).get("round"),
+             "phase": phase,
+-            "kind": action.get("kind"),
++            "kind": kind,
+             "target_id": action.get("target_id"),
++            "resource_consumed": True if explicit_resource is True and kind not in {"pass", "wait"} else ("unknown" if kind not in {"pass", "wait"} else False),
+         }
+         self._known_private_state["last_witch_action"] = dict(self._last_witch_action)
+ 
++    def _extract_current_witch_private_context(
++        self, private: Mapping[str, Any], request: Mapping[str, Any], game: Mapping[str, Any]
++    ) -> dict[str, Any]:
++        """Extract only private, engine-supplied witch facts; never infer the knife publicly."""
++        target = self._pick_first_mapping_value(
++            private, "wolf_target", "night_attack_target", "attack_target",
++            "killed_target", "target_id", "victim_id", "night_kill_target",
++        )
++        target_id = str(target) if target not in (None, "") else None
++        actions = request.get("allowed_actions") if isinstance(request, Mapping) else []
++        actions = actions if isinstance(actions, list) else []
++        by_kind: dict[str, set[str]] = {}
++        for item in actions:
++            if not isinstance(item, Mapping):
++                continue
++            kind = str(item.get("kind") or "")
++            ids = item.get("target_ids")
++            if kind and isinstance(ids, list):
++                by_kind[kind] = {str(x) for x in ids if x not in (None, "")}
++        heal_kind = next((k for k in by_kind if "heal" in k or "antidote" in k), None)
++        poison_kind = next((k for k in by_kind if "poison" in k), None)
++
++        status = private.get("status")
++        self_alive = private.get("alive", private.get("is_alive"))
++        if self_alive is None:
++            self_alive = self._coerce_bool(status)
++        if self_alive is None:
++            self_alive = True if str(status or "").lower() in {"alive", "living"} else "unknown"
++        def private_bool(canonical: str, *aliases: str) -> Any:
++            raw = self._pick_first_mapping_value(private, *aliases)
++            normalized = self._coerce_bool(raw) if raw is not None else None
++            return normalized if normalized is not None else self._known_private_state.get(canonical)
++        can_heal = private_bool("can_heal", "can_heal", "antidote_available", "heal_available", "has_antidote")
++        can_poison = private_bool("can_poison", "can_poison", "poison_available", "has_poison")
++        return {
++            "current_wolf_target": target_id,
++            "wolf_target_known": target_id is not None,
++            "can_heal": can_heal if can_heal is not None else "unknown",
++            "can_poison": can_poison if can_poison is not None else "unknown",
++            "self_alive": self_alive,
++            "legal_heal_targets": sorted(by_kind.get(heal_kind or "", set())),
++            "legal_poison_targets": sorted(by_kind.get(poison_kind or "", set())),
++            "heal_kind": heal_kind,
++            "poison_kind": poison_kind,
++            "resource_source": self._known_private_state.get("resource_source", "unknown"),
++            "round": game.get("round"),
++        }
++
++    @staticmethod
++    def _witch_record_id(record: Any) -> str | None:
++        if isinstance(record, (str, int)):
++            return str(record)
++        if not isinstance(record, Mapping):
++            return None
++        for key in ("player_id", "id", "speaker_id", "claimant_id", "voter_id", "target_id", "vote_target_id"):
++            value = record.get(key)
++            if value not in (None, ""):
++                return str(value)
++        return None
++
++    def _build_witch_evidence_ledger(
++        self, turn_packet: Mapping[str, Any], context: Mapping[str, Any]
++    ) -> tuple[dict[str, dict[str, Any]], set[str], set[str]]:
++        public = turn_packet.get("public_state") or {}
++        game = turn_packet.get("game") or {}
++        if not isinstance(public, Mapping):
++            public = {}
++        current_round = game.get("round", public.get("round"))
++        def lists(*names: str) -> list[Any]:
++            for source in (public, game):
++                for name in names:
++                    value = source.get(name)
++                    if isinstance(value, list):
++                        return value
++            return []
++
++        deaths = lists("deaths", "dead_players", "night_deaths", "death_events")
++        dead_ids = {x for x in (self._witch_record_id(item) for item in deaths) if x}
++        alive_ids: set[str] = set()
++        for item in lists("alive_players", "living_players", "players", "player_states"):
++            if isinstance(item, (str, int)):
++                alive_ids.add(str(item))
++                continue
++            if not isinstance(item, Mapping):
++                continue
++            pid = self._witch_record_id(item)
++            alive = self._coerce_bool(item.get("alive")) if "alive" in item else None
++            if alive is True and pid:
++                alive_ids.add(pid)
++            elif alive is False and pid:
++                dead_ids.add(pid)
++        alive_ids -= dead_ids
++        allowed = set(context.get("legal_poison_targets", [])) | set(context.get("legal_heal_targets", []))
++        if not alive_ids:
++            alive_ids = allowed - dead_ids
++
++        ledger: dict[str, dict[str, Any]] = {}
++        def entry(pid: str) -> dict[str, Any]:
++            return ledger.setdefault(pid, {
++                "role_claims": [], "counterclaim_pairs": [], "seer_result_claims": [],
++                "votes_for": 0, "votes_against": 0, "supporters": [],
++                "contradictions": [], "death_status": "dead" if pid in dead_ids else "alive" if pid in alive_ids else "unknown",
++                "rounds_voted_against": [],
++            })
++        for pid in dead_ids | alive_ids:
++            entry(pid)
++        claims = lists("claims", "reveals", "public_claims", "role_claims", "counterclaims")
++        if not claims:
++            for snapshot in self._compact_history:
++                if isinstance(snapshot, Mapping) and isinstance(snapshot.get("claims"), list):
++                    claims.extend(snapshot["claims"])
++        tool_dialogue = (turn_packet.get("tool_context") or {}).get("current_round_dialogue", [])
++        if isinstance(tool_dialogue, list):
++            claims.extend(item for item in tool_dialogue if isinstance(item, Mapping) and
++                          any(key in item for key in ("claimed_role", "role_claim", "claim_role", "seer_result", "check_result")))
++        role_claimers: dict[str, list[str]] = {}
++        for record in claims:
++            if not isinstance(record, Mapping):
++                continue
++            speaker = str(record.get("speaker_id", record.get("player_id", record.get("claimant_id", record.get("speaker", "")))) or "")
++            role = record.get("claimed_role", record.get("role_claim", record.get("claim_role")))
++            if role is None and record.get("claim_type") in {"role", "identity"}:
++                role = record.get("role")
++            if role is None:
++                role = record.get("role")
++            if speaker and role not in (None, ""):
++                role_text = str(role)
++                entry(speaker)["role_claims"].append(role_text)
++                role_claimers.setdefault(role_text.lower(), []).append(speaker)
++            result = record.get("result", record.get("seer_result", record.get("check_result")))
++            target = record.get("target_id", record.get("checked_id", record.get("result_target_id")))
++            if result not in (None, "") and target not in (None, ""):
++                result_text = str(result).lower()
++                item = {"result": result, "target_id": str(target), "round": record.get("round", current_round)}
++                entry(speaker or str(target))["seer_result_claims"].append(item)
++                if any(word in result_text for word in ("wolf", "werewolf", "狼人", "bad", "查杀")):
++                    entry(str(target))["contradictions"].append("公开查杀结果")
++            explicit = record.get("counterclaim", record.get("counter_claim"))
++            other = record.get("against_id", record.get("challenged_id"))
++            if explicit and speaker and other not in (None, ""):
++                entry(speaker)["counterclaim_pairs"].append(str(other))
++                entry(str(other))["counterclaim_pairs"].append(speaker)
++
++        for role, claimers in role_claimers.items():
++            unique = list(dict.fromkeys(claimers))
++            if len(unique) > 1:
++                for pid in unique:
++                    entry(pid)["counterclaim_pairs"].extend(x for x in unique if x != pid)
++        # When the current public packet is a delta, use the bounded observe summaries as history.
++        votes = lists("votes", "voting", "vote_results", "vote_events")
++        if not votes:
++            for snapshot in self._compact_history:
++                if isinstance(snapshot, Mapping) and isinstance(snapshot.get("votes"), list):
++                    votes.extend(snapshot["votes"])
++        for record in votes:
++            if not isinstance(record, Mapping):
++                continue
++            voter = str(record.get("voter_id", record.get("from_id", record.get("player_id", ""))) or "")
++            target = record.get("vote_target_id", record.get("target_id", record.get("target")))
++            if target in (None, ""):
++                continue
++            target = str(target)
++            phase = str(record.get("phase", record.get("vote_type", record.get("kind", "day")))).lower()
++            round_value = record.get("round", current_round)
++            sheriff = any(x in phase for x in ("sheriff", "captain", "警长"))
++            # 警长竞选票不计入日投票的负面证据。
++            if not sheriff:
++                entry(target)["votes_against"] += self._nonnegative_int(record.get("count"), fallback=1) or 1
++                if round_value not in entry(target)["rounds_voted_against"]:
++                    entry(target)["rounds_voted_against"].append(round_value)
++            if voter and not sheriff:
++                entry(target)["supporters"].append(voter)
++                entry(voter)["votes_for"] += 1
++        for pid, item in ledger.items():
++            item["counterclaim_pairs"] = sorted(set(item["counterclaim_pairs"]))
++            item["supporters"] = sorted(set(item["supporters"]))[:5]
++            item["contradictions"] = sorted(set(item["contradictions"]))
++            item["role_claims"] = list(dict.fromkeys(item["role_claims"]))[-3:]
++            if pid in dead_ids:
++                item["death_status"] = "dead"
++            elif pid in alive_ids:
++                item["death_status"] = "alive"
++        # Plain dialogue is deliberately not parsed into facts: it remains available through the tool.
++        return ledger, alive_ids, dead_ids
++
++    def _recommend_witch_action(self, context: Mapping[str, Any]) -> dict[str, Any]:
++        ledger = context.get("evidence_ledger", {})
++        poison_targets = set(context.get("legal_poison_targets", []))
++        heal_targets = set(context.get("legal_heal_targets", []))
++        target = context.get("current_wolf_target")
++        reasons: list[str] = []
++        if target and target in heal_targets and context.get("can_heal") is True:
++            evidence = ledger.get(target, {})
++            roles = {str(x).lower() for x in evidence.get("role_claims", [])}
++            sheriff = bool(context.get("sheriff_id") == target)
++            if roles & {"seer", "预言家", "hunter", "猎人", "guard", "守卫"} or sheriff:
++                reasons.append("current wolf target is a legal, publicly high-value rescue")
++                return {"recommended_kind": context.get("heal_kind") or "heal", "recommended_target_id": target,
++                        "confidence": 0.9, "reasons": reasons, "rejected_alternatives": ["poison: rescue is the immediate high-value use"]}
++        if context.get("can_poison") is True:
++            candidates: list[tuple[float, str, list[str]]] = []
++            for pid in sorted(poison_targets):
++                if pid == self.player_id or pid in set(context.get("dead_ids", [])):
++                    continue
++                item = ledger.get(pid, {})
++                if item.get("death_status") == "dead":
++                    continue
++                rs: list[str] = []
++                if item.get("counterclaim_pairs"):
++                    rs.append("living strong role counterclaim core")
++                if item.get("contradictions"):
++                    rs.append("public identity/result conflict")
++                if len(set(item.get("rounds_voted_against", []))) >= 2:
++                    rs.append("negative day-vote compression across rounds")
++                alive_count = context.get("alive_count")
++                if isinstance(alive_count, int) and alive_count <= 4:
++                    rs.append("endgame pressure")
++                # A confirmed good role is a hard contrary signal unless it is itself contradicted.
++                roles = {str(x).lower() for x in item.get("role_claims", [])}
++                if roles & {"seer", "预言家", "hunter", "猎人", "guard", "守卫"} and not item.get("contradictions"):
++                    continue
++                if rs:
++                    confidence = 0.93 if len(rs) >= 2 or item.get("counterclaim_pairs") or item.get("contradictions") else 0.84
++                    candidates.append((confidence, pid, rs))
++            if candidates:
++                confidence, pid, rs = max(candidates, key=lambda x: (x[0], len(x[2]), x[1]))
++                return {"recommended_kind": context.get("poison_kind") or "poison", "recommended_target_id": pid,
++                        "confidence": confidence, "reasons": rs, "rejected_alternatives": ["pass: high-confidence living poison candidate exists"]}
++        return {"recommended_kind": context.get("pass_kind") or "pass", "recommended_target_id": None,
++                "confidence": 0.0, "reasons": ["insufficient structured public evidence or resource unavailable"],
++                "rejected_alternatives": []}
++
++    # Short alias useful to pure-function tests and future role-specific callers.
++    def _recommend_action(self, context: Mapping[str, Any]) -> dict[str, Any]:
++        return self._recommend_witch_action(context)
++
++    def _apply_witch_action_guard(self, action: dict[str, Any], turn_packet: Mapping[str, Any], summary: Mapping[str, Any]) -> dict[str, Any]:
++        if self.profile.role != "witch":
++            return action
++        request = turn_packet.get("request") or {}
++        allowed = request.get("allowed_actions") if isinstance(request, Mapping) else []
++        allowed = allowed if isinstance(allowed, list) else []
++        kinds = {str(x.get("kind")) for x in allowed if isinstance(x, Mapping)}
++        kind = str(action.get("kind") or "")
++        recommendation = summary.get("recommendation") if isinstance(summary, Mapping) else {}
++        pass_kind = next((k for k in kinds if "pass" in k or k == "wait"), None)
++        is_heal = "heal" in kind or "antidote" in kind
++        is_poison = "poison" in kind
++        if is_heal or is_poison:
++            legal = set(summary.get("legal_heal_targets", []) if is_heal else summary.get("legal_poison_targets", []))
++            can_use = summary.get("can_heal" if is_heal else "can_poison")
++            if can_use is not True:
++                if pass_kind:
++                    return {"request_id": action["request_id"], "player_id": action["player_id"], "kind": pass_kind}
++            elif is_poison and recommendation.get("recommended_kind") == kind and recommendation.get("confidence", 0) >= 0.9:
++                target = recommendation.get("recommended_target_id")
++                if target in legal:
++                    action["target_id"] = target
++            if action.get("target_id") not in legal and pass_kind:
++                return {"request_id": action["request_id"], "player_id": action["player_id"], "kind": pass_kind}
++        return action
++
+     def _witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
++        request = turn_packet.get("request") or {}
++        private = turn_packet.get("private_information") or {}
++        game = turn_packet.get("game") or {}
++        context = self._extract_current_witch_private_context(private, request, game)
++        ledger, alive_ids, dead_ids = self._build_witch_evidence_ledger(turn_packet, context)
++        context["evidence_ledger"] = ledger
++        context["alive_ids"] = sorted(alive_ids)
++        context["dead_ids"] = sorted(dead_ids)
++        public = turn_packet.get("public_state") or {}
++        public_alive_count = public.get("alive_count") if isinstance(public, Mapping) else None
++        context["alive_count"] = self._nonnegative_int(public_alive_count, fallback=None)
++        if context["alive_count"] is None:
++            context["alive_count"] = len(alive_ids) if alive_ids else None
++        if alive_ids:
++            context["legal_heal_targets"] = sorted(set(context["legal_heal_targets"]) & alive_ids)
++            context["legal_poison_targets"] = sorted(set(context["legal_poison_targets"]) & alive_ids)
++        context["pass_kind"] = next((str(x.get("kind")) for x in request.get("allowed_actions", [])
++                                      if isinstance(x, Mapping) and ("pass" in str(x.get("kind")) or str(x.get("kind")) == "wait")), "pass")
++        if isinstance(public, Mapping):
++            sheriff = public.get("sheriff", public.get("police", public.get("captain")))
++            context["sheriff_id"] = str(sheriff) if sheriff not in (None, "") and not isinstance(sheriff, Mapping) else None
++        self._current_witch_context = dict(context)
++        recommendation = self._recommend_witch_action(context)
++        # Keep the prompt compact: ledger entries contain counts and sources, not raw history.
++        candidate_evidence = {
++            pid: {key: value for key, value in item.items()
++                  if key in {"role_claims", "counterclaim_pairs", "seer_result_claims", "votes_against", "supporters", "contradictions", "death_status", "rounds_voted_against"}}
++            for pid, item in ledger.items()
++            if pid in set(context.get("legal_poison_targets", [])) | set(context.get("legal_heal_targets", []))
++        }
++        summary = {
++            "hard_facts": {
++                "current_round": game.get("round"),
++                "alive_ids": sorted(alive_ids), "dead_ids": sorted(dead_ids),
++                "current_wolf_target": context.get("current_wolf_target"),
++                "wolf_target_known": context.get("wolf_target_known"),
++                "legal_heal_targets": context.get("legal_heal_targets", []),
++                "legal_poison_targets": context.get("legal_poison_targets", []),
++            },
++            "resource_state": {key: context.get(key) for key in
++                               ("can_heal", "can_poison", "self_alive", "resource_source")},
++            "candidate_evidence": candidate_evidence,
++            "day_vote_records": [
++                {"target_id": pid, "votes_against": item.get("votes_against", 0),
++                 "rounds": item.get("rounds_voted_against", [])}
++                for pid, item in candidate_evidence.items() if item.get("votes_against", 0)
++            ],
++            "sheriff_vote_records": "unknown unless explicitly separated by the public packet",
++            "public_role_claims": {
++                pid: item.get("role_claims", []) for pid, item in candidate_evidence.items()
++                if item.get("role_claims")
++            },
++            "public_death_records": [{"player_id": pid, "status": item.get("death_status")}
++                                     for pid, item in ledger.items()
++                                     if item.get("death_status") == "dead"],
++            "recommendation": recommendation,
++            "uncertainty": (["unknown_resource"] if context.get("can_heal") == "unknown" or context.get("can_poison") == "unknown" else [])
++                         + (["unknown_wolf_target"] if not context.get("wolf_target_known") else []),
++            # Compatibility fields retained for consumers of the previous summary.
++            "phase": game.get("public_phase", game.get("phase")),
++            "request_kind": request.get("kind"),
++            "last_witch_action": dict(self._last_witch_action) if self._last_witch_action else {},
++        }
++        summary["uncertainty"] = [x for x in summary["uncertainty"] if x]
++        return summary
++
++    def _legacy_witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+         game = turn_packet.get("game") or {}
+         public_state = turn_packet.get("public_state") or {}
+--- witch-n00023/task.md
++++ witch-n00080/task.md
+@@ -2,22 +2,22 @@
+ 
+ 你的任务是帮助好人获胜，并且严格保密不应公开的药水和夜间信息。
+ 
+-## 行动优先级
+-1. 先确认当夜狼刀、自己药水余量、以及当前阶段允许的行动。
+-2. 救药只用于高价值目标，或确实能明显改变当前轮次的局面时。
+-3. 毒药只打高置信狼人、悍跳核心，或已经形成稳定负面链条的目标。
+-4. 证据不足、信息冲突或收益不明显时，默认保留资源，优先选择合法的放弃行动。
+-5. 不要固定套用首夜或模板化用药；每次决策都要结合前几天的票型、死亡信息和公开对跳。
++## 硬性决策顺序
++1. 读取当前私密狼刀、合法目标集合和行动模板；再读取引擎明确给出的药水余量与自身存活状态。
++2. 过滤死亡、自己和不在对应 `target_ids` 中的候选。救药只考虑本夜当前刀口，不用历史死亡记录冒充本夜目标。
++3. 用公开证据 ledger 评估：角色声明、真实对跳、公开查杀/身份冲突、分轮次日票型与终局压力；普通文本只能算未知，不能猜成事实。
++4. 高置信、仍存活且合法的毒杀候选优先于无条件 pass；低信息、资源不可用或存在相反硬证据时才 pass。不要为了“保留资源”在强对跳核心仍存活且可毒时机械 pass。
++5. 救药仅用于公开确认/高价值、且能明显改变轮次的当前刀口；不要固定套用首夜或模板化用药。
+ 
+ ## 发言保密要求
+ - 白天发言只能基于公开事实。
+ - 不得把药水余量、夜刀目标、自己未公开的用药结果，或未公开身份链说成既成事实。
+ - 可以自然表达怀疑和推理，但不能泄露只属于你的夜间信息。
+ 
+-## 女巫专属高置信毒杀规约
+-- 毒药优先只在公开证据同时指向强对跳、稳定票型压缩、公开身份链冲突，或终局倒计时等高置信情形时使用。
+-- 若只有单一怀疑点或局势仍不明朗，优先保留毒药；救药也只在高价值夜死、且能明显改变轮次时出手。
+-- 白天发言只能基于公开事实，不得暗示自己的药水余量、夜间目标或未公开用药结果。
++## 女巫专属门控
++- 强对跳核心若仍存活且毒药可用，必须列为毒杀候选；除非有相反硬证据，不得仅因想保留资源而无条件 pass。
++- 毒药至少需要结构化强对跳、公开查杀/身份链冲突、跨两轮以上的日票型压缩、或明确终局压力之一；目标必须存活且在合法毒杀集合内。
++- 单一怀疑点、未知字段或无法确认的自然语言不够形成高置信推荐。救药保持更保守，只能救当前私密刀口。
+ 
+ ## 决策风格
+ - 保持像正常玩家或自然的神职玩家。

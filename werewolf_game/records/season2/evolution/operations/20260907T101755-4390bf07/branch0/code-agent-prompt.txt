@@ -1,0 +1,113 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00028 的主要问题不是行动 schema，而是决策框架偏弱：20 局仅 35% 胜率，几乎不出格式错，但在“公开链是否可信、残局如何重排嫌疑、是否保留跨回合记忆”上不够硬。下一代 Task-Agent 应该从“通用村民提示”升级为“轻量状态记忆 + 阶段化取证 + 残局强制双嫌疑对比”的结构。",
+  "evidence": [
+    {
+      "fact": "评测汇总：game_count=20，win_count=7，loss_count=13，win_rate=0.35；fallback_count=1，invalid_decision_count=1。",
+      "source": "read_evaluation_summary",
+      "implication": "该节点基本稳定可跑，但胜率偏低，优先优化决策质量而不是修 schema。"
+    },
+    {
+      "fact": "model_token_usage 显示 total_input_tokens=672956、successful_response_count=143，单局输入成本偏高。",
+      "source": "read_evaluation_summary",
+      "implication": "当前提示词和状态注入偏重，存在 prompt bloat，容易挤占模型推理空间。"
+    },
+    {
+      "fact": "当前 Task-Agent 的 observe() 明确不保存跨行动状态，每次决策都从 current_state_only 重新开始。",
+      "source": "current_agent",
+      "implication": "村民在中后期很难保留上一轮形成的嫌疑排序、票型记忆和链条断点。"
+    },
+    {
+      "fact": "replay 中 p5 先以预言家/警长链强压 p3，随后 day2 自己承认“查杀 p3”与“p3 昨夜已出局”存在逻辑矛盾；day4 p1 又错误声称 p7“报过验”，被 p7/p8 直接指出公开记录中不存在。",
+      "source": "read_game_replay",
+      "implication": "任务代理必须更严格地区分公开原话、玩家转述和系统事实，不能把转述当成已验证链。"
+    },
+    {
+      "fact": "这局最终村方胜利依赖的是后期对 p10 的集中排票，而不是继续追旧的单一警徽/查验链。",
+      "source": "read_game_replay",
+      "implication": "残局阶段需要强制做当前存活者的双嫌疑比较，并把已死或已断链的旧权威降权。"
+    },
+    {
+      "fact": "现有 checklist 虽然已经提示“至少比较两个候选”“残局复盘存活名单/已死名单/可信查验链/灰区名单”，但它仍是泛化文本，没有把这些要求变成阶段性硬流程。",
+      "source": "current_agent + read_game_replay",
+      "implication": "模型容易“看见规则但不执行规则”，需要把提示改成更强的结构化决策步骤。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "缺少跨回合的轻量记忆。",
+      "why_it_matters": "observe() 不保留任何总结，导致每次发言/投票都要重建局势；这对村民尤其伤，因为村民依赖票型、死亡顺序和前几轮发言的累积证据。"
+    },
+    {
+      "cause": "公开态势摘要太泛，不强制形成“当前两嫌疑人”或“当前保留对象”的排序。",
+      "why_it_matters": "在单链/强神/警徽局里，模型容易停留在描述信息，而不是把信息收敛成可投票的比较。"
+    },
+    {
+      "cause": "对玩家声明和系统事实的边界约束不够操作化。",
+      "why_it_matters": "replay 里多次出现“有人自称/转述的查验链”被当成更强线索的情况；如果不显式要求复核原始公开记录，村民会被伪链带偏。"
+    },
+    {
+      "cause": "阶段化策略不足，尤其是 day_discussion / day_vote / 残局 三个状态没有不同的硬约束。",
+      "why_it_matters": "白天讨论需要提关注对象和暂不投对象；投票需要比较两个候选；残局需要固定双嫌疑排序。现在这些要求散落在长 checklist 里，执行力不够。"
+    },
+    {
+      "cause": "提示词体积较大且重复，存在 reasoning dilution。",
+      "why_it_matters": "高输入 token 成本说明模型在读很多重复约束，容易降低对关键事实的注意力。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个极小的局内记忆槽位，例如保存最近一次公开同步中的 alive/dead/sheriff/票型摘要，以及上一轮形成的 1-2 个嫌疑人排序；在 observe() 里更新它，并在 _turn_instruction() 里以短块形式注入给模型。",
+      "rationale": "保留跨回合的证据链与票型变化，避免每次决策都从零开始。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 render_public_state_brief() 改成更结构化的三段式输出：系统事实 / 玩家声明 / 需要复核的冲突点；同时压缩冗余字段，只保留当前回合真正影响投票的内容。",
+      "rationale": "减少 prompt 噪声，强化“事实优先、声明次之、推测最低”的边界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 render_villager_decision_checklist() 为阶段化规则：day_discussion 必须点出 1 个关注对象和 1 个暂不投对象；day_vote 必须比较至少 2 个候选再下票；alive_count <= 6 时必须输出两个嫌疑人并排序；若当前只有单公开链，则必须与一个基于票型/死亡顺序推出来的替代嫌疑直接对比。",
+      "rationale": "把泛化建议升级成强流程，提升模型在残局和单链局里的执行稳定性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 day_discussion/day_vote 的系统或 turn 提示中显式要求优先读取 current_round_dialogue，并在模型内做“原话核对”：玩家自报、转述、系统事件三者必须分层处理，不能把转述当系统事实。",
+      "rationale": "针对 replay 中的伪链/误引述问题，增强公开证据校验。"
+    },
+    {
+      "file": "task.md",
+      "change": "补一段精简但更硬的村民工作流：先记系统事实，再记玩家声明，再记自己的推测；遇到警徽链或查验链时先核对公开原话；残局必须先写出两个嫌疑人及其排序，再决定投票对象。",
+      "rationale": "让角色任务文档和代码提示一致，减少模型在解释性文本和执行文本之间的偏差。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "引入轻量记忆后，如果更新逻辑过于激进，可能把过期嫌疑固化得更久。",
+      "mitigation": "只存极短摘要，并在每次公开状态同步时覆盖更新，不保存长链历史。"
+    },
+    {
+      "risk": "阶段化 checklist 过强可能让模型在信息稀少时过度自信地下结论。",
+      "mitigation": "允许在证据不足时把“暂不投对象”保守保留，但仍必须比较两个候选。"
+    },
+    {
+      "risk": "压缩 public_state_brief 可能丢掉少数关键细节。",
+      "mitigation": "只压缩重复信息，不删系统死亡、存活、警徽归属、公开查验/自报和近期票型这些高权重字段。"
+    },
+    {
+      "risk": "强制读取 current_round_dialogue 可能增加少量 token 和工具成本。",
+      "mitigation": "只在 day_discussion、day_vote、last_words 等确实依赖话术的阶段强制使用，其他阶段保持轻量。"
+    },
+    {
+      "risk": "如果模型把“玩家声明/系统事实”的分层理解过度机械化，可能降低对策略性伪装的容忍度。",
+      "mitigation": "保留“声明可用于博弈，但不能当系统确认”的表述，避免禁止正常狼人杀话术。"
+    }
+  ],
+  "code_agent_brief": "请在 villager 的 task_agent.py 中做一次小而硬的重构：1) 给 TaskAgent 加一个极小的局内记忆槽，observe() 里只保存最近公开同步的 alive/dead/sheriff/票型/冲突摘要；2) 把 render_public_state_brief() 改成“系统事实 / 玩家声明 / 需复核冲突”三段式；3) 把 render_villager_decision_checklist() 改成按 phase 的硬流程，尤其是 day_vote 必须比较至少两个候选，alive<=6 时必须输出两个嫌疑人并排序；4) 在 day_discussion 和 day_vote 的 turn prompt 里明确要求先看 current_round_dialogue，并核对原话，不要把转述当系统事实。同步把 task.md 精简补齐成同样的工作流说明。不要改 Game Engine、schema 或任何规则。"
+}

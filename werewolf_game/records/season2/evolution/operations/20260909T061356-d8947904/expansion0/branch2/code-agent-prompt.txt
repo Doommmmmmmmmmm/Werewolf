@@ -1,0 +1,109 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00023 的主要问题不是行动协议可靠性，而是女巫资源决策缺少“当前狼刀目标—行动收益”的强制闭环。20 局中胜率为 0.30，且 focus 角色无 fallback、无非法行动，说明输出工程稳定；但在代表性回放中，女巫首夜成功救人后连续多夜 pass，错过了未受保护的高价值预言家，最后又将毒药用在当夜已经被狼刀的守卫身上，造成资源浪费。下一代应在不改变可见性和规则的前提下，增加私有狼刀目标的显式归一化、价值目标识别、重复击杀保护和残局资源阈值，并让这些规则优先级高于笼统的“保留资源”提示。",
+  "evidence": [
+    "评测汇总显示 witch-n00023 共完成 20 局，胜 6 局、负 14 局，胜率 0.30；focus 角色共 293 次决策，fallback 0 次、非法行动 0 次。这表明主要损失不是 schema、超时或重试问题，而是策略质量问题。",
+    "父节点 witch-n00001 的胜率为 0.35，当前节点并未表现出相对父节点的明确收益提升；当前节点虽被 retained，但仅满足 broad filter，不能视为策略已经改进。",
+    "回放 s2-witch-n00023-game18 中，第一夜狼队明确选择 p3，女巫使用 witch_heal 救下 p3，行动有效且当夜无人死亡。",
+    "同一回放第二夜狼队选择预言家 p2，守卫同时保护 p2，女巫 pass；第四夜狼队再次选择 p2，守卫仍保护 p2，女巫 pass；第五夜狼队继续选择 p2，而守卫改保护 p7，女巫仍 pass，最终 p2 在该夜死亡。p2 是公开持有警徽、连续报出两名狼查验的预言家，属于明显高价值目标。",
+    "第七夜狼队选择 p3，守卫保护 p7，女巫使用 poison p3。该行动与当夜狼刀目标重复，且毒药和救药当夜至多使用一种；因此毒药没有增加额外击杀信息，却消耗了唯一毒药。",
+    "回放结束时 p5、p12 仍为存活狼人，女巫 p11 也存活但两种药均已耗尽；最终狼人获胜。不能仅凭这一局断言某个具体替代行动必然获胜，但可以确定 p3 重复毒杀是资源效率低下，p2 未被救也是高价值救援机会。",
+    "当前代码已经构造 witch_decision_summary 和 candidate_ranking，但其 heal 候选主要从 public_state 的死亡记录推导，poison 候选主要从票型和公开对跳推导；没有在派生摘要中明确呈现“本夜私有狼刀目标”“该目标是否已经被公开确认高价值”“毒杀目标是否等于狼刀目标”等关键比较。",
+    "当前 _update_private_state 只从若干通用别名提取药水状态，未保存当前狼刀目标的统一字段。即使原始 private_information 中存在该信息，模型仍需要自行从原始包中定位并将其与候选行动联结，容易被保守型提示压过。实际字段名是否为某个具体别名尚不完全确定，因此应采用受限的别名归一化而不是假设单一 schema。",
+    "当前系统提示和 task.md 多次强调“证据不足时默认 pass”“宁可保留资源”，但没有同等明确地规定：已知狼刀命中高价值目标时必须重新评估救药，以及毒药不得用于已经确定会被狼刀的同一目标。这会把保守原则错误地应用到高杠杆夜晚。"
+  ],
+  "root_causes": [
+    {
+      "cause": "私有夜刀目标没有进入结构化女巫决策上下文",
+      "confidence": "high",
+      "impact": "模型虽然可能在原始 private_information 中看到夜刀目标，但没有被迫将其与当前可用药水、公开价值和行动收益进行逐项比较；因此容易连续 pass。"
+    },
+    {
+      "cause": "救药策略过度依赖“已经死亡的公开记录”，而不是当前夜间的私有攻击目标",
+      "confidence": "high",
+      "impact": "当夜目标尚未成为 public_state.deaths 时，heal_candidates 可能为空，保守 pass 规则会压过对高价值目标的即时救援。"
+    },
+    {
+      "cause": "缺少毒药重复击杀保护",
+      "confidence": "high",
+      "impact": "在回放第七夜，poison p3 与 wolf_target p3 重合，直接浪费唯一毒药。"
+    },
+    {
+      "cause": "高价值目标和残局状态没有形成明确、可执行的优先级",
+      "confidence": "medium",
+      "impact": "公开警长、公开可信预言家、连续命中查验的预言家等目标没有被统一提升为救药候选；剩余人数减少、狼数量压力上升时也没有清晰降低 pass 阈值。"
+    },
+    {
+      "cause": "候选评分包含启发式误导风险",
+      "confidence": "medium",
+      "impact": "票型聚集会被简单转化为 poison candidate，且公开 state、compact history、当前轮对话的来源边界不够清晰，可能使模型把“有人被集中怀疑”误读成“适合立即毒杀”。"
+    },
+    {
+      "cause": "跨回合记忆保存了摘要，但没有保存足够的决策结果语义",
+      "confidence": "medium",
+      "impact": "当前代码记住 last_witch_action 和药水布尔值，却没有稳定记录最近一次狼刀目标、该目标是否被保护、救药是否已消耗在何种价值目标上，导致后续夜晚不能快速复盘资源机会。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 TaskAgent 的女巫专用状态中增加受限的 current_night_attack_target、last_night_attack_target、last_night_action_kind、last_night_action_target 等字段；从 private_information 仅按明确别名读取夜刀目标，例如 wolf_target、wolf_attack_target、night_attack_target、attack_target、attacked_player_id、kill_target、night_kill_target，并将空值和非法值忽略。不要读取或保存任何超出行动包可见范围的信息。",
+      "rationale": "把本夜私有信息归一化为内部决策状态，减少模型从原始长包中自行检索的负担，同时不改变信息可见性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _witch_decision_summary 或新增 _build_witch_decision_context，显式输出 current_night_attack_target、current_round、alive_count、available_actions、resource_state、public_high_value_targets、public_counterclaims、recent_vote_pressure、endgame_pressure，并给每个可用行动生成结构化候选。候选至少分为 heal_current_target、poison_candidate、pass，不要只依赖 recent_deaths。",
+      "rationale": "女巫的关键决策输入是“当夜狼刀目标 + 当前资源 + 公开价值 + 局面压力”，必须在模型上下文中显式并列。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加公开高价值目标识别函数，仅基于 public_state、compact_memory 和当前轮公开对话：优先识别公开警长、明确自称预言家且存在连续公开查验链、被多数公开信息支持的好人、以及已公开确认的关键神职。将这些目标标记为 high_value_for_heal，但不要把模型推断的身份改写成系统确认身份。",
+      "rationale": "回放中 p2 的警长和连续命中查验链应显著提高救援价值；同时必须保留“声明/推测/确认”的区分，避免违反保密边界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _witch_decision_summary 中加入确定性安全规则：若 poison_candidate.target_id == current_night_attack_target，标记 poison_redundant=true，并将该毒杀候选降为不可推荐；若没有其他高置信毒杀目标，推荐 pass。若 current_night_attack_target 是高价值公开目标且 heal 可用，将 heal_current_target 置于 pass 之前。",
+      "rationale": "同一目标同时被狼刀和毒杀通常不会带来额外收益，回放第七夜的 poison p3 正是该缺陷。此规则只影响女巫自身候选排序，不绕过引擎校验。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加残局压力计算：根据 public_state 中存活人数、公开死亡序列、公开已确认狼人数量和当前可用资源，生成 low/medium/high endgame_pressure。high 时降低 poison 和 heal 的使用门槛，但仍要求毒药有至少两类独立公开证据或强对跳冲突；对高价值当前夜刀目标则优先评估救药。",
+      "rationale": "在存活人数快速下降时继续无条件 pass 会丧失止损窗口；但毒药仍需维持高置信约束，避免把残局压力变成盲毒。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "改写 _apply_witch_safety_fallback（或新增仅限女巫的 fallback）：模型返回 poison 且目标与当前狼刀目标相同、或目标不在当前 allowed target_ids 时，若合法 pass 存在则改为 pass；模型返回 pass 且当前狼刀目标为明确高价值目标、heal 合法可用、且目标在 heal target_ids 中时，可将行动改为 witch_heal。该 fallback 只能使用 turn_packet 中的私有信息、公开状态和 allowed_actions。",
+      "rationale": "这是对模型排序失误的窄范围保险，而不是固定模板化用药；能修复明显的重复击杀浪费和高价值救援遗漏，同时保留引擎合法性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _remember_witch_action 中记录本次夜刀目标快照和动作结果语义，例如 action kind、target_id、was_current_attack_target、resource_before/resource_after（仅记录本地已知状态），并在新游戏 reset 时清空。",
+      "rationale": "后续决策需要知道药水是否已经消耗以及上次是否针对当前夜刀目标，避免只保存模糊的 last_witch_action。"
+    },
+    {
+      "file": "task.md",
+      "change": "将女巫规约改为明确的分层流程：先读取私有狼刀目标和药水状态；再判断目标是否为公开高价值好人；若是且救药合法，必须先比较救药收益与 pass，而不能直接套用保留资源；毒药不得用于同一夜已经被狼刀的目标，除非行动规则明确赋予额外收益；残局减少时允许更积极救援，但毒药仍需强对跳、双重公开证据或稳定冲突。",
+      "rationale": "当前 task.md 对保守策略强调充分，但对夜刀目标驱动和重复毒杀没有操作级约束，导致提示优先级失衡。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充输出前自检清单：1) action kind 是否为当前合法行动；2) 目标是否在对应 target_ids；3) poison 目标是否等于当前狼刀目标；4) 当前是否存在高价值救援目标；5) 白天发言是否只引用公开事实且不暗示药水、夜刀或未公开身份。",
+      "rationale": "把策略判断和保密/schema 自检分开，保持当前零非法行动优势。"
+    }
+  ],
+  "risks": [
+    "实际行动包中的狼刀字段名未在必读资料中完整展示；如果 coding agent 只实现单一字段名，可能仍然漏读。应使用有限别名集合并写单元测试覆盖已出现和缺失字段。",
+    "自动 heal fallback 可能在模型本来有更好理由 pass 时增加救药使用，尤其当公开“高价值”身份只是狼的伪装。应要求高价值判断基于公开支持链，而不是单一自称。",
+    "残局压力过强可能导致过早毒杀。毒药规则应继续要求强对跳、双重独立证据或稳定公开冲突，不能仅因存活人数少就毒。",
+    "“毒药目标等于狼刀目标就 pass”是收益层安全规则，不应被实现为修改引擎解析或强行提交不合法行动；必须先确认 pass 在 allowed_actions 中合法，否则交由现有 schema 重试流程处理。",
+    "新增结构化摘要会增加 prompt 长度。应只输出压缩后的字段和最多少量候选，避免突破 12000 Unicode 字符和 900 token 输出预算。",
+    "回放中守卫多次保护 p2，女巫无法知道守卫私有目标；因此不能把“狼刀高价值目标”绝对转化为必救，只能在当前目标公开高价值且救药合法时提升优先级。",
+    "单局回放不能证明具体替代方案必胜；建议将本修改作为窄范围候选，重点观察救药时机、重复毒杀率、残局药水保留率和 focus 胜率，而不是只看单局结果。"
+  ],
+  "code_agent_brief": "请在候选工作区仅修改 task_agent.py 和 task.md，为 witch-n00023 实现下一代女巫决策层。保留现有 action schema、allowed_actions 校验、受限工具预算、模型调用预算、可见性边界和保密要求，不修改 Game Engine 或任何外部接口。核心修复有三项：一是从当前 turn_packet.private_information 以有限别名归一化本夜狼刀目标，并在 witch_decision_summary 中显式呈现；二是基于公开状态识别警长、公开可信预言家、连续公开命中查验链等高价值救援对象，在药水可用且目标合法时把当前狼刀目标的救援评估置于 pass 之前；三是增加窄范围安全规则，禁止将毒药用于与当前狼刀目标相同的目标，除非规则提供额外收益；若无其他高置信毒杀目标则选择合法 pass。增加残局压力字段，但不要因此放宽毒药的高置信门槛。同步更新 task.md，明确“先夜刀目标、再资源、再公开价值、最后 pass”的流程和输出前自检。实现后至少检查：空字段不崩溃、未知别名不泄露、heal/poison/pass 目标仍经过现有合法性校验、跨游戏 reset 清理夜刀记忆、白天发言不会获得或暴露私有信息；特别复现回放中的行为目标：首夜救 p3 仍可发生，若后续狼刀 p2 且 heal 可用应显著提高救 p2 的概率，若 poison 候选等于当前狼刀 p3 则不得消耗毒药。"
+}

@@ -1,0 +1,260 @@
+--- witch-base/task_agent.py
++++ witch-n00001/task_agent.py
+@@ -187,12 +187,26 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._compact_history: list[dict[str, Any]] = []
++        self._last_observe_signature = ""
++        self._known_private_state: dict[str, Any] = {}
++        self._last_witch_action: dict[str, Any] = {}
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步，并保留极简跨回合摘要。"""
++
++        if not isinstance(sync_packet, Mapping):
++            return
++        snapshot = self._summarize_public_sync(sync_packet)
++        if not snapshot:
++            return
++        signature = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++        if signature == self._last_observe_signature:
++            return
++        self._last_observe_signature = signature
++        self._compact_history.append(snapshot)
++        if len(self._compact_history) > 6:
++            self._compact_history = self._compact_history[-6:]
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -201,6 +215,7 @@
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
++        self._update_private_state(private)
+         system = self._system_prompt(private)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -209,6 +224,13 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
++            "compact_memory": self._render_compact_memory(),
++            "self_resource_state": dict(self._known_private_state),
++            "witch_decision_summary": self._witch_decision_summary(turn_packet),
++            "speech_safety": (
++                "所有发言只能基于公开事实；不要把药水余量、夜刀目标、自己未公开的用药结果、"
++                "或未公开身份链说成既成事实。"
++            ),
+             "history_policy": {
+                 "default_context": "current_state_only",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -219,6 +241,8 @@
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
++
++        system = system + "\n\n【女巫专用决策规约】\n先复盘最近票型与死亡，再看自己药水状态。救药只救高价值且能改变轮次的目标；毒药只打高置信狼人或悍跳核心；证据不足时默认保留资源。公开发言只谈公开信息，不得泄露私密夜间信息。"
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -265,6 +289,7 @@
+             action = normalize_decision(raw, turn_packet["request"])
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
++                self._remember_witch_action(turn_packet, action)
+                 return action
+             if _attempt >= self.max_decision_retries:
+                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+@@ -297,6 +322,7 @@
+         return dict(self._model_token_usage)
+ 
+     def _system_prompt(self, private: Mapping[str, Any]) -> str:
++        memory_hint = self._render_compact_memory()
+         return render_prompt(
+             "player_system.txt",
+             player_id=self.player_id,
+@@ -309,6 +335,7 @@
+             max_tool_calls=self.max_tool_calls_per_decision,
+             max_tool_result_tokens=self.max_tool_result_tokens,
+             max_prompt_chars=self.max_prompt_chars,
++            compact_memory=memory_hint,
+         )
+ 
+     @staticmethod
+@@ -318,6 +345,142 @@
+             action_contract=render_action_contract(request),
+             validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
+         )
++
++    def _update_private_state(self, private: Mapping[str, Any]) -> None:
++        extracted: dict[str, Any] = {}
++        for key in ("role", "team", "status", "can_heal", "can_poison", "heal_used", "poison_used"):
++            if key in private:
++                extracted[key] = private[key]
++        for key in ("healed", "poisoned", "used_heal", "used_poison"):
++            if key in private:
++                extracted[key] = private[key]
++        for key, value in extracted.items():
++            self._known_private_state[key] = value
++
++    def _render_compact_memory(self) -> str:
++        if not self._compact_history:
++            return "暂无跨回合摘要。"
++        recent = self._compact_history[-4:]
++        return json.dumps(recent, ensure_ascii=False, separators=(",", ":"))
++
++    def _summarize_public_sync(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
++        def pick(source: Mapping[str, Any], *names: str) -> Any:
++            for name in names:
++                if name in source:
++                    return source[name]
++            return None
++
++        summary: dict[str, Any] = {}
++        round_info = pick(sync_packet, "round", "game_round", "day_round")
++        phase_info = pick(sync_packet, "phase", "public_phase", "stage")
++        if round_info is not None:
++            summary["round"] = round_info
++        if phase_info is not None:
++            summary["phase"] = phase_info
++
++        deaths = pick(sync_packet, "deaths", "dead_players", "night_deaths", "death_events")
++        if isinstance(deaths, list) and deaths:
++            summary["deaths"] = self._compact_entities(deaths)
++
++        votes = pick(sync_packet, "votes", "voting", "vote_results", "vote_events")
++        if isinstance(votes, list) and votes:
++            summary["votes"] = self._compact_entities(votes)
++
++        sheri = pick(sync_packet, "sheriff", "police", "警长", "captain")
++        if sheri is not None:
++            summary["sheriff"] = self._compact_value(sheri)
++
++        claims = pick(sync_packet, "claims", "reveals", "public_claims", "role_claims", "counterclaims")
++        if isinstance(claims, list) and claims:
++            summary["claims"] = self._compact_entities(claims)
++
++        if not summary:
++            for key in ("round", "phase", "deaths", "votes", "sheriff", "claims"):
++                if key in sync_packet:
++                    value = sync_packet[key]
++                    if isinstance(value, list):
++                        summary[key] = self._compact_entities(value)
++                    else:
++                        summary[key] = self._compact_value(value)
++        return summary
++
++    def _compact_entities(self, items: list[Any]) -> list[Any]:
++        return [self._compact_value(item) for item in items[:8]]
++
++    def _compact_value(self, value: Any) -> Any:
++        if isinstance(value, Mapping):
++            compact: dict[str, Any] = {}
++            for key in (
++                "player_id",
++                "id",
++                "target_id",
++                "speaker_id",
++                "voter_id",
++                "vote_target_id",
++                "result",
++                "role",
++                "team",
++                "type",
++                "action",
++                "kind",
++                "alive",
++                "reason",
++                "count",
++            ):
++                if key in value:
++                    compact[key] = value[key]
++            if not compact:
++                for key, item in list(value.items())[:4]:
++                    compact[key] = item
++            return compact
++        if isinstance(value, list):
++            return [self._compact_value(item) for item in value[:8]]
++        return value
++
++    def _remember_witch_action(self, turn_packet: Mapping[str, Any], action: dict[str, Any]) -> None:
++        request = turn_packet.get("request") or {}
++        phase = str(turn_packet.get("game", {}).get("public_phase", turn_packet.get("game", {}).get("phase", "")))
++        if "witch" not in phase and "witch" not in str(request.get("kind") or ""):
++            return
++        self._last_witch_action = {
++            "phase": phase,
++            "kind": action.get("kind"),
++            "target_id": action.get("target_id"),
++        }
++        self._known_private_state["last_witch_action"] = dict(self._last_witch_action)
++
++    def _witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
++        request = turn_packet.get("request") or {}
++        phase = str(turn_packet.get("game", {}).get("public_phase", turn_packet.get("game", {}).get("phase", "")))
++        summary: dict[str, Any] = {
++            "phase": phase,
++            "request_kind": request.get("kind"),
++            "resource_state": dict(self._known_private_state),
++            "recent_public_events": self._compact_history[-3:],
++            "last_witch_action": dict(self._last_witch_action) if self._last_witch_action else {},
++        }
++        if "witch" not in phase and "night" not in phase:
++            summary["recommendation"] = "not_witch_phase"
++            return summary
++        allowed_actions = request.get("allowed_actions") if isinstance(request, Mapping) else None
++        action_kinds = [str(item.get("kind")) for item in allowed_actions or [] if isinstance(item, Mapping)]
++        if not action_kinds:
++            summary["recommendation"] = {"heal_candidate": None, "poison_candidate": None, "pass_candidate": "pass", "default": "pass"}
++            return summary
++        heal_kind = next((kind for kind in action_kinds if "heal" in kind), None)
++        poison_kind = next((kind for kind in action_kinds if "poison" in kind), None)
++        pass_kind = next((kind for kind in action_kinds if "pass" in kind or kind == "wait"), None)
++        low_resources = any(bool(self._known_private_state.get(flag)) for flag in ("heal_used", "poison_used"))
++        summary["recommendation"] = {
++            "heal_candidate": {"kind": heal_kind, "confidence": "high_only" if heal_kind else "none"},
++            "poison_candidate": {"kind": poison_kind, "confidence": "high_only" if poison_kind else "none"},
++            "pass_candidate": {"kind": pass_kind or "pass", "confidence": "default"},
++            "priority": ["heal", "poison", "pass"],
++            "default": "pass",
++            "confidence_rule": "only_act_on_high_confidence_or_high_value",
++            "resource_hint": "preserve" if low_resources else "normal",
++        }
++        return summary
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+         if self.request_coordinator is not None:
+--- witch-base/task.md
++++ witch-n00001/task.md
+@@ -1,8 +1,20 @@
+-# 女巫最小任务
++# 女巫任务规约
+ 
+-你的任务是合理使用药水帮助好人获胜，同时隐藏不应公开的药水和夜间信息。
++你的任务是帮助好人获胜，并且严格保密不应公开的药水和夜间信息。
+ 
+-- 先确认当晚狼刀、药水余量和合法行动，再权衡救人、毒人或保留药水。
+-- 毒药应尽量针对有充分依据的狼人；不确定时可以保留资源或选择合法的放弃行动。
+-- 白天发言要像普通玩家或自然的神职玩家，不要无理由泄露自己掌握的私密信息。
+-- 每次决策都结合前几天的票型和死亡信息，避免固定首夜用药套路。
++## 行动优先级
++1. 先确认当夜狼刀、自己药水余量、以及当前阶段允许的行动。
++2. 救药只用于高价值目标，或确实能明显改变当前轮次的局面时。
++3. 毒药只打高置信狼人、悍跳核心，或已经形成稳定负面链条的目标。
++4. 证据不足、信息冲突或收益不明显时，默认保留资源，优先选择合法的放弃行动。
++5. 不要固定套用首夜或模板化用药；每次决策都要结合前几天的票型、死亡信息和公开对跳。
++
++## 发言保密要求
++- 白天发言只能基于公开事实。
++- 不得把药水余量、夜刀目标、自己未公开的用药结果，或未公开身份链说成既成事实。
++- 可以自然表达怀疑和推理，但不能泄露只属于你的夜间信息。
++
++## 决策风格
++- 保持像正常玩家或自然的神职玩家。
++- 先看公开票型与死亡，再决定救、毒或 pass。
++- 宁可保留关键资源，也不要因为短期直觉过早消耗唯一药水。

@@ -1,0 +1,274 @@
+--- seer-n00067/task_agent.py
++++ seer-n00137/task_agent.py
+@@ -383,12 +383,13 @@
+                 pieces.append("建议目标：" + "、".join(seer_brief["preferred_targets"]))
+         elif mode == "sheriff_election_speech":
+             pieces.append(
+-                "竞选警长发言必须先讲已知查验事实，再讲可验证推断和带队计划；"
+-                "若有对跳，直接对比查验、时间线和动机，不要泛泛而谈。"
++                "竞选警长发言模板：身份 + 权威查验链 + 对跳矛盾 + 今日唯一票口；"
++                "只能使用 authoritative_inspections/own_inspection_chain 中列出的事实。"
+             )
+         elif mode == "day_speech":
+             pieces.append(
+-                "白天发言要先给查验事实，再给基于票型和发言的推断；先压最危险的矛盾点，再给出可执行投票方向。"
++                "白天发言模板：身份 + 权威查验链 + 对跳矛盾 + 今日唯一票口；"
++                "只能使用 authoritative_inspections/own_inspection_chain 中列出的事实。"
+             )
+         elif mode == "vote":
+             pieces.append(
+@@ -397,6 +398,11 @@
+         else:
+             pieces.append(
+                 "保持 seer 视角：任何发言都要尽量围绕查验、对跳、票型和可验证推断，不要套通用狼人杀模板。"
++            )
++        if mode in _SPEECH_ACTION_KINDS or mode in {"sheriff_election_speech", "day_speech", "general"}:
++            pieces.append(
++                "硬规则：‘我验/我查/查验链’只能逐字对应 own_inspection_chain；他人报验只能写成‘对方声称’，"
++                "不得改写成‘我验’，不得把 others_claims 并入自己的事实。"
+             )
+         if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
+             pieces.append(
+@@ -1018,47 +1024,61 @@
+         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
+         self._seer_memory.challenged_players = self._unique_stable(self._seer_memory.challenged_players)
+ 
+-    def _update_inspection_records(self, packet: Mapping[str, Any]) -> None:
++    def _authoritative_inspections(self, packet: Mapping[str, Any]) -> dict[str, str]:
++        """只从私有包建立查验事实表；公开发言永远不参与这里的解析。"""
+         private = self._first_present(
+             packet,
+-            (
+-                ("private_information",),
+-                ("private",),
+-                ("self", "private_information"),
+-            ),
++            (("private_information",), ("private",), ("self", "private_information")),
+         )
+         if not isinstance(private, Mapping):
+-            return
+-        target = self._extract_single_player_id(
+-            self._first_present(
+-                private,
+-                (
+-                    ("inspect_target",),
+-                    ("target_id",),
+-                    ("target",),
+-                    ("checked_player",),
+-                    ("seer_target",),
+-                ),
+-            )
+-        )
+-        result_value = self._first_present(
+-            private,
+-            (
+-                ("inspect_result",),
+-                ("check_result",),
+-                ("seer_result",),
+-                ("night_result",),
+-                ("result",),
+-            ),
+-        )
+-        if not target and not result_value:
+-            return
+-        result_text = self._inspection_result_text(result_value)
+-        if not result_text:
++            return {}
++        table: dict[str, str] = {}
++
++        def add(target_value: Any, result_value: Any) -> None:
++            target = self._extract_single_player_id(target_value)
++            result = self._inspection_result_text(result_value)
++            if target and result in {"wolf", "villager"}:
++                table[target] = result
++
++        target_keys = ("target_id", "inspect_target", "target", "checked_player", "seer_target", "player_id")
++        result_keys = ("team", "inspect_result", "check_result", "seer_result", "night_result", "result", "alignment")
++
++        def read_payload(value: Any) -> None:
++            if isinstance(value, Mapping):
++                target_value = next((value.get(key) for key in target_keys if value.get(key) not in (None, "")), None)
++                result_value = next((value.get(key) for key in result_keys if value.get(key) not in (None, "")), None)
++                if target_value is not None and result_value is not None:
++                    add(target_value, result_value)
++                # inspections 常见为 {"p3": "wolf"}，也可能是列表中的 payload。
++                for key, nested in value.items():
++                    if str(key).lower() in target_keys or str(key).lower() in result_keys:
++                        continue
++                    if _PLAYER_ID_PATTERN.fullmatch(str(key).strip()):
++                        add(key, nested)
++                    elif key in {"inspections", "role_state", "seer_result", "night_result", "latest_result", "checks"}:
++                        read_payload(nested)
++            elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
++                for nested in value:
++                    read_payload(nested)
++
++        # 先读扁平字段，再读明确的私有查验容器，避免扫描 private_information 的其他内容。
++        target_value = next((private.get(key) for key in target_keys if private.get(key) not in (None, "")), None)
++        result_value = next((private.get(key) for key in result_keys if private.get(key) not in (None, "")), None)
++        if target_value is not None and result_value is not None:
++            add(target_value, result_value)
++        for key in ("inspections", "role_state", "seer_result", "night_result", "latest_result", "checks"):
++            if key in private:
++                read_payload(private[key])
++        return table
++
++    def _update_inspection_records(self, packet: Mapping[str, Any]) -> None:
++        authoritative = self._authoritative_inspections(packet)
++        if not authoritative:
+             return
+         round_no = self._seer_memory.round_no
+-        if target:
++        for target, result_text in authoritative.items():
+             entry = {"round": round_no, "target": target, "result": result_text}
++            # 同一事实在 observe/decide 重复出现时只保留一份；若轮次变更则保留历史。
+             if entry not in self._seer_memory.inspected:
+                 self._seer_memory.inspected.append(entry)
+ 
+@@ -1124,6 +1144,17 @@
+         vote_target_from_inspection = [
+             player_id for player_id in living_known_wolves if not allowed_target_set or player_id in allowed_target_set
+         ]
++        priority_players = self._unique_stable(
++            [self._seer_memory.sheriff_id]
++            + self._seer_memory.challenged_players
++            + self._seer_memory.sheriff_candidates
++        )
++        vote_target_from_inspection.sort(
++            key=lambda target: (
++                0 if target in priority_players else 1,
++                priority_players.index(target) if target in priority_players else living_known_wolves.index(target),
++            )
++        )
+         self_preservation_emergency = bool(
+             self._self_is_under_pressure(turn_packet)
+             and not vote_target_from_inspection
+@@ -1189,6 +1220,13 @@
+             self_is_candidate = self.player_id in self._seer_memory.sheriff_candidates or self.player_id == self._seer_memory.sheriff_id
+             if has_facts or self_is_candidate:
+                 return "预言家有查验事实或竞选身份时不能跳过发言，必须用最短格式报验人"
++        if action_kind in _SPEECH_ACTION_KINDS:
++            speech_error = self._speech_inspection_error(
++                self._stringify(action.get("text")),
++                self._authoritative_inspection_table_from_memory(),
++            )
++            if speech_error:
++                return speech_error
+         if self._kind_looks_like_vote(action_kind):
+             target_id = self._stringify(action.get("target_id"))
+             living_confirmed_villagers = set(self._stringify(item) for item in public_plan.get("living_confirmed_villagers", []))
+@@ -1198,6 +1236,50 @@
+             if living_known_wolves and any(target in allowed_targets for target in living_known_wolves):
+                 if target_id not in living_known_wolves:
+                     return "已验狼在可投范围内时，投票必须指向已验狼"
++        return None
++
++    def _authoritative_inspection_table_from_memory(self) -> dict[str, str]:
++        table: dict[str, str] = {}
++        for item in self._seer_memory.inspected:
++            if not isinstance(item, Mapping):
++                continue
++            target = self._stringify(item.get("target"))
++            result = self._inspection_result_text(item.get("result"))
++            if target and result in {"wolf", "villager"}:
++                table[target] = result
++        return table
++
++    def _speech_inspection_error(self, text: str, authoritative: Mapping[str, str]) -> str | None:
++        """校验模型把自己的查验链说成了什么；对手的声明不纳入校验。"""
++        if not text or not authoritative:
++            return None
++        result_patterns = (
++            (re.compile(r"查杀|狼人?|坏人|wolf|werewolf", re.IGNORECASE), "wolf"),
++            (re.compile(r"金水|好人|村民|平民|villager|good|human", re.IGNORECASE), "villager"),
++        )
++        # 按标点分段，避免把“对方报 p2 查杀，我验 p3 狼”混成一条声明。
++        clauses = re.split(r"[。！？!?；;，,、]+", text)
++        self_markers = re.compile(r"(?:我|本人|咱|昨晚|上一晚).{0,8}(?:验|查|查验)|查验链|我的查验", re.IGNORECASE)
++        other_markers = re.compile(r"对方|他人|他说|声称|报验|假预言家|对跳者|狼悍跳|别人", re.IGNORECASE)
++        player_pattern = re.compile(r"p\d+|第\s*\d{1,2}\s*[号位]", re.IGNORECASE)
++        for clause in clauses:
++            if not clause or not self_markers.search(clause) or other_markers.search(clause):
++                continue
++            ids = self._extract_player_ids(clause)
++            if not ids:
++                # 只有查验链上下文才允许使用座位称呼；别的模糊话术不拦截。
++                ids = [self._extract_single_player_id(match.group(0)) for match in player_pattern.finditer(clause)]
++                ids = [item for item in ids if item]
++            result = next((normalized for pattern, normalized in result_patterns if pattern.search(clause)), "")
++            if not result:
++                continue
++            for target in self._unique_stable(ids):
++                expected = authoritative.get(target)
++                if expected is None:
++                    allowed = "、".join(f"{key}={value}" for key, value in authoritative.items())
++                    return f"发言声称自己查验了未收到的目标 {target}；只能使用权威查验链：{allowed}"
++                if expected != result:
++                    return f"发言把 {target} 的查验结果说错；权威查验链是 {target}={expected}"
+         return None
+ 
+     def _apply_inspect_target_bias(
+@@ -1230,6 +1312,11 @@
+         allowed_kinds = [str(item.get("kind")) for item in allowed_actions if isinstance(item, Mapping) and item.get("kind")]
+         target_candidates = self._allowed_target_ids(allowed_actions)
+         preferred_targets, reasons = self._rank_inspect_targets(turn_packet, target_candidates)
++        authoritative = self._authoritative_inspection_table_from_memory()
++        own_chain = [
++            f"{target}={'查杀' if result == 'wolf' else '金水'}"
++            for target, result in authoritative.items()
++        ]
+         facts = self._seer_facts_summary()
+         pressure_points = self._pressure_points_summary(turn_packet)
+         self_risk = self._self_risk_summary(turn_packet)
+@@ -1239,6 +1326,9 @@
+             "mode": mode,
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+             "facts": facts,
++            "authoritative_inspections": authoritative,
++            "own_inspection_chain": own_chain,
++            "others_claims": self._seer_memory.declared_claims[-_SUMMARY_LIST_LIMIT:],
+             "public_plan": public_plan,
+             "pressure_points": pressure_points,
+             "self_risk": self_risk,
+@@ -1259,16 +1349,7 @@
+             result = self._stringify(item.get("result"))
+             if target and result:
+                 facts.append(f"{round_no + '轮' if round_no else '查验'}{target}={result}")
+-        if self._seer_memory.sheriff_id:
+-            facts.append(f"警长/队长位：{self._seer_memory.sheriff_id}")
+-        if self._seer_memory.recent_vote_summary:
+-            facts.append(f"最近票型：{self._seer_memory.recent_vote_summary}")
+-        if self._seer_memory.declared_claims:
+-            latest = self._seer_memory.declared_claims[-1]
+-            speaker = self._stringify(latest.get("speaker"))
+-            claim = self._stringify(latest.get("claim"))
+-            if speaker or claim:
+-                facts.append(f"最新公开声明：{speaker + ' ' if speaker else ''}{claim}".strip())
++        # 警长、票型和公开声明属于推理/他人 claims，不混入自己的查验事实。
+         return facts[:_SUMMARY_LIST_LIMIT]
+ 
+     def _pressure_points_summary(self, turn_packet: Mapping[str, Any]) -> list[str]:
+@@ -1489,10 +1570,9 @@
+         }
+ 
+     def _compact_private_information(self, private: Mapping[str, Any]) -> dict[str, Any]:
++        # seer_memory 已单独注入；这里不再复制整份记忆，避免 prompt 膨胀和事实重复。
+         compact = self._compact_value(private, max_depth=2)
+-        if isinstance(compact, dict):
+-            compact["seer_memory_hint"] = self._compact_seer_memory()
+-        return compact
++        return compact if isinstance(compact, dict) else {"private": compact}
+ 
+     def _compact_seer_memory(self) -> dict[str, Any]:
+         memory = {
+--- seer-n00067/task.md
++++ seer-n00137/task.md
+@@ -28,7 +28,7 @@
+ 
+ ## 额外要求
+ 
+-- 不要编造没有收到的查验结果。
++- 不要编造没有收到的查验结果。公开发言中凡使用“我验”“我查”或“查验链”，必须逐字对应自己收到的私有查验；他人报验只能称为“对方声称”，不得并入自己的查验链。
+ - 不要忽视生存风险；必要时先短发言、后补证据。
+ - 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先短发言并只释放足够推动投票的最小事实集，而不是一次性展开全部查验。
+ - 参选预言家且已有首验时，不得退水或跳过发言；最短模板也要包含“身份 + 查验链 + 今日保护/归票”。

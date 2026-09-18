@@ -1,0 +1,462 @@
+--- hunter-n00040/task_agent.py
++++ hunter-n00058/task_agent.py
+@@ -32,6 +32,10 @@
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _PASS_LIKE_ACTION_KINDS = frozenset({"pass", "skip", "wait", "idle", "noop", "none"})
++_IDENTITY_ROLE_TERMS = ("预言家", "女巫", "守卫", "猎人", "白痴", "平民", "狼人", "狼")
++_SELF_CLAIM_MARKERS = ("我是", "我就是", "我跳", "我报", "我认", "我自称", "我来跳", "我来报", "我这把", "我这轮", "我牌是", "claim")
++_IDENTITY_CONTRADICTION_MARKERS = ("改口", "矛盾", "对跳", "反水", "卖队", "假", "伪", "反口")
++_IDENTITY_CLEAR_MARKERS = ("金水", "查验好人", "已验好", "验好", "确认好人", "查到好人", "验到好人")
+ DEFAULT_PUBLIC_MEMORY_SIZE = 24
+ 
+ 
+@@ -237,40 +241,56 @@
+             brief.update(
+                 {
+                     "decision_mode": "hunter_reaction",
+-                    "focus": "先比票型、改口、身份声明和死亡链条；只有多源证据都很弱时才考虑跳过。",
++                    "focus": "先比票链、身份自报、对跳、死亡链和硬清/软清；只要有明显多源冲突就不要默认跳过。",
+                     "target_ranking": ranking["target_ranking"],
+                     "skip_option": ranking["skip_option"],
+                     "skip_condition": ranking["skip_condition"],
++                    "skip_recommended": ranking["skip_recommended"],
+                     "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "vote_chain": evidence_snapshot["vote_chain"],
+                     "top_contradictions": evidence_snapshot["top_contradictions"],
++                    "claim_chain": evidence_snapshot["claim_chain"],
+                     "claimed_roles": evidence_snapshot["claimed_roles"],
++                    "role_links": evidence_snapshot["role_links"],
++                    "death_chain": evidence_snapshot["death_chain"],
+                     "hard_clears": evidence_snapshot["hard_clears"],
++                    "soft_clears": evidence_snapshot["soft_clears"],
+                 }
+             )
+         elif mode == "last_words":
+             brief.update(
+                 {
+                     "decision_mode": "last_words",
+-                    "focus": "收束到已公开的票型、身份冲突、改口与死亡顺序，先列证据再下结论。",
++                    "focus": "收束到已公开的票链、身份自报、对跳、改口与死亡顺序，先列证据再下结论。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
+                     "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "vote_chain": evidence_snapshot["vote_chain"],
+                     "top_contradictions": evidence_snapshot["top_contradictions"],
++                    "claim_chain": evidence_snapshot["claim_chain"],
+                     "claimed_roles": evidence_snapshot["claimed_roles"],
++                    "role_links": evidence_snapshot["role_links"],
++                    "death_chain": evidence_snapshot["death_chain"],
+                     "hard_clears": evidence_snapshot["hard_clears"],
++                    "soft_clears": evidence_snapshot["soft_clears"],
+                 }
+             )
+         elif mode == "speak":
+             brief.update(
+                 {
+                     "decision_mode": "speak",
+-                    "focus": "回应当前争议，优先点出票型变化、身份声明矛盾和谁在保谁。",
++                    "focus": "回应当前争议，优先点出票链变化、身份声明矛盾和谁在保谁。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
+                     "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "vote_chain": evidence_snapshot["vote_chain"],
+                     "top_contradictions": evidence_snapshot["top_contradictions"],
++                    "claim_chain": evidence_snapshot["claim_chain"],
+                     "claimed_roles": evidence_snapshot["claimed_roles"],
++                    "role_links": evidence_snapshot["role_links"],
++                    "death_chain": evidence_snapshot["death_chain"],
+                     "hard_clears": evidence_snapshot["hard_clears"],
++                    "soft_clears": evidence_snapshot["soft_clears"],
+                 }
+             )
+         else:
+@@ -371,6 +391,9 @@
+                 "support_lines": deque(maxlen=4),
+                 "contradictions": deque(maxlen=4),
+                 "death_links": deque(maxlen=4),
++                "role_links": deque(maxlen=6),
++                "claim_sources": deque(maxlen=4),
++                "clear_sources": deque(maxlen=4),
+                 "latest_vote": "",
+                 "status": "unknown",
+                 "hard_clear": False,
+@@ -415,6 +438,97 @@
+                 seen.add(player_id)
+                 result.append(player_id)
+         return result
++
++    @staticmethod
++    def _extract_roles_from_text(text: str) -> list[str]:
++        if not text:
++            return []
++        ordered_terms = _IDENTITY_ROLE_TERMS
++        result: list[str] = []
++        seen: set[str] = set()
++        for term in ordered_terms:
++            if term in text and term not in seen:
++                if term == "狼" and "狼人" in seen:
++                    continue
++                seen.add(term)
++                result.append(term)
++        if "民" in text and "平民" not in seen and any(marker in text for marker in _SELF_CLAIM_MARKERS):
++            seen.add("平民")
++            result.append("平民")
++        return result
++
++    @classmethod
++    def _parse_identity_signals(
++        cls,
++        *,
++        actor: str,
++        target: str,
++        kind: str,
++        text: str,
++        role: str,
++    ) -> dict[str, Any]:
++        clean_text = str(text or "").strip()
++        lower_kind = str(kind or "").strip().lower()
++        mentions = cls._player_ids_from_text(clean_text)
++        roles = cls._extract_roles_from_text(clean_text)
++        claim_context = lower_kind in {"claim", "reveal", "identity", "open_role", "last_words"}
++        if not claim_context and any(marker in clean_text for marker in _SELF_CLAIM_MARKERS):
++            claim_context = True
++        negated = any(marker in clean_text for marker in ("不是", "没", "无", "不跳", "不认", "不报"))
++        if role and cls._role_looks_clear(role):
++            roles.append(role)
++        roles = cls._unique_strings(roles)
++
++        claims: list[str] = []
++        contradictions: list[str] = []
++        role_links: list[str] = []
++        hard_clear = False
++        soft_clear = False
++
++        if claim_context and roles and not negated:
++            claims.extend(roles)
++            if any(marker in clean_text for marker in ("对跳", "伪", "假", "反水", "矛盾", "改口")):
++                contradictions.append(cls._compact_text(clean_text, limit=60))
++
++        if negated and roles:
++            contradictions.append(cls._compact_text(clean_text, limit=60))
++        if any(marker in clean_text for marker in _IDENTITY_CONTRADICTION_MARKERS):
++            contradictions.append(cls._compact_text(clean_text, limit=60))
++
++        if any(marker in clean_text for marker in _IDENTITY_CLEAR_MARKERS):
++            soft_clear = True
++
++        if lower_kind in {"reveal", "identity", "open_role"}:
++            if role and cls._role_looks_clear(role):
++                hard_clear = True
++            if clean_text and any(marker in clean_text for marker in _IDENTITY_CLEAR_MARKERS):
++                hard_clear = True
++            if roles and any(marker in clean_text for marker in _IDENTITY_CLEAR_MARKERS):
++                hard_clear = True
++
++        if lower_kind in {"death", "died", "eliminate", "eliminated", "kill", "killed"}:
++            if roles and any(marker in clean_text for marker in ("遗言", "最后发言", "最后一句", "临死", "出局")):
++                soft_clear = True
++
++        relation_markers = ("查杀", "金水", "对跳", "验到", "验出", "验中", "验好", "认狼", "认好")
++        relation_hit = any(marker in clean_text for marker in relation_markers)
++        for mentioned_id in mentions:
++            if mentioned_id == actor:
++                continue
++            for found_role in roles:
++                if not negated and (relation_hit or claim_context or any(marker in clean_text for marker in ("是", "就是", "认", "报", "跳"))):
++                    role_links.append(f"{mentioned_id}:{found_role}")
++        if target and target != actor and relation_hit and not negated:
++            relation = "查杀" if "查杀" in clean_text or "认狼" in clean_text else "金水" if "金水" in clean_text else "对跳"
++            role_links.append(f"{target}:{relation}")
++
++        return {
++            "claims": cls._unique_strings(claims),
++            "contradictions": cls._unique_strings(contradictions),
++            "role_links": cls._unique_strings(role_links),
++            "hard_clear": hard_clear,
++            "soft_clear": soft_clear,
++        }
+ 
+     def _player_label(self, player_id: str) -> str:
+         note = self._player_notes.get(player_id)
+@@ -451,6 +565,7 @@
+         is_death = kind in {"death", "died", "eliminate", "eliminated", "kill", "killed"} or record.get("death") is not None
+         is_claim = kind == "claim"
+         is_reveal = kind in {"reveal", "identity", "open_role"}
++        parsed = self._parse_identity_signals(actor=actor, target=target, kind=kind, text=text, role=role)
+         negative_words = ("改口", "矛盾", "对跳", "反水", "卖队", "带节奏", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")
+         positive_words = ("可信", "一致", "解释清楚", "对得上", "稳定", "金水", "好人", "站对", "硬清")
+         contradiction_words = ("改口", "矛盾", "对跳", "反水", "自相矛盾")
+@@ -460,6 +575,7 @@
+             note["last_phase"] = phase_value
+         if actor:
+             actor_note = self._player_note(actor)
++            summary_text = self._compact_text(summary or text, limit=64)
+             if speech_kind and text:
+                 actor_note["speeches"].append(self._compact_text(text, limit=56))
+             if is_vote:
+@@ -484,8 +600,22 @@
+                         actor_note["hard_clear"] = True
+                 if text and any(keyword in text for keyword in ("金水", "查验好人", "已验好", "确认好人")):
+                     actor_note["hard_clear"] = True
++            for claim in parsed["claims"]:
++                actor_note["claims"].append(self._compact_text(claim, limit=24))
++            if parsed["claims"] or is_claim:
++                actor_note["claim_sources"].append(summary_text)
++            for link in parsed["role_links"]:
++                actor_note["role_links"].append(self._compact_text(link, limit=48))
++            if parsed["contradictions"]:
++                for contradiction in parsed["contradictions"]:
++                    actor_note["contradictions"].append(self._compact_text(contradiction, limit=60))
++            if parsed["hard_clear"]:
++                actor_note["hard_clear"] = True
++                actor_note["clear_sources"].append(summary_text)
++            if parsed["soft_clear"]:
++                actor_note["soft_clear"] = True
+             if text and any(keyword in text for keyword in contradiction_words):
+-                actor_note["contradictions"].append(self._compact_text(summary or text, limit=60))
++                actor_note["contradictions"].append(summary_text)
+             if text and any(keyword in text for keyword in ("金水", "可信", "好人", "站边", "支持")):
+                 actor_note["soft_clear"] = True
+         if is_death:
+@@ -510,6 +640,15 @@
+                     mention_note["support_lines"].append(summary_text)
+                 mention_note["last_round"] = round_value
+                 mention_note["last_phase"] = phase_value
++            if parsed["role_links"]:
++                for link in parsed["role_links"]:
++                    linked_target = link.split(":", 1)[0].strip()
++                    if linked_target and linked_target != actor:
++                        linked_note = self._player_note(linked_target)
++                        if any(keyword in text for keyword in ("查杀", "反水", "卖队", "假", "伪", "对跳", "狼")):
++                            linked_note["attack_lines"].append(summary_text)
++                        if any(keyword in text for keyword in ("金水", "可信", "好人", "支持", "站边", "确认好人")):
++                            linked_note["support_lines"].append(summary_text)
+         if target and is_vote:
+             self._player_note(target)["attack_lines"].append(self._compact_text(summary or f"{actor}投{target}", limit=60))
+         if target and is_death:
+@@ -517,23 +656,42 @@
+ 
+     def _evidence_snapshot(self, recent_memory: list[str]) -> dict[str, list[str]]:
+         vote_pressure: Counter[str] = Counter()
++        vote_chain: Counter[str] = Counter()
+         role_claims: dict[str, list[str]] = {}
+         top_contradictions: list[str] = []
+         hard_clears: list[str] = []
++        soft_clears: list[str] = []
++        claim_chain: list[str] = []
++        role_links: list[str] = []
++        death_chain: list[str] = []
+         for player_id, note in self._player_notes.items():
+             latest_vote = str(note.get("latest_vote") or "").strip()
+             if latest_vote:
+                 vote_pressure[latest_vote] += 1
++            for voted_target in list(note.get("vote_history") or []):
++                voted_target = str(voted_target).strip()
++                if voted_target:
++                    vote_chain[voted_target] += 1
+             contradictions = list(note.get("contradictions") or [])
+             if contradictions:
+                 top_contradictions.append(
+                     f"{self._player_label(player_id)}:{self._compact_text(contradictions[-1], limit=40)}"
+                 )
+             claims = self._unique_strings(list(note.get("claims") or []) + list(note.get("revealed_roles") or []))
++            if claims:
++                claim_chain.append(f"{self._player_label(player_id)}:{'/'.join(claims[:2])}")
+             for role in claims:
+                 role_claims.setdefault(role, []).append(player_id)
++            for link in list(note.get("role_links") or [])[-2:]:
++                role_links.append(f"{self._player_label(player_id)}:{self._compact_text(link, limit=28)}")
++            if list(note.get("death_links") or []):
++                death_chain.append(
++                    f"{self._player_label(player_id)}:{self._compact_text(list(note.get('death_links'))[-1], limit=40)}"
++                )
+             if note.get("hard_clear"):
+                 hard_clears.append(self._player_label(player_id))
++            elif note.get("soft_clear"):
++                soft_clears.append(self._player_label(player_id))
+         claimed_roles: list[str] = []
+         for role, players in sorted(role_claims.items(), key=lambda item: (-len(item[1]), item[0])):
+             claimed_roles.append(f"{role}:{'/'.join(players[:3])}")
+@@ -541,9 +699,14 @@
+                 break
+         return {
+             "top_vote_pressure": [f"{player_id}×{count}" for player_id, count in vote_pressure.most_common(3)],
++            "vote_chain": [f"{player_id}×{count}" for player_id, count in vote_chain.most_common(4)],
+             "top_contradictions": top_contradictions[:3],
++            "claim_chain": claim_chain[:4],
+             "claimed_roles": claimed_roles[:4],
++            "role_links": role_links[:4],
++            "death_chain": death_chain[:4],
+             "hard_clears": hard_clears[:4],
++            "soft_clears": soft_clears[:4],
+             "recent_signals": recent_memory[-4:],
+         }
+ 
+@@ -575,25 +738,30 @@
+             )
+         ranking.sort(key=lambda item: item["score"], reverse=True)
+         skip_option = self._pass_like_action_kind(allowed_actions)
+-        best_score = ranking[0]["score"] if ranking else 0.0
+-        strongest_signals = max(
++        core_keys = ("vote_pressure", "vote_chain", "contradictions", "claim_conflict", "death_links", "role_link_hits")
++        has_core_conflict = any(
++            sum(1 for key in core_keys if int(item.get("signals", {}).get(key, 0)) > 0) >= 2
++            for item in ranking
++        )
++        strongest_core = max(
+             (
+-                sum(1 for value in item.get("signals", {}).values() if isinstance(value, int) and value > 0)
++                sum(1 for key in core_keys if int(item.get("signals", {}).get(key, 0)) > 0)
+                 for item in ranking
+             ),
+             default=0,
+         )
+         if skip_option:
+-            if strongest_signals >= 2 or best_score >= 1.4:
+-                skip_condition = "只有当所有合法目标都只剩单一薄弱线索、且没有改口/对跳/死亡链条冲突时才可跳过。"
++            if has_core_conflict:
++                skip_condition = "一旦任一合法目标同时出现票链、身份冲突、死亡链或对跳链，就不要把跳过当默认。"
+             else:
+-                skip_condition = "证据过弱且没有明显多源冲突时可以跳过；否则优先出手。"
++                skip_condition = "只有所有合法目标都缺少票压、身份冲突、死亡链和明确对跳时，才可以跳过。"
+         else:
+             skip_condition = "没有跳过动作时，必须从合法目标里选风险最低且证据最弱的那个。"
+         return {
+             "target_ranking": ranking[:4],
+             "skip_option": skip_option,
+             "skip_condition": skip_condition,
++            "skip_recommended": not has_core_conflict and strongest_core == 0,
+         }
+ 
+     def _score_hunter_target(
+@@ -607,16 +775,23 @@
+         reasons: list[str] = []
+         signals = {
+             "vote_pressure": 0,
++            "vote_chain": 0,
+             "contradictions": 0,
+             "claim_conflict": 0,
+             "death_links": 0,
++            "role_link_hits": 0,
++            "support_chain": 0,
+             "clear_hits": 0,
+             "recent_mentions": 0,
+         }
+         vote_pressure = 0
++        vote_chain = 0
+         for player_id, note in self._player_notes.items():
+-            if str(note.get("latest_vote") or "").strip() == target_id:
++            latest_vote = str(note.get("latest_vote") or "").strip()
++            if latest_vote == target_id:
+                 vote_pressure += 1
++            if target_id in self._unique_strings(list(note.get("vote_history") or [])):
++                vote_chain += 1
+             if player_id == target_id:
+                 continue
+             for line in list(note.get("attack_lines") or [])[-2:]:
+@@ -624,26 +799,38 @@
+                     signals["recent_mentions"] += 1
+             for line in list(note.get("support_lines") or [])[-1:]:
+                 if pattern.search(line):
++                    signals["support_chain"] += 1
+                     signals["recent_mentions"] += 1
++            for link in list(note.get("role_links") or [])[-2:]:
++                if not link.startswith(f"{target_id}:"):
++                    continue
++                if any(keyword in link for keyword in ("查杀", "对跳", "狼", "反水", "假", "伪")):
++                    signals["role_link_hits"] += 1
++                elif any(keyword in link for keyword in ("金水", "好人", "确认好人")):
++                    signals["support_chain"] += 1
+         if vote_pressure:
+             signals["vote_pressure"] = vote_pressure
+-            score += 0.8 + min(vote_pressure, 4) * 0.55
++            score += 0.55 + min(vote_pressure, 4) * 0.35
+             reasons.append(f"票压{vote_pressure}")
++        if vote_chain:
++            signals["vote_chain"] = vote_chain
++            score += 0.15 * min(vote_chain, 5)
++            reasons.append(f"票链{vote_chain}")
+         target_note = self._player_notes.get(target_id) or {}
+         contradictions = list(target_note.get("contradictions") or [])
+         if contradictions:
+             signals["contradictions"] = len(contradictions)
+-            score += 0.7 + 0.35 * min(len(contradictions), 3)
++            score += 0.75 + 0.25 * min(len(contradictions), 3)
+             reasons.append("改口/对跳:" + self._compact_text(contradictions[-1], limit=48))
+         death_links = list(target_note.get("death_links") or [])
+         if death_links:
+             signals["death_links"] = len(death_links)
+-            score += 0.6 + 0.25 * min(len(death_links), 3)
++            score += 0.65 + 0.2 * min(len(death_links), 3)
+             reasons.append("死亡链:" + self._compact_text(death_links[-1], limit=48))
+         target_claims = self._unique_strings(list(target_note.get("claims") or []) + list(target_note.get("revealed_roles") or []))
+         if len(target_claims) >= 2:
+             signals["claim_conflict"] = len(target_claims)
+-            score += 0.9
++            score += 0.8
+             reasons.append("多次身份声明:" + "/".join(target_claims[:2]))
+         if target_claims:
+             role_claim_counts: dict[str, list[str]] = {}
+@@ -655,7 +842,7 @@
+                 claimers = role_claim_counts.get(role, [])
+                 if len(claimers) >= 2:
+                     signals["claim_conflict"] = max(signals["claim_conflict"], len(claimers))
+-                    score += 0.45 + 0.15 * min(len(claimers), 4)
++                    score += 0.4 + 0.15 * min(len(claimers), 4)
+                     reasons.append(f"对跳{role}:{'/'.join(claimers[:3])}")
+                     break
+         recent_hits = 0
+@@ -664,30 +851,35 @@
+                 continue
+             recent_hits += 1
+             if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "卖队", "带节奏", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")):
+-                score += 0.9
++                score += 0.5
+                 reasons.append(self._compact_text(line, limit=60))
+             elif any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
+-                score += 0.25
++                score += 0.15
+             elif any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水", "好人")):
+-                score -= 0.35
++                score -= 0.25
+         signals["recent_mentions"] += recent_hits
+         if recent_hits and not reasons:
+             reasons.append(self._compact_text(f"最近记忆命中{recent_hits}次", limit=60))
+         if target_note.get("hard_clear"):
+             signals["clear_hits"] += 1
+-            score -= 1.8
++            score -= 2.0
+             reasons.append("公开硬清")
+         if target_note.get("soft_clear"):
+             signals["clear_hits"] += 1
+-            score -= 0.8
++            score -= 0.9
+             reasons.append("软清/正向背书")
++        if signals["support_chain"]:
++            score -= 0.2 * min(signals["support_chain"], 4)
++            reasons.append(f"支持链{signals['support_chain']}")
++        if signals["role_link_hits"]:
++            score += 0.35 + 0.25 * min(signals["role_link_hits"], 3)
++            reasons.append(f"对跳/查杀链{signals['role_link_hits']}")
+         if target_note.get("status") in {"dead", "out"}:
+             score -= 0.6
+             reasons.append("已出局")
+         if not reasons:
+             reasons.append("公开证据单薄")
+-        # 若允许，优先比较多源冲突；单一薄证据不应直接压成高优先级。
+-        if signals["vote_pressure"] == 0 and signals["contradictions"] == 0 and signals["claim_conflict"] == 0 and signals["death_links"] == 0:
++        if signals["vote_pressure"] == 0 and signals["contradictions"] == 0 and signals["claim_conflict"] == 0 and signals["death_links"] == 0 and signals["role_link_hits"] == 0:
+             score = max(0.0, score - 0.6)
+         return {"score": score, "reasons": reasons[:4], "signals": signals}
+ 
+--- hunter-n00040/task.md
++++ hunter-n00058/task.md
+@@ -3,6 +3,7 @@
+ 你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。
+ 
+ - 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据账本：谁支持谁、谁投了谁、谁改口、谁对跳、谁公开声明了什么身份、谁已经死亡或出局。
++- 普通公开发言和遗言里的身份自报、对跳、查杀、金水、明确站边，也都要当作一等公开证据来记；不要只看正式 `claim/reveal`，每轮都要维护一张简表：谁支持谁、谁投了谁、谁改口、谁对跳、谁已死亡/出局、谁在给谁查杀或金水。
+ - 公开发言优先回应当前争议，按这个顺序组织判断：先看票型和身份声明是否一致，再看改口、对跳和死亡链条，最后才看主观像狼与否。
+ - 被要求开枪时，只在合法 target_ids 内比较目标；优先选择同时被票型、身份冲突、改口/对跳和死亡链条指向的人。
+ - 只有当所有合法目标都只有单一薄弱线索、且看不出明显多源冲突时，才可以选择跳过；如果已经出现明显证据差异，即使分数不高也不要把“跳过”当默认。

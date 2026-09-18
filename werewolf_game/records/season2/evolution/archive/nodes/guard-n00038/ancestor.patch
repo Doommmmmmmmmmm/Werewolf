@@ -1,0 +1,269 @@
+--- guard-n00034/task_agent.py
++++ guard-n00038/task_agent.py
+@@ -330,7 +330,9 @@
+         if self.profile.role == "guard":
+             role_task = role_task + (
+                 "\n\n守卫约束：只从当前 target_ids 里选；先判定今晚最可能被狼刀的好人；"
+-                "默认不要重复上一夜目标；优先保护高风险好人而不是单纯热度位。"
++                "默认不要重复上一夜目标；优先保护公开神职、被可信来源背书的好人，而不是单纯热度位；"
++                "白天默认不要主动跳守卫、不要报昨晚守护对象、不要把平安夜当作守中证明；"
++                "只有濒临被放逐、出现假守卫对跳，或必须挽救关键好人链时才有限度亮身份。"
+             )
+         return render_prompt(
+             "player_system.txt",
+@@ -351,7 +353,9 @@
+         if self.profile.role == "guard":
+             guard_note = (
+                 "守卫执行要点：只在当前 target_ids 内选；先找今晚最可能被刀的好人；"
+-                "优先公开神职、被多人点名/压票的关键发言位；没有更好目标时再自守。"
++                "优先保护公开神职、被可信来源背书的好人，而不是单纯热度位；没有更好目标时再自守。"
++                "白天默认不要主动跳守卫、不要报昨晚守护对象、不要把平安夜说成守中证明；"
++                "只有濒临被放逐、出现假守卫对跳，或必须挽救关键好人链时才有限度亮身份。"
+             )
+             validation_feedback = guard_note + ("\n" + validation_feedback if validation_feedback else "")
+         return render_prompt(
+@@ -414,16 +418,55 @@
+         )
+         if not isinstance(allowed, Mapping):
+             return action
+-        candidates = self._guard_candidate_targets(allowed, request)
+-        if not candidates:
++        metrics = self._guard_candidate_metrics(allowed, request)
++        if not metrics:
+             return action
+-        if action.get("target_id") not in candidates:
++        ordered_candidates = self._guard_candidate_targets(allowed, request)
++        target_id = str(action.get("target_id") or "")
++        if not any(protect_score > 0 for _, _, protect_score, _ in metrics):
++            if target_id != (ordered_candidates[0] if ordered_candidates else target_id):
++                repaired = dict(action)
++                repaired["target_id"] = ordered_candidates[0]
++                return repaired
++            return action
++        candidates = [candidate for candidate, _, _, _ in metrics]
++        if target_id not in candidates:
+             repaired = dict(action)
+             repaired["target_id"] = candidates[0]
+             return repaired
++        chosen = next((item for item in metrics if item[0] == target_id), None)
++        best = metrics[0]
++        if chosen is not None and (candidates.index(target_id) > 1 or best[1] - chosen[1] >= 4):
++            repaired = dict(action)
++            repaired["target_id"] = best[0]
++            return repaired
+         return action
+ 
+     def _guard_candidate_targets(self, allowed: Mapping[str, Any], request: Mapping[str, Any]) -> list[str]:
++        metrics = self._guard_candidate_metrics(allowed, request)
++        if not metrics:
++            return []
++        ordered = [candidate for candidate, _, _, _ in metrics]
++        repeat_forbidden = self._guard_repeat_forbidden(allowed)
++        if repeat_forbidden and self.last_protected_id:
++            filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]
++            if filtered:
++                ordered = filtered
++        if not any(protect_score > 0 for _, _, protect_score, _ in metrics):
++            if self.player_id in ordered:
++                ordered = [self.player_id] + [candidate for candidate in ordered if candidate != self.player_id]
++        return ordered
++
++    def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:
++        if allowed.get("guard_can_repeat_protect") is True:
++            return False
++        if allowed.get("guard_can_repeat_protect") is False:
++            return True
++        return True
++
++    def _guard_candidate_metrics(
++        self, allowed: Mapping[str, Any], request: Mapping[str, Any]
++    ) -> list[tuple[str, int, int, int]]:
+         target_ids = allowed.get("target_ids")
+         if not isinstance(target_ids, list):
+             return []
+@@ -436,31 +479,17 @@
+             return []
+         round_no = self._extract_round_number(request) or self._last_observed_round
+         repeat_forbidden = self._guard_repeat_forbidden(allowed)
+-        scored: list[tuple[int, int, int, str]] = []
++        scored: list[tuple[str, int, int, int]] = []
+         for index, candidate in enumerate(candidates):
+-            risk_score = self._player_risk_score(candidate, request, round_no)
+-            heat_score = self._public_heat_score(candidate, request)
+-            if candidate == self.player_id:
+-                risk_score -= 10_000
++            protect_score, suspicion_penalty = self._player_guard_score_components(candidate, request, round_no)
++            final_score = protect_score - suspicion_penalty
+             if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:
+-                risk_score -= 5_000
++                final_score -= 5_000
+             if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:
+-                risk_score -= max(0, 200 - max(0, round_no - self.last_protected_round))
+-            scored.append((-risk_score, -heat_score, index, candidate))
+-        scored.sort()
+-        ordered = [candidate for _, _, _, candidate in scored]
+-        if repeat_forbidden and self.last_protected_id:
+-            filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]
+-            if filtered:
+-                return filtered
+-        return ordered
+-
+-    def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:
+-        if allowed.get("guard_can_repeat_protect") is True:
+-            return False
+-        if allowed.get("guard_can_repeat_protect") is False:
+-            return True
+-        return True
++                final_score -= max(0, 200 - max(0, round_no - self.last_protected_round))
++            scored.append((candidate, final_score, protect_score, index))
++        scored.sort(key=lambda item: (-item[1], -item[2], item[3]))
++        return scored
+ 
+     def _looks_publicly_salient(self, candidate: str, request: Mapping[str, Any]) -> bool:
+         return candidate in self._extract_focus_ids(request.get("public_state"))
+@@ -513,17 +542,17 @@
+     def _signal_for_key(self, key_text: str) -> tuple[str, int] | None:
+         vote_keys = ("vote", "voted", "投票", "票型", "归票", "票数")
+         claim_keys = ("claim", "claimed", "身份", "报身份", "自报", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神", "神职")
+-        threat_keys = ("target", "kill", "attack", "夜刀", "刀口", "击杀", "夜里要刀")
++        threat_keys = ("kill", "attack", "夜刀", "刀口", "击杀", "夜里要刀", "今晚刀")
+         pressure_keys = ("suspect", "suspected", "怀疑", "pressure", "point", "点名", "push", "压票", "站边", "focus", "关注", "指认")
+         exposure_keys = ("public", "公开", "center", "核心", "关键", "hot", "热度")
+         if any(token in key_text for token in vote_keys):
+-            return ("vote", 4)
++            return ("vote_pressure", 4)
+         if any(token in key_text for token in claim_keys):
+-            return ("claim", 5)
++            return ("power_claim", 5)
+         if any(token in key_text for token in threat_keys):
+-            return ("threat", 4)
++            return ("threat_to_good", 4)
+         if any(token in key_text for token in pressure_keys):
+-            return ("pressure", 3)
++            return ("execution_pressure", 3)
+         if any(token in key_text for token in exposure_keys):
+             return ("exposure", 2)
+         return None
+@@ -543,13 +572,13 @@
+                 mentioned_ids.update(explicit_targets)
+             signals = self._dialogue_text_signals(text)
+             if not signals and mentioned_ids:
+-                signals = {"pressure": 1}
+-            if speaker_id and signals.get("claim"):
+-                self._bump_player_risk(speaker_id, "claim", signals["claim"], round_no)
+-            if speaker_id and signals.get("threat"):
+-                self._bump_player_risk(speaker_id, "pressure", max(1, signals["threat"] // 2), round_no)
++                signals = {"execution_pressure": 1}
++            if speaker_id and signals.get("power_claim"):
++                self._bump_player_risk(speaker_id, "power_claim", signals["power_claim"], round_no)
+             for player_id in mentioned_ids:
+                 for signal_name, signal_weight in signals.items():
++                    if signal_name == "power_claim":
++                        continue
+                     self._bump_player_risk(player_id, signal_name, signal_weight, round_no)
+ 
+     def _dialogue_entry_text(self, entry: Any) -> str:
+@@ -590,22 +619,34 @@
+             return {}
+         lowered = text.lower()
+         signals: dict[str, int] = {}
+-        if any(token in lowered for token in ("claim", "报身份", "自报", "我是预言家", "我是女巫", "我是守卫", "我是猎人", "我是白痴", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神", "神职", "预言家", "女巫", "守卫", "猎人", "白痴")):
+-            signals["claim"] = 5
+-        if any(token in lowered for token in ("投票", "归票", "vote", "票型", "点名")):
+-            signals["vote"] = 4
+-        if any(token in lowered for token in ("夜刀", "刀口", "今晚刀", "击杀", "attack", "kill")):
+-            signals["threat"] = 4
+-        if any(token in lowered for token in ("怀疑", "可疑", "狼", "站边", "压票", "focus", "关注", "push", "指认")):
+-            signals["pressure"] = max(signals.get("pressure", 0), 3)
++        if any(token in lowered for token in ("我是预言家", "我是女巫", "我是守卫", "我是猎人", "我是白痴", "seer", "witch", "guard", "hunter", "claim", "报身份", "自报", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神", "神职", "预言家", "女巫", "守卫", "猎人", "白痴")):
++            signals["power_claim"] = 5
++        if "不是好人" not in lowered and "不是金水" not in lowered and "别保" not in lowered and "不要保" not in lowered and "不保" not in lowered and any(token in lowered for token in ("金水", "好人", "保", "trusted", "good")):
++            signals["trusted_by_claim"] = 4
++            signals["good_claim"] = 3
++        if "不是狼" not in lowered and "非狼" not in lowered and any(token in lowered for token in ("查杀", "是狼", "wolf", "狼坑", "验", "出狼", "狼刀位")):
++            signals["wolf_accused"] = 5
++        if any(token in lowered for token in ("今天出", "票", "压", "归票", "vote", "出局", "点名")):
++            signals["vote_pressure"] = 4
++        if any(token in lowered for token in ("怀疑", "可疑", "pressure", "push", "focus", "关注", "指认", "站边")):
++            signals["execution_pressure"] = 3
++        if any(token in lowered for token in ("今晚刀", "夜刀", "刀口", "击杀", "attack", "kill", "被刀", "刀到")):
++            signals["threat_to_good"] = 4
+         if any(token in lowered for token in ("公开", "关键", "核心", "热度", "中心", "public")):
+-            signals["exposure"] = max(signals.get("exposure", 0), 2)
++            signals["exposure"] = 2
+         return signals
+ 
+     def _player_risk_bucket(self, player_id: str) -> dict[str, int]:
+         bucket = self.player_risk_profile.get(player_id)
+         if bucket is None:
+             bucket = {
++                "power_claim": 0,
++                "trusted_by_claim": 0,
++                "good_claim": 0,
++                "threat_to_good": 0,
++                "wolf_accused": 0,
++                "execution_pressure": 0,
++                "vote_pressure": 0,
+                 "pressure": 0,
+                 "vote": 0,
+                 "claim": 0,
+@@ -624,26 +665,29 @@
+         if round_no is not None:
+             bucket["last_round"] = max(bucket.get("last_round", -1), round_no)
+ 
++    def _player_guard_score_components(
++        self, candidate: str, request: Mapping[str, Any], round_no: int | None
++    ) -> tuple[int, int]:
++        del request, round_no
++        bucket = self.player_risk_profile.get(candidate) or {}
++        protect_score = 0
++        protect_score += int(bucket.get("power_claim", 0)) * 6
++        protect_score += int(bucket.get("trusted_by_claim", 0)) * 5
++        protect_score += int(bucket.get("good_claim", 0)) * 3
++        protect_score += int(bucket.get("threat_to_good", 0)) * 4
++        suspicion_penalty = 0
++        suspicion_penalty += int(bucket.get("wolf_accused", 0)) * 6
++        suspicion_penalty += int(bucket.get("execution_pressure", 0)) * 4
++        suspicion_penalty += int(bucket.get("vote_pressure", 0)) * 3
++        suspicion_penalty += int(bucket.get("pressure", 0)) * 2
++        suspicion_penalty += int(bucket.get("vote", 0)) * 2
++        suspicion_penalty += int(bucket.get("claim", 0)) * 1
++        suspicion_penalty += int(bucket.get("threat", 0)) * 1
++        return protect_score, suspicion_penalty
++
+     def _player_risk_score(self, candidate: str, request: Mapping[str, Any], round_no: int | None) -> int:
+-        bucket = self.player_risk_profile.get(candidate) or {}
+-        score = 0
+-        score += int(bucket.get("threat", 0)) * 8
+-        score += int(bucket.get("claim", 0)) * 6
+-        score += int(bucket.get("vote", 0)) * 5
+-        score += int(bucket.get("pressure", 0)) * 4
+-        score += int(bucket.get("exposure", 0)) * 2
+-        if candidate in self.recent_public_focus_ids:
+-            score += 3
+-        if self._looks_publicly_salient(candidate, request):
+-            score += 2
+-        if candidate in self.alive_player_cache:
+-            score += 1
+-        last_round = bucket.get("last_round")
+-        if round_no is None:
+-            round_no = self._last_observed_round
+-        if isinstance(last_round, int) and last_round >= 0 and round_no is not None:
+-            score += max(0, 6 - max(0, round_no - last_round))
+-        return score
++        protect_score, suspicion_penalty = self._player_guard_score_components(candidate, request, round_no)
++        return protect_score - suspicion_penalty
+ 
+     def _public_heat_score(self, candidate: str, request: Mapping[str, Any]) -> int:
+         bucket = self.player_risk_profile.get(candidate) or {}
+--- guard-n00034/task.md
++++ guard-n00038/task.md
+@@ -2,6 +2,7 @@
+ 
+ - 先看当前 `target_ids`，只能从里面选。
+ - 先判断今晚最可能被狼刀的好人，再在合法目标里排序。
+-- 优先保护公开神职、被多人压票/点名的关键发言位、最近被集中讨论的高风险好人。
++- 优先保护公开神职、被可信来源背书的好人；不要把“被怀疑、被点名、被投票”本身当成需要守护的理由。
+ - 只有没有更好目标时才考虑自守；若规则不允许连守，默认不要重复同一人。
++- 白天默认以普通好人视角发言，不主动公开自己是守卫；不要报昨晚守护对象，也不要把“平安夜”说成自己守中的证明；只有濒临被放逐、出现假守卫对跳，或必须挽救关键好人链时才有限度亮身份。
+ - 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。

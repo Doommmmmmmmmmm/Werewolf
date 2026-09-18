@@ -1,0 +1,437 @@
+--- hunter-base/task_agent.py
++++ hunter-n00008/task_agent.py
+@@ -7,6 +7,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++from collections import deque
+ from collections.abc import Mapping
+ import hashlib
+ import inspect
+@@ -29,6 +30,8 @@
+ # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
++_PASS_LIKE_ACTION_KINDS = frozenset({"pass", "skip", "wait", "idle", "noop", "none"})
++DEFAULT_PUBLIC_MEMORY_SIZE = 12
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -179,6 +182,7 @@
+         self.max_tool_calls_per_decision = max(0, int(max_tool_calls_per_decision))
+         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
++        self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -189,10 +193,359 @@
+         }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步，并压缩成有限长的短记忆。"""
++
++        if not isinstance(sync_packet, Mapping):
++            return
++        for event in self._extract_public_events(sync_packet):
++            if event:
++                self._public_memory.append(event)
++
++    def _recent_memory(self, limit: int = 5) -> list[str]:
++        if limit <= 0:
++            return []
++        return list(self._public_memory)[-limit:]
++
++    def _decision_brief(
++        self,
++        turn_packet: Mapping[str, Any],
++        current_dialogue: list[Any],
++    ) -> dict[str, Any]:
++        request = turn_packet["request"]
++        allowed_actions = [
++            item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)
++        ]
++        phase = self._request_phase_label(turn_packet, request, allowed_actions)
++        recent_memory = self._recent_memory(5)
++        brief: dict[str, Any] = {
++            "phase": phase,
++            "recent_public_signals": recent_memory,
++            "current_round_dialogue_preview": self._compact_dialogue(current_dialogue, limit=3),
++        }
++        mode = self._request_mode(allowed_actions)
++        if mode == "hunter_reaction":
++            ranking = self._hunter_target_ranking(allowed_actions, recent_memory)
++            brief.update(
++                {
++                    "decision_mode": "hunter_reaction",
++                    "focus": "先比较合法 target_ids 的票型、改口、身份声明和死亡链条；证据不足时优先跳过。",
++                    "target_ranking": ranking["target_ranking"],
++                    "skip_option": ranking["skip_option"],
++                    "skip_condition": ranking["skip_condition"],
++                }
++            )
++        elif mode == "last_words":
++            brief.update(
++                {
++                    "decision_mode": "last_words",
++                    "focus": "收束到已公开的票型、身份矛盾和死亡顺序，不要泛化找狼。",
++                    "current_controversy": self._recent_controversy(recent_memory),
++                    "key_contradiction": self._key_contradiction(recent_memory),
++                }
++            )
++        elif mode == "speak":
++            brief.update(
++                {
++                    "decision_mode": "speak",
++                    "focus": "回应当前争议，优先点出最近票型变化与身份声明矛盾。",
++                    "current_controversy": self._recent_controversy(recent_memory),
++                    "key_contradiction": self._key_contradiction(recent_memory),
++                }
++            )
++        else:
++            brief.update(
++                {
++                    "decision_mode": mode,
++                    "focus": "遵守当前阶段的合法行动范围，并尽量保持公开信息一致。",
++                }
++            )
++        return brief
++
++    @staticmethod
++    def _request_mode(allowed_actions: list[Mapping[str, Any]]) -> str:
++        kinds = [str(item.get("kind") or "") for item in allowed_actions if item.get("kind")]
++        if "hunter_reaction" in kinds:
++            return "hunter_reaction"
++        if "last_words" in kinds:
++            return "last_words"
++        if "speak" in kinds:
++            return "speak"
++        if any(item.get("target_ids") for item in allowed_actions):
++            return "hunter_reaction"
++        return kinds[0] if kinds else "unknown"
++
++    def _request_phase_label(
++        self,
++        turn_packet: Mapping[str, Any],
++        request: Mapping[str, Any],
++        allowed_actions: list[Mapping[str, Any]],
++    ) -> str:
++        game = turn_packet.get("game") or {}
++        phase = game.get("public_phase") or game.get("phase")
++        if phase:
++            return str(phase)
++        mode = self._request_mode(allowed_actions)
++        request_phase = request.get("phase")
++        if request_phase:
++            return str(request_phase)
++        return mode
++
++    @staticmethod
++    def _compact_text(value: object, limit: int = 48) -> str:
++        text = str(value).strip()
++        if len(text) <= limit:
++            return text
++        return text[: max(0, limit - 1)].rstrip() + "…"
++
++    def _compact_dialogue(self, current_dialogue: list[Any], limit: int = 3) -> list[str]:
++        if not isinstance(current_dialogue, list) or limit <= 0:
++            return []
++        preview: list[str] = []
++        for item in current_dialogue[-limit:]:
++            if isinstance(item, Mapping):
++                speaker = str(
++                    item.get("speaker")
++                    or item.get("player_id")
++                    or item.get("from_player_id")
++                    or item.get("from")
++                    or item.get("name")
++                    or "?"
++                )
++                text = item.get("text", item.get("content", item.get("message", "")))
++                compact = self._compact_text(text, limit=48)
++                if compact:
++                    preview.append(f"{speaker}: {compact}")
++            elif isinstance(item, str):
++                compact = self._compact_text(item, limit=48)
++                if compact:
++                    preview.append(compact)
++        return preview
++
++    def _recent_controversy(self, recent_memory: list[str]) -> str:
++        if not recent_memory:
++            return "暂无足够公开记忆"
++        return "；".join(recent_memory[-3:])
++
++    def _key_contradiction(self, recent_memory: list[str]) -> str:
++        for line in reversed(recent_memory):
++            if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "自相矛盾", "投票", "死亡", "警长")):
++                return line
++        return recent_memory[-1] if recent_memory else "暂无明确矛盾"
++
++    def _hunter_target_ranking(
++        self,
++        allowed_actions: list[Mapping[str, Any]],
++        recent_memory: list[str],
++    ) -> dict[str, Any]:
++        target_ids: list[str] = []
++        for action in allowed_actions:
++            raw_targets = action.get("target_ids")
++            if not isinstance(raw_targets, list):
++                continue
++            for target in raw_targets:
++                target_id = str(target)
++                if target_id and target_id not in target_ids:
++                    target_ids.append(target_id)
++        ranking: list[dict[str, Any]] = []
++        for target_id in target_ids:
++            score, reasons = self._score_hunter_target(target_id, recent_memory)
++            ranking.append(
++                {
++                    "target_id": target_id,
++                    "score": round(score, 2),
++                    "reasons": reasons,
++                }
++            )
++        ranking.sort(key=lambda item: item["score"], reverse=True)
++        skip_option = self._pass_like_action_kind(allowed_actions)
++        best_score = ranking[0]["score"] if ranking else 0.0
++        if skip_option:
++            skip_condition = "若没有明确矛盾、票型偏差或身份冲突，优先跳过。"
++        else:
++            skip_condition = "没有跳过动作时，只选分数最高且风险最低的目标。"
++        if best_score < 1.0:
++            skip_condition = "证据不足时直接跳过；若不能跳过，再选最弱风险目标。"
++        return {
++            "target_ranking": ranking[:4],
++            "skip_option": skip_option,
++            "skip_condition": skip_condition,
++        }
++
++    def _score_hunter_target(self, target_id: str, recent_memory: list[str]) -> tuple[float, list[str]]:
++        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])")
++        score = 0.0
++        reasons: list[str] = []
++        for line in recent_memory:
++            if not pattern.search(line):
++                continue
++            line_score = 0.2
++            if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "带节奏", "卖队", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")):
++                line_score += 1.3
++                reasons.append(self._compact_text(line, limit=60))
++            if any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
++                line_score += 0.4
++            if any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水")):
++                line_score -= 0.5
++            if "狼人" in line:
++                line_score += 0.8
++            if "好人" in line:
++                line_score -= 0.2
++            score += line_score
++        if not reasons:
++            reasons.append("公开记忆里缺少直接矛盾，只能低置信度判断")
++        return score, reasons[:3]
++
++    @staticmethod
++    def _pass_like_action_kind(allowed_actions: list[Mapping[str, Any]]) -> str:
++        for action in allowed_actions:
++            kind = str(action.get("kind") or "").lower()
++            if kind in _PASS_LIKE_ACTION_KINDS:
++                return kind
++        return ""
++
++    def _extract_public_events(self, sync_packet: Mapping[str, Any]) -> list[str]:
++        events: list[str] = []
++        seen: set[str] = set()
++        default_round = sync_packet.get("round")
++        default_phase = sync_packet.get("phase") or sync_packet.get("public_phase")
++
++        def add_event(item: object) -> None:
++            event = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)
++            if not event or event in seen:
++                return
++            seen.add(event)
++            events.append(event)
++
++        for key in ("events", "public_events", "log", "logs", "history", "records", "timeline"):
++            value = sync_packet.get(key)
++            if isinstance(value, list):
++                for item in value:
++                    add_event(item)
++                    if len(events) >= 8:
++                        return events
++        for key in ("public_state", "state", "game"):
++            value = sync_packet.get(key)
++            if value is not None:
++                add_event(value)
++                if len(events) >= 8:
++                    return events
++
++        def walk(item: object, depth: int) -> None:
++            if len(events) >= 8 or depth > 2:
++                return
++            if isinstance(item, Mapping):
++                if self._looks_like_public_event(item):
++                    add_event(item)
++                else:
++                    for value in item.values():
++                        if isinstance(value, (Mapping, list, tuple)):
++                            walk(value, depth + 1)
++                return
++            if isinstance(item, (list, tuple)):
++                for value in item:
++                    walk(value, depth + 1)
++                    if len(events) >= 8:
++                        return
++
++        walk(sync_packet, 0)
++        return events
++
++    @staticmethod
++    def _looks_like_public_event(item: Mapping[str, Any]) -> bool:
++        return any(
++            key in item
++            for key in (
++                "speaker",
++                "player_id",
++                "from_player_id",
++                "target_id",
++                "vote",
++                "votes",
++                "kind",
++                "action",
++                "type",
++                "text",
++                "content",
++                "message",
++                "role",
++                "death",
++                "died",
++                "alive",
++                "status",
++            )
++        )
++
++    @staticmethod
++    def _summarize_public_event(
++        item: object,
++        *,
++        default_round: object = None,
++        default_phase: object = None,
++    ) -> str | None:
++        if isinstance(item, str):
++            text = item.strip()
++            if not text:
++                return None
++            return TaskAgent._compact_text(text, limit=72)
++        if not isinstance(item, Mapping):
++            return None
++
++        round_value = item.get("round", default_round)
++        phase_value = item.get("phase", item.get("public_phase", default_phase))
++        prefix_parts: list[str] = []
++        if round_value is not None:
++            prefix_parts.append(f"r{round_value}")
++        if phase_value is not None:
++            prefix_parts.append(str(phase_value))
++        prefix = "[" + "/".join(prefix_parts) + "] " if prefix_parts else ""
++
++        actor = str(
++            item.get("speaker")
++            or item.get("player_id")
++            or item.get("from_player_id")
++            or item.get("from")
++            or item.get("actor")
++            or item.get("source")
++            or ""
++        ).strip()
++        target = str(item.get("target_id") or item.get("target") or item.get("votee") or "").strip()
++        kind = str(item.get("kind") or item.get("action") or item.get("type") or "").strip().lower()
++        text = str(item.get("text") or item.get("content") or item.get("message") or "").strip()
++        role = str(item.get("role") or item.get("revealed_role") or item.get("identity") or "").strip()
++
++        parts: list[str] = []
++        if actor:
++            parts.append(actor)
++        if kind in {"speak", "speech", "say", "dialogue", "statement"} or text:
++            if text:
++                parts.append(f"发言:{TaskAgent._compact_text(text, limit=36)}")
++        elif kind in {"vote", "voting"} or item.get("vote") is not None:
++            if target:
++                parts.append(f"投票→{target}")
++            elif item.get("vote") is not None:
++                parts.append(f"投票→{TaskAgent._compact_text(item.get('vote'), limit=24)}")
++        elif kind in {"death", "died", "eliminate", "eliminated", "kill", "killed"} or item.get("death") is not None:
++            if target:
++                parts.append(f"死亡→{target}")
++            else:
++                parts.append("发生死亡")
++        elif kind in {"reveal", "identity", "open_role", "claim"} or role:
++            claim = role or text or "身份公开"
++            parts.append(f"身份:{TaskAgent._compact_text(claim, limit=28)}")
++        else:
++            for key in ("vote", "votes", "result", "status", "event"):
++                value = item.get(key)
++                if value is not None:
++                    parts.append(f"{key}:{TaskAgent._compact_text(value, limit=28)}")
++                    break
++            if not parts and text:
++                parts.append(TaskAgent._compact_text(text, limit=36))
++
++        if not parts:
++            return None
++        if prefix:
++            return prefix + " ".join(parts)
++        return " ".join(parts)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -202,6 +555,9 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         system = self._system_prompt(private)
++
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
+         prompt = {
+             "game": turn_packet["game"],
+             "public_rules": turn_packet["public_rules"],
+@@ -209,6 +565,8 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
++            "memory_brief": self._recent_memory(5),
++            "decision_brief": self._decision_brief(turn_packet, current_dialogue),
+             "history_policy": {
+                 "default_context": "current_state_only",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -216,9 +574,6 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
+-
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+--- hunter-base/task.md
++++ hunter-n00008/task.md
+@@ -1,8 +1,9 @@
+-# 猎人最小任务
++# 猎人任务说明
+ 
+ 你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。
+ 
+-- 活着时保持自然的好人视角，收集足够证据，不要为了证明身份而过早暴露。
+-- 被要求开枪时比较合法目标的身份线索和连锁风险；证据不足时可以选择跳过。
+-- 不要把尚未发生的猎人反应写成系统事实，也不要忽略当前行动包的目标范围。
+-- 公开发言要回应当下争议，避免每次都用相同的“带走最像狼的人”模板。
++- 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据：发言、票型、改口、身份声明、死亡顺序。
++- 公开发言要回应当下争议，优先比较“谁支持谁、谁反复改口、谁的票型和身份声明不一致”。
++- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择与票型、发言和死亡链条最不一致的人。
++- 如果公开证据不足，或目标之间没有明显差异，要明确走跳过条件；不要把“带走最像狼的人”当成固定模板。
++- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。

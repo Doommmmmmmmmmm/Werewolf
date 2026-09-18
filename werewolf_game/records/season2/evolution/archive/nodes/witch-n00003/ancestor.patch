@@ -1,0 +1,447 @@
+--- witch-base/task_agent.py
++++ witch-n00003/task_agent.py
+@@ -7,11 +7,11 @@
+ from __future__ import annotations
+ 
+ import asyncio
+-from collections.abc import Mapping
+ import hashlib
+ import inspect
+ import json
+ import re
++from collections.abc import Mapping
+ from typing import Any
+ 
+ from ..core.errors import ModelClientError, RuleViolationError
+@@ -20,6 +20,7 @@
+ 
+ 
+ _CHINESE_CHARACTER = re.compile(r"[\u3400-\u9fff]")
++_PLAYER_ID_PATTERN = re.compile(r"p\d+", re.IGNORECASE)
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL_NAME = "read_current_round_dialogue"
+ DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5
+@@ -29,6 +30,7 @@
+ # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
++_PASS_ACTION_KINDS = frozenset({"pass", "skip", "noop", "do_nothing", "none"})
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -187,12 +189,28 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._memory_game_id: str | None = None
++        self._recent_public_summaries: list[str] = []
++        self._last_public_round_phase: str = ""
++        self._last_private_resource_summary: str = ""
++        self._last_decision_audit: dict[str, Any] | None = None
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步，并压缩保留少量与后续决策有关的摘要。"""
++
++        game_id = self._extract_first_scalar(
++            sync_packet,
++            ("game_id", "match_id", "session_id", "table_id", "room_id"),
++        )
++        if game_id and game_id != self._memory_game_id:
++            self._reset_compact_memory(game_id)
++
++        digest = self._build_public_digest(sync_packet)
++        if digest:
++            if not self._recent_public_summaries or self._recent_public_summaries[-1] != digest:
++                self._recent_public_summaries.append(digest)
++                self._recent_public_summaries = self._recent_public_summaries[-6:]
++        self._last_public_round_phase = self._build_round_phase_tag(sync_packet)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -200,6 +218,12 @@
+         private = turn_packet["private_information"]
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
++
++        private_state = self._build_private_resource_summary(private)
++        if private_state:
++            self._last_private_resource_summary = private_state
++        compact_memory = self._compact_memory_snapshot()
++        safety_notes = self._build_safety_notes(private)
+ 
+         system = self._system_prompt(private)
+         prompt = {
+@@ -209,6 +233,9 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
++            "compact_memory": compact_memory,
++            "private_resource_state": private_state,
++            "safety_notes": safety_notes,
+             "history_policy": {
+                 "default_context": "current_state_only",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -263,13 +290,23 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            action = self._apply_role_safe_fallback(action, turn_packet, raw)
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
++                self._last_decision_audit = {
++                    "raw_response": raw,
++                    "normalized_action": action,
++                }
+                 return action
+             if _attempt >= self.max_decision_retries:
+                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+                 # Runner 可将该行动存入管理员审计记录，便于定位 schema / 长度等问题，
+                 # 而不会泄露给公开记录。
++                self._last_decision_audit = {
++                    "raw_response": raw,
++                    "normalized_action": action,
++                    "validation_error": error,
++                }
+                 raise RuleViolationError(
+                     f"模型返回非法行动：{error}",
+                     attempted_action=action,
+@@ -347,6 +384,296 @@
+             if value is not None:
+                 self._model_token_usage[key] += value
+ 
++    def _compact_memory_snapshot(self) -> dict[str, Any]:
++        snapshot: dict[str, Any] = {
++            "recent_public": self._recent_public_summaries[-4:],
++        }
++        if self._last_public_round_phase:
++            snapshot["last_public_round_phase"] = self._last_public_round_phase
++        if self._last_private_resource_summary:
++            snapshot["private_resource_state"] = self._last_private_resource_summary
++        return snapshot
++
++    def _build_private_resource_summary(self, private: Mapping[str, Any]) -> str:
++        if self.profile.role != "witch" and str(private.get("role")) != "witch":
++            return ""
++        keys = {
++            "antidote_available": self._extract_first_scalar(private, ("antidote_available", "save_available", "heal_available")),
++            "poison_available": self._extract_first_scalar(private, ("poison_available", "poison_left", "kill_available")),
++            "antidote_used": self._extract_first_scalar(private, ("antidote_used", "used_antidote", "save_used")),
++            "poison_used": self._extract_first_scalar(private, ("poison_used", "used_poison", "kill_used")),
++        }
++        parts: list[str] = []
++        for key, value in keys.items():
++            if value is None:
++                continue
++            parts.append(f"{key}={self._compact_scalar(value)}")
++        return "; ".join(parts)
++
++    def _build_safety_notes(self, private: Mapping[str, Any]) -> str:
++        if self.profile.role != "witch" and str(private.get("role")) != "witch":
++            return ""
++        return (
++            "公开发言只允许基于公开事实；"
++            "不得自报女巫、药水余量、夜刀目标、夜间选择、是否已用药、未公开身份链；"
++            "任何内部状态都不能被说成已公开事实。"
++        )
++
++    def _apply_role_safe_fallback(
++        self,
++        action: dict[str, Any],
++        turn_packet: dict[str, Any],
++        raw_response: object,
++    ) -> dict[str, Any]:
++        kind = str(action.get("kind", ""))
++        if not self._is_poison_action_kind(kind):
++            self._last_decision_audit = {
++                "raw_response": raw_response,
++                "normalized_action": action,
++            }
++            return action
++
++        target_id = str(action.get("target_id") or "").strip()
++        if not target_id:
++            self._last_decision_audit = {
++                "raw_response": raw_response,
++                "normalized_action": action,
++                "fallback_reason": "witch_poison_missing_target",
++            }
++            return action
++
++        pass_action = self._find_pass_action(turn_packet["request"].get("allowed_actions", []), turn_packet["request"])
++        if pass_action is None:
++            self._last_decision_audit = {
++                "raw_response": raw_response,
++                "normalized_action": action,
++            }
++            return action
++
++        confidence_targets = self._high_confidence_targets(turn_packet)
++        if target_id in confidence_targets:
++            self._last_decision_audit = {
++                "raw_response": raw_response,
++                "normalized_action": action,
++                "high_confidence_targets": sorted(confidence_targets),
++            }
++            return action
++
++        fallback_reason = "witch_poison_low_confidence"
++        self._last_decision_audit = {
++            "raw_response": raw_response,
++            "normalized_action": action,
++            "fallback_action": pass_action,
++            "fallback_reason": fallback_reason,
++            "high_confidence_targets": sorted(confidence_targets),
++        }
++        return pass_action
++
++    def _high_confidence_targets(self, turn_packet: dict[str, Any]) -> set[str]:
++        texts: list[str] = []
++        texts.extend(self._recent_public_summaries[-4:])
++        texts.append(self._last_public_round_phase)
++        texts.append(self._last_private_resource_summary)
++        for key in ("public_state", "game", "request"):
++            value = turn_packet.get(key)
++            if value is not None:
++                texts.append(self._safe_json_dump(value))
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue")
++        if current_dialogue:
++            texts.append(self._safe_json_dump(current_dialogue))
++
++        combined = " \n ".join(text for text in texts if text)
++        combined_lower = combined.lower()
++        if not combined:
++            return set()
++
++        confidence_markers = (
++            "查杀",
++            "狼人",
++            "悍跳",
++            "刀口",
++            "狼刀",
++            "验出",
++            "强狼",
++            "明狼",
++            "必狼",
++            "高置信",
++            "可毒",
++            "毒他",
++            "刀他",
++            "wolf",
++            "kill",
++            "poison",
++            "suspicious",
++        )
++        if not any(marker.lower() in combined_lower for marker in confidence_markers):
++            return set()
++        return set(_PLAYER_ID_PATTERN.findall(combined))
++
++    def _find_pass_action(
++        self,
++        allowed_actions: Any,
++        request: Mapping[str, Any],
++    ) -> dict[str, Any] | None:
++        if not isinstance(allowed_actions, list):
++            return None
++        for allowed in allowed_actions:
++            if not isinstance(allowed, Mapping):
++                continue
++            kind = str(allowed.get("kind") or "")
++            if not self._is_pass_action_kind(kind):
++                continue
++            action = {
++                "request_id": request["request_id"],
++                "player_id": request["player_id"],
++                "kind": kind,
++            }
++            target_id = allowed.get("target_id")
++            if target_id:
++                action["target_id"] = str(target_id)
++            text = allowed.get("text")
++            if isinstance(text, str):
++                action["text"] = text
++            return action
++        return None
++
++    @staticmethod
++    def _is_poison_action_kind(kind: str) -> bool:
++        normalized = kind.lower().strip()
++        return "poison" in normalized or normalized == "witch_poison"
++
++    @staticmethod
++    def _is_pass_action_kind(kind: str) -> bool:
++        normalized = kind.lower().strip()
++        return normalized in _PASS_ACTION_KINDS or normalized.endswith("_pass") or "pass" == normalized
++
++    def _reset_compact_memory(self, game_id: str | None) -> None:
++        self._memory_game_id = game_id
++        self._recent_public_summaries = []
++        self._last_public_round_phase = ""
++        self._last_private_resource_summary = ""
++        self._last_decision_audit = None
++
++    def _build_public_digest(self, sync_packet: Mapping[str, Any]) -> str:
++        round_tag = self._build_round_phase_tag(sync_packet)
++        serialized = self._safe_json_dump(sync_packet)
++        snippets: list[str] = []
++        for label, keywords in (
++            ("death", ("死亡", "出局", "淘汰", "死亡原因", "night kill", "wolf kill")),
++            ("vote", ("投票", "票型", "归票", "vote", "ballot")),
++            ("sheriff", ("警长", "上警", "警徽", "sheriff", "police")),
++            ("speech", ("发言", "自称", "查杀", "金水", "悍跳", "claim", "say")),
++        ):
++            snippet = self._extract_keyword_snippet(serialized, keywords)
++            if snippet:
++                snippets.append(f"{label}:{snippet}")
++        if not snippets:
++            ids = self._extract_player_ids(serialized)
++            if ids:
++                snippets.append("players:" + ",".join(ids[:5]))
++        parts = [part for part in (round_tag, *snippets) if part]
++        if not parts:
++            return ""
++        return self._truncate_text(" | ".join(parts), 260)
++
++    def _build_round_phase_tag(self, packet: Mapping[str, Any]) -> str:
++        round_value = self._extract_first_scalar(packet, ("round", "day", "night", "turn"))
++        phase_value = self._extract_first_scalar(packet, ("phase", "public_phase", "stage", "channel"))
++        parts: list[str] = []
++        if round_value is not None:
++            parts.append(f"r{self._compact_scalar(round_value)}")
++        if phase_value is not None:
++            parts.append(f"phase={self._compact_scalar(phase_value)}")
++        return " ".join(parts)
++
++    def _safe_json_dump(self, value: Any) -> str:
++        try:
++            return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
++        except TypeError:
++            return self._truncate_text(str(value), 1000)
++
++    def _extract_keyword_snippet(self, text: str, keywords: tuple[str, ...]) -> str:
++        lowered = text.lower()
++        best_index = -1
++        best_keyword = ""
++        for keyword in keywords:
++            idx = lowered.find(keyword.lower())
++            if idx != -1 and (best_index == -1 or idx < best_index):
++                best_index = idx
++                best_keyword = keyword
++        if best_index == -1:
++            return ""
++        start = max(0, best_index - 45)
++        end = min(len(text), best_index + max(60, len(best_keyword) + 45))
++        snippet = text[start:end]
++        return self._truncate_text(self._squash_whitespace(snippet), 140)
++
++    def _extract_player_ids(self, text: str) -> list[str]:
++        return list(dict.fromkeys(match.group(0) for match in _PLAYER_ID_PATTERN.finditer(text)))
++
++    def _extract_first_scalar(self, node: Any, key_hints: tuple[str, ...]) -> Any:
++        if isinstance(node, Mapping):
++            for key, value in node.items():
++                key_lower = str(key).lower()
++                if any(hint in key_lower for hint in key_hints):
++                    scalar = self._compact_scalar(value)
++                    if scalar is not None:
++                        return scalar
++                nested = self._extract_first_scalar(value, key_hints)
++                if nested is not None:
++                    return nested
++        elif isinstance(node, list):
++            for item in node:
++                nested = self._extract_first_scalar(item, key_hints)
++                if nested is not None:
++                    return nested
++        return None
++
++    def _compact_scalar(self, value: Any) -> str | None:
++        if value is None:
++            return None
++        if isinstance(value, bool):
++            return "true" if value else "false"
++        if isinstance(value, (int, float)):
++            if isinstance(value, float) and value.is_integer():
++                return str(int(value))
++            return str(value)
++        if isinstance(value, str):
++            text = self._squash_whitespace(value)
++            return self._truncate_text(text, 80)
++        return self._truncate_text(self._squash_whitespace(str(value)), 80)
++
++    @staticmethod
++    def _squash_whitespace(text: str) -> str:
++        return re.sub(r"\s+", " ", text).strip()
++
++    @staticmethod
++    def _truncate_text(text: str, limit: int) -> str:
++        if limit <= 0:
++            return ""
++        if len(text) <= limit:
++            return text
++        return text[: max(0, limit - 1)] + "…"
++
++    def _record_token_usage(self, response: object) -> None:
++        self._model_token_usage["successful_response_count"] += 1
++        attempts = self._nonnegative_int(getattr(response, "api_attempts", 1), fallback=1)
++        self._model_token_usage["api_attempt_count"] += max(1, attempts or 1)
++        usage = getattr(response, "token_usage", None)
++        if not isinstance(usage, dict):
++            return
++        values = {
++            key: self._nonnegative_int(usage.get(key), fallback=None)
++            for key in ("input_tokens", "output_tokens", "total_tokens")
++        }
++        if all(value is None for value in values.values()):
++            return
++        self._model_token_usage["reported_usage_response_count"] += 1
++        for key, value in values.items():
++            if value is not None:
++                self._model_token_usage[key] += value
++
+     @staticmethod
+     def _nonnegative_int(value: object, *, fallback: int | None) -> int | None:
+         if isinstance(value, bool):
+--- witch-base/task.md
++++ witch-n00003/task.md
+@@ -1,8 +1,31 @@
+ # 女巫最小任务
+ 
+-你的任务是合理使用药水帮助好人获胜，同时隐藏不应公开的药水和夜间信息。
++你的任务是合理使用药水帮助好人获胜，同时严格隐藏不应公开的夜间信息。
+ 
+-- 先确认当晚狼刀、药水余量和合法行动，再权衡救人、毒人或保留药水。
+-- 毒药应尽量针对有充分依据的狼人；不确定时可以保留资源或选择合法的放弃行动。
+-- 白天发言要像普通玩家或自然的神职玩家，不要无理由泄露自己掌握的私密信息。
+-- 每次决策都结合前几天的票型和死亡信息，避免固定首夜用药套路。
++## 硬规则
++
++1. 行动前必须先确认三件事：
++   - 当晚是否真的存在狼刀/夜杀目标；
++   - 自己的解药、毒药余量；
++   - 当前动作是否仍然合法。
++2. 救人只在“高价值且可能改变轮次”的情况下使用解药；如果救不出关键轮次，优先保留。
++3. 毒药只打高置信狼人、悍跳核心或已经被多方公开证据锁定的目标；证据不足时优先保留资源，或选择合法弃权。
++4. 若当前没有足够依据，就不要强行用药；“保留资源”永远比低置信误毒更安全。
++
++## 发言禁区
++
++白天发言时，绝对不要主动提及或暗示以下私密信息：
++
++- 自己是女巫；
++- 解药或毒药余量；
++- 夜刀目标；
++- 当夜是否用了救药/毒药；
++- 任何未公开的身份链、私密查验链、夜间选择过程。
++
++只能基于公开信息发言，不要把内部状态说成既成事实。
++
++## 决策习惯
++
++- 每次决策都结合最近几天的票型、死亡信息、警长归票和公开发言摘要。
++- 不要固定首夜必用药；要根据局势判断救、毒、留。
++- 目标不清晰时，宁可保留，也不要把药水浪费在低置信对象上。

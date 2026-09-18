@@ -1,0 +1,59 @@
+你正在修改狼人杀角色 hunter 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "hunter-n00057 的主要问题不是合法性，而是猎人反应质量偏低：20 局仅 6 胜，且没有 fallback / invalid，说明模型会稳定地产生合法动作，但在关键死亡反应窗口里经常保守到直接 pass。当前实现已经有公共记忆、目标打分和猎人专用 brief，但它仍然更像“文本启发式排序器”，没有把多源证据合并成足够强的出手信号，导致真实对局中在可出手时放弃了猎人枪。",
+  "evidence": [
+    "评测汇总：game_count=20，win_count=6，loss_count=14，win_rate=0.3；invalid_decision_count=0，fallback_count=0，说明问题不在 schema 或校验，而在决策质量。",
+    "对局 replay 中，round 7 p8 被狼刀后触发 HUNTER_REACTIONS_QUEUED，但猎人反应实际提交的是 pass（seq 476），随后 HUNTER_SHOT_SKIPPED（seq 477-478），最后 wolf 胜利（seq 480）。",
+    "该局存活到猎人反应时的候选已很少，场面进入高代价窗口；但现有策略没有把这种晚局局面显式转成更积极的出手偏好。",
+    "当前 Task-Agent 已经维护了 public_memory、player_notes、target_evidence 和 hunter_target_ranking，但 `_recent_memory`、`_evidence_snapshot` 和 brief 展示都强烈压缩，容易丢掉跨轮次的票型、身份冲突和死亡链条。",
+    "当前 `_score_hunter_target()` 仍以局部字符串匹配、最近记忆命中、latest_vote 和少量标签为主，缺少对“同一目标被多个独立公开来源同时指向”的硬阈值处理。",
+    "任务说明本来就要求“同一目标被多个独立公开来源同时指向，默认直接出手，不要先 pass”，但现有代码没有把这条规则做成足够强的程序级偏置。"
+  ],
+  "root_causes": [
+    "猎人反应阶段的默认风险偏好仍偏保守，pass 仍是容易发生的输出。",
+    "证据合并粒度不够：虽然有 target_evidence，但 brief 暴露给模型的是压缩后的全局摘要，而不是按候选 target_ids 展开的结构化比较卡片。",
+    "目标评分更接近关键词启发式而不是局面级证据聚合，无法稳定放大“多源公开指向”这种最该出手的信号。",
+    "晚局没有单独策略：猎人死亡反应与普通找狼阶段共享同一套阈值，没有把“只剩少数存活者”当作必须提高攻击性的场景。",
+    "当前 prompt 虽然写了“不要把跳过当默认”，但没有在代码层形成更强约束，导致模型仍可能在不够明确时选择 pass。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "把 `_decision_brief()` 改成按当前 `allowed_actions.target_ids` 展示候选级证据卡片，而不是只给全局摘要；每个候选至少带上 `independent_sources`、`evidence_types`、`multi_source_overlap`、`vote_sources`、`death_sources`、`hard_clear` 和最近相关引文。",
+      "rationale": "猎人反应需要的是“目标间对比”，不是全局统计。把证据直接按合法 target 展开，能显著降低模型把信息看漏、看散的问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 `_hunter_target_ranking()` / `_score_hunter_target()` 的阈值逻辑：当任一候选出现多源公开指向、冲突、死亡链或多类证据叠加时，生成更强的 `must_shoot` 结论；只有所有候选都确实只有单薄单源线索且不存在冲突时，才允许 pass 作为默认可选项。",
+      "rationale": "当前的 pass 偏好太强，导致关键局面也会跳枪。需要把“多源指向即出手”变成程序级偏置，而不是只写在自然语言 prompt 里。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "加入晚局增强规则：当存活人数进入较少区间时，提高猎人反应的攻击性权重，并降低对 pass 的容忍度；同时对明显硬清或公开确认好人继续保留强负分，避免误伤。",
+      "rationale": "本次失败发生在晚局高价值死亡反应窗口。晚局应该更激进，但仍保留对硬清的保护。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩充 `_extract_public_events()` / `_note_public_record()` 的结构化记忆保留范围，至少保留最近若干轮的 vote / claim / reveal / death 链条，而不是只截取少量短文本；必要时给 target_evidence 按轮次分组。",
+      "rationale": "当前记忆压缩过强，会丢掉早轮形成的同盟、改口和票链，进而削弱猎人反应时的多源判断。"
+    },
+    {
+      "file": "task.md",
+      "change": "把猎人反应规则改写得更明确：多源公开指向时默认开枪；只在所有合法目标都只剩单薄单源线索时才可 pass；晚局不要把 pass 当默认。",
+      "rationale": "让 prompt 与代码规则一致，减少模型在关键窗口里自行回到保守策略。"
+    }
+  ],
+  "risks": [
+    "提高出手积极性后，误伤好人的概率会上升，尤其是在公开信息本来就混乱的局面。",
+    "按候选展开更完整的证据卡片会增加 prompt 长度，需要控制字段数量和截断策略，避免触发 12000 字符上限。",
+    "更激进的阈值可能让模型在少数真空局面里不再 pass，若候选里确实没有好目标，可能导致低质量开枪。",
+    "记忆保留范围扩大后，若没有继续做压缩和排序，可能稀释关键证据的权重。",
+    "task.md 的语义强化只能辅助模型，不能单独解决阈值过弱的问题，仍需代码层硬化。"
+  ],
+  "code_agent_brief": "请只修改 hunter 角色的 task_agent.py 和 task.md，不要碰 Game Engine、行动 schema、工具接口或任何外部边界。目标是把 hunter 的死亡反应从“保守文本排序器”升级成“候选级证据聚合器”。具体要做：1）在 hunter_reaction brief 中按 allowed target_ids 输出结构化证据卡片，而不是只给全局摘要；2）在 `_score_hunter_target()` / `_hunter_target_ranking()` 里加入更强的多源出手规则，尤其是当同一目标被多个独立公开来源指向、或有冲突/死亡链/多类证据叠加时，默认 must_shoot，只有全部目标都很单薄时才允许 pass；3）加晚局增强规则，存活人数越少越不应默认 pass，但仍要保护硬清；4）适度放宽记忆压缩，保留最近若干轮的 vote/claim/reveal/death 链条；5）同步把 task.md 的猎人反应文字改成与代码一致的明确规则。修改后请自行检查语法和最小回归风险，保持 TaskAgent 构造接口与现有运行契约不变。"
+}

@@ -1,0 +1,576 @@
+--- wolf-n00044/task_agent.py
++++ wolf-n00064/task_agent.py
+@@ -216,6 +216,8 @@
+             "_dead_state": [],
+             "_known_sheriff_id": None,
+             "_recent_vote_state": [],
++            "_day_case_history": [],
++            "_last_day_case_signature": None,
+             "_last_observed_round": None,
+             "_last_observed_phase": None,
+             "_last_observed_dead_players": [],
+@@ -590,33 +592,6 @@
+         memory_snapshot: Mapping[str, Any],
+         current_dialogue: list[dict[str, Any]],
+     ) -> dict[str, Any]:
+-        public_rules = self._compact_snapshot(
+-            turn_packet.get("public_rules"),
+-            preferred_keys=(
+-                "phase_rules",
+-                "vote_rules",
+-                "speech_limits",
+-                "action_limits",
+-                "public_information",
+-                "night_rules",
+-                "day_rules",
+-            ),
+-        )
+-        game = self._compact_snapshot(
+-            turn_packet.get("game"),
+-            preferred_keys=(
+-                "round",
+-                "phase",
+-                "public_phase",
+-                "day",
+-                "night",
+-                "alive_count",
+-                "dead_count",
+-                "players_alive",
+-                "players_dead",
+-            ),
+-        )
+-        public_state = self._compact_public_state(turn_packet.get("public_state"))
+         request = self._compact_snapshot(
+             turn_packet.get("request"),
+             preferred_keys=(
+@@ -646,16 +621,17 @@
+             preferred_keys=("role", "team", "identity", "faction", "ability"),
+         )
+         wolf_strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
++        case_summary = wolf_strategy.get("case_summary") if isinstance(wolf_strategy, Mapping) else {}
++        state_digest = self._build_state_digest(turn_packet, memory_snapshot, wolf_strategy)
+         return {
+-            "game": game,
+-            "public_rules": public_rules,
+-            "self": self_state,
+-            "private_information": private_information,
+-            "public_state": public_state,
+-            "request": request,
+-            "memory": memory_snapshot,
+-            "wolf_strategy": wolf_strategy,
+-            "current_round_dialogue": current_dialogue,
++            "decision_state": {
++                "state_digest": state_digest,
++                "recent_dialogue": current_dialogue[-3:],
++                "case_summary": case_summary if isinstance(case_summary, Mapping) else {},
++                "request": request,
++                "self": self_state,
++                "private_information": private_information,
++            }
+         }
+ 
+     def _build_wolf_strategy(
+@@ -677,60 +653,46 @@
+         )
+         if is_night and target_actions:
+             signature = self._night_plan_signature(turn_packet, target_actions)
++            target_ids = self._night_target_ids(target_actions)
+             cached_plan = self._game_memory.get("wolf_plan")
+             if isinstance(cached_plan, Mapping) and cached_plan.get("signature") == signature:
+-                plan = cached_plan.get("strategy")
+-                if isinstance(plan, Mapping):
+-                    return dict(plan)
++                locked_plan = cached_plan.get("locked_plan")
++                if self._night_locked_plan_is_valid(locked_plan, target_ids):
++                    plan = cached_plan.get("strategy")
++                    if isinstance(plan, Mapping):
++                        return dict(plan)
+             ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions)
+-            primary = ranked_targets[0] if ranked_targets else None
+-            backup = ranked_targets[1] if len(ranked_targets) > 1 else None
+-            latest_resolution = self._latest_night_resolution(memory_snapshot)
+-            last_failed_kill_reason = ""
+-            if isinstance(latest_resolution, Mapping) and str(latest_resolution.get("outcome") or "") != "success":
+-                last_failed_kill_reason = str(latest_resolution.get("reason") or latest_resolution.get("risk_tag") or "")
+-            switch_conditions = [
+-                "若主刀合法性变化或出现新的公开身份链，则重新排序",
+-                "若上一晚空刀/被守目标仍无新证据变化，则优先切换备刀",
+-            ]
+-            if last_failed_kill_reason:
+-                switch_conditions.insert(0, "上一晚失败记忆优先降权同一目标")
+-            night_plan = {
+-                "primary_target": primary,
+-                "backup_target": backup,
+-                "tie_break_reason": primary.get("reason") if isinstance(primary, Mapping) else "优先高威胁公共目标，再按座位/ID固定顺序",
+-                "candidate_order": ranked_targets[:3],
+-                "switch_conditions": switch_conditions[:3],
+-                "last_failed_kill_reason": last_failed_kill_reason,
+-                "signature": signature,
+-            }
++            locked_plan = self._build_locked_night_plan(ranked_targets, signature, memory_snapshot)
+             plan = {
+                 "stage": "night",
+                 "objective": "锁定一个主刀和一个备刀，并在重试时复用同一计划",
+-                "night_plan": night_plan,
+-                "primary_target": primary,
+-                "backup_target": backup,
+-                "tie_break_reason": night_plan["tie_break_reason"],
+-                "candidate_order": ranked_targets,
++                "locked_plan": locked_plan,
++                "primary_target": locked_plan.get("primary_target"),
++                "backup_target": locked_plan.get("backup_target"),
++                "discussion_signal": locked_plan.get("discussion_signal"),
++                "tie_break_reason": locked_plan.get("discussion_signal"),
++                "candidate_order": locked_plan.get("candidate_order", []),
+                 "notes": self._night_notes(memory_snapshot, current_dialogue),
+                 "signature": signature,
+-                "last_failed_kill_reason": last_failed_kill_reason,
+-                "switch_conditions": switch_conditions[:3],
++                "last_failed_kill_reason": locked_plan.get("last_failed_kill_reason", ""),
++                "switch_conditions": locked_plan.get("switch_conditions", []),
+             }
+             self._game_memory["wolf_plan"] = {
+                 "signature": signature,
+                 "primary_target": plan.get("primary_target"),
+                 "backup_target": plan.get("backup_target"),
+                 "tie_break_reason": plan.get("tie_break_reason"),
++                "locked_plan": locked_plan,
+                 "strategy": plan,
+             }
+             return plan
+         if speech_actions:
+             day_focus = self._select_day_focus(turn_packet, memory_snapshot, current_dialogue, speech_actions)
++            case_summary = day_focus.get("case_summary") if isinstance(day_focus, Mapping) else {}
+             return {
+                 "stage": "day",
+-                "objective": "用具体对象、具体证据、下一步动作和发言目的维持可解释叙事",
+-                "must_include": ["具体对象", "具体证据", "下一步动作", "保票/分票/切叙事"],
++                "objective": "用对象、证据类型、下一步动作和目的维持可解释叙事",
++                "case_summary": case_summary if isinstance(case_summary, Mapping) else {},
+                 "day_focus": day_focus,
+                 "pressure_points": self._day_pressure_points(memory_snapshot),
+                 "dialogue_focus": self._dialogue_focus(current_dialogue),
+@@ -750,17 +712,66 @@
+     ) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+         game = turn_packet.get("game") or {}
++        return {
++            "round": self._safe_get(game, "round"),
++            "phase": str(request.get("phase") or self._safe_get(game, "phase") or "unknown"),
++            "channel": str(request.get("channel") or "unknown"),
++            "targets": self._night_target_ids(target_actions),
++        }
++
++    @staticmethod
++    def _night_target_ids(target_actions: list[Mapping[str, Any]]) -> list[str]:
+         target_ids: list[str] = []
+         for action in target_actions:
+             for target_id in action.get("target_ids") or []:
+                 target = str(target_id)
+                 if target not in target_ids:
+                     target_ids.append(target)
++        return sorted(target_ids)
++
++    def _night_locked_plan_is_valid(self, locked_plan: Any, target_ids: list[str]) -> bool:
++        if not isinstance(locked_plan, Mapping):
++            return False
++        available = {str(target) for target in target_ids if target is not None}
++        primary = self._target_ref_text(locked_plan.get("primary_target"))
++        backup = self._target_ref_text(locked_plan.get("backup_target"))
++        if primary and primary not in available:
++            return False
++        if backup and backup not in available:
++            return False
++        return bool(primary or backup)
++
++    def _build_locked_night_plan(
++        self,
++        ranked_targets: list[dict[str, Any]],
++        signature: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        primary = ranked_targets[0] if ranked_targets else None
++        backup = ranked_targets[1] if len(ranked_targets) > 1 else None
++        latest_resolution = self._latest_night_resolution(memory_snapshot)
++        last_failed_kill_reason = ""
++        if isinstance(latest_resolution, Mapping) and str(latest_resolution.get("outcome") or "") != "success":
++            last_failed_kill_reason = str(latest_resolution.get("reason") or latest_resolution.get("risk_tag") or "")
++        switch_conditions = [
++            "若主刀合法性变化或出现新的公开身份链，则重新排序",
++            "若上一晚空刀/被守目标仍无新证据变化，则优先切换备刀",
++        ]
++        if last_failed_kill_reason:
++            switch_conditions.insert(0, "上一晚失败记忆优先降权同一目标")
++        discussion_signal = (
++            primary.get("reason") if isinstance(primary, Mapping) else "优先高威胁公共目标，再按座位/ID固定顺序"
++        )
++        if last_failed_kill_reason:
++            discussion_signal = f"{last_failed_kill_reason}；{discussion_signal}"
+         return {
+-            "round": self._safe_get(game, "round"),
+-            "phase": str(request.get("phase") or self._safe_get(game, "phase") or "unknown"),
+-            "channel": str(request.get("channel") or "unknown"),
+-            "targets": sorted(target_ids),
++            "primary_target": primary,
++            "backup_target": backup,
++            "discussion_signal": discussion_signal,
++            "candidate_order": ranked_targets[:3],
++            "switch_conditions": switch_conditions[:3],
++            "last_failed_kill_reason": last_failed_kill_reason,
++            "signature": dict(signature),
+         }
+ 
+     def _update_public_ledger(self, sync_packet: Mapping[str, Any], summary: Mapping[str, Any]) -> None:
+@@ -1015,7 +1026,13 @@
+                     "signals": len(reasons),
+                 }
+             )
+-        candidates.sort(key=lambda item: (-int(item["score"]), self._seat_sort_value(records.get(item["player_id"], {}), item["player_id"]), item["player_id"]))
++        candidates.sort(
++            key=lambda item: (
++                -int(item["score"]),
++                self._seat_sort_value(records.get(item["player_id"], {}), item["player_id"]),
++                item["player_id"],
++            )
++        )
+         chosen = candidates[0] if candidates else {}
+         runner_up = candidates[1] if len(candidates) > 1 else {}
+         pressure_gap = int(chosen.get("score", 0)) - int(runner_up.get("score", 0)) if chosen else 0
+@@ -1041,18 +1058,22 @@
+             "deflect": "把压力转到更能分票的对象或链条",
+             "sacrifice": "承认局部代价，切断与该对象的绑定",
+         }
+-        anti_repeat = self._recent_self_texts[-1] if self._recent_self_texts else ""
+-        return {
++        day_focus = {
+             "mode": mode,
+             "mode_reason": mode_reason,
+             "target": chosen,
+             "evidence": evidence,
+             "next_action": next_action_map.get(mode, "继续围绕具体对象和证据推进"),
+-            "anti_repeat": anti_repeat,
++            "anti_repeat": self._recent_self_texts[-1] if self._recent_self_texts else "",
+             "candidates": candidates[:3],
+             "pressure_gap": pressure_gap,
+             "speech_budget": speech_actions[0].get("max_chars") if speech_actions else None,
+         }
++        case_summary = self._decision_case_summary(day_focus)
++        day_focus["case_summary"] = case_summary
++        day_focus["evidence_type"] = case_summary.get("evidence_type")
++        self._record_day_case_summary(turn_packet, case_summary)
++        return day_focus
+ 
+     def _select_day_evidence(
+         self,
+@@ -1062,29 +1083,262 @@
+         current_dialogue: list[dict[str, Any]],
+     ) -> dict[str, Any]:
+         ledger = memory_snapshot.get("public_ledger") or {}
++        recent_case_history = self._game_memory.get("_day_case_history") or []
++        recent_kinds = [
++            str(entry.get("evidence_type") or "")
++            for entry in recent_case_history
++            if isinstance(entry, Mapping) and entry.get("evidence_type")
++        ]
++        last_kind = recent_kinds[-1] if recent_kinds else ""
++        repeated_kind = last_kind if len(recent_kinds) >= 2 and recent_kinds[-1] == recent_kinds[-2] else ""
++        kind_priority = {"claim": 0, "vote": 1, "sheriff": 2, "death": 3, "dialogue": 4, "fallback": 5}
++        candidates: list[dict[str, Any]] = []
++
++        def add_candidate(
++            kind: str,
++            text: str,
++            *,
++            source: str,
++            rank: int = 0,
++            target_hit: bool = False,
++        ) -> None:
++            text = self._clip_text(text, 70)
++            if not text:
++                return
++            base_score = {"claim": 50, "vote": 46, "sheriff": 42, "death": 38, "dialogue": 28, "fallback": 10}.get(kind, 20)
++            score = base_score + max(0, 6 - rank * 2)
++            if target_hit:
++                score += 6
++            if kind not in recent_kinds[-2:]:
++                score += 8
++            else:
++                score -= 4
++            if repeated_kind and kind == repeated_kind:
++                score -= 12
++            elif kind == last_kind:
++                score -= 3
++            candidates.append(
++                {
++                    "kind": kind,
++                    "text": text,
++                    "source": source,
++                    "score": score,
++                    "rank": rank,
++                }
++            )
++
++        def add_latest_matching(
++            kind: str,
++            entries: Any,
++            *,
++            target_match: Any | None = None,
++            text_factory: Any | None = None,
++            source: str,
++            target_hit: bool = False,
++            limit: int = 4,
++        ) -> None:
++            if not isinstance(entries, list):
++                return
++            for rank, entry in enumerate(reversed(entries[-limit:])):
++                if not isinstance(entry, Mapping):
++                    continue
++                if target_match is not None and not target_match(entry):
++                    continue
++                text = text_factory(entry) if text_factory is not None else self._clip_text(json.dumps(entry, ensure_ascii=False), 56)
++                add_candidate(kind, text, source=source, rank=rank, target_hit=target_hit)
++                return
++
+         if target_id and target_id in records:
+             record = records[target_id]
+             claim_text = self._public_claim_text(record)
+             if claim_text:
+-                return {"kind": "claim", "text": f"{target_id}公开身份:{claim_text}"}
+-            for entry in (ledger.get("votes") or [])[-4:]:
+-                if entry.get("player_id") == target_id or entry.get("voter") == target_id or entry.get("target_id") == target_id:
+-                    return {"kind": "vote", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
+-            for entry in (ledger.get("sheriff_changes") or [])[-2:]:
+-                if entry.get("to") == target_id or entry.get("from") == target_id:
+-                    return {"kind": "sheriff", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
+-        for entry in (ledger.get("deaths") or [])[-2:]:
+-            if isinstance(entry, Mapping):
+-                return {"kind": "death", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
+-        for item in reversed(current_dialogue[-3:]):
+-            speaker = item.get("speaker") or item.get("player_id") or item.get("from")
+-            text = item.get("text") or item.get("content") or item.get("message")
+-            if speaker is not None and text:
+-                return {
+-                    "kind": "dialogue",
+-                    "text": f"{speaker}:{self._clip_text(str(text), 40)}",
++                add_candidate("claim", f"{target_id}公开身份:{claim_text}", source="target_claim", target_hit=True)
++            add_latest_matching(
++                "vote",
++                ledger.get("votes"),
++                target_match=lambda entry: entry.get("player_id") == target_id or entry.get("voter") == target_id or entry.get("target_id") == target_id,
++                source="target_vote",
++                target_hit=True,
++            )
++            add_latest_matching(
++                "sheriff",
++                ledger.get("sheriff_changes"),
++                target_match=lambda entry: entry.get("to") == target_id or entry.get("from") == target_id,
++                source="target_sheriff",
++                target_hit=True,
++            )
++
++        add_latest_matching(
++            "claim",
++            ledger.get("claims"),
++            text_factory=lambda entry: self._clip_text(
++                f"{entry.get('player_id')}公开身份:{entry.get('claim') or entry.get('claimed_role') or entry.get('public_role') or ''}",
++                64,
++            ),
++            source="claim_chain",
++        )
++        add_latest_matching(
++            "vote",
++            ledger.get("votes"),
++            text_factory=lambda entry: self._clip_text(json.dumps(entry, ensure_ascii=False), 64),
++            source="vote_chain",
++        )
++        add_latest_matching(
++            "sheriff",
++            ledger.get("sheriff_changes"),
++            text_factory=lambda entry: self._clip_text(json.dumps(entry, ensure_ascii=False), 64),
++            source="sheriff_chain",
++        )
++        add_latest_matching(
++            "death",
++            ledger.get("deaths"),
++            text_factory=lambda entry: self._clip_text(json.dumps(entry, ensure_ascii=False), 64),
++            source="death_chain",
++        )
++        if current_dialogue:
++            for rank, item in enumerate(reversed(current_dialogue[-3:])):
++                speaker = item.get("speaker") or item.get("player_id") or item.get("from")
++                text = item.get("text") or item.get("content") or item.get("message")
++                if speaker is not None and text:
++                    add_candidate(
++                        "dialogue",
++                        f"{speaker}:{self._clip_text(str(text), 40)}",
++                        source="dialogue",
++                        rank=rank,
++                    )
++                    break
++
++        if not candidates:
++            return {"kind": "fallback", "text": "用当前公开信息补一条最具体的链条"}
++
++        candidates.sort(
++            key=lambda item: (
++                -int(item["score"]),
++                int(item["rank"]),
++                kind_priority.get(str(item["kind"]), 99),
++                str(item["text"]),
++            )
++        )
++        chosen = candidates[0]
++        return {"kind": chosen["kind"], "text": chosen["text"], "source": chosen["source"]}
++
++    def _decision_case_summary(self, day_focus: Mapping[str, Any]) -> dict[str, Any]:
++        target = day_focus.get("target") if isinstance(day_focus.get("target"), Mapping) else {}
++        evidence = day_focus.get("evidence") if isinstance(day_focus.get("evidence"), Mapping) else {}
++        purpose_map = {
++            "attack": "保票",
++            "deflect": "分票",
++            "sacrifice": "切叙事",
++        }
++        object_text = self._target_ref_text(target.get("player_id")) if isinstance(target, Mapping) else None
++        if not object_text:
++            object_text = "未知对象"
++        evidence_type = str(evidence.get("kind") or "fallback")
++        next_action = str(day_focus.get("next_action") or self._day_next_action(evidence_type))
++        return {
++            "object": object_text,
++            "evidence_type": evidence_type,
++            "next_action": next_action,
++            "purpose": purpose_map.get(str(day_focus.get("mode") or ""), "维持叙事"),
++        }
++
++    def _record_day_case_summary(self, turn_packet: Mapping[str, Any], case_summary: Mapping[str, Any]) -> None:
++        request = turn_packet.get("request") or {}
++        game = turn_packet.get("game") or {}
++        signature = str(
++            self._safe_get(request, "request_id")
++            or f"{self._safe_get(game, 'round')}:{self._safe_get(request, 'phase') or self._safe_get(game, 'phase')}:{self._safe_get(request, 'channel')}"
++        )
++        if self._game_memory.get("_last_day_case_signature") == signature:
++            return
++        history = self._game_memory.setdefault("_day_case_history", [])
++        if not isinstance(history, list):
++            history = []
++        history.append({"signature": signature, **dict(case_summary)})
++        if len(history) > _MAX_HISTORY_ITEMS:
++            del history[:-_MAX_HISTORY_ITEMS]
++        self._game_memory["_day_case_history"] = history
++        self._game_memory["_last_day_case_signature"] = signature
++
++    def _evidence_freshness_hint(self) -> dict[str, Any]:
++        history = self._game_memory.get("_day_case_history") or []
++        kinds = [
++            str(entry.get("evidence_type") or "")
++            for entry in history
++            if isinstance(entry, Mapping) and entry.get("evidence_type")
++        ]
++        recent_types = kinds[-3:]
++        if not recent_types:
++            return {"recent_types": [], "switch_hint": "优先使用最新链条"}
++        switch_hint = "优先切换证据类型" if len(recent_types) >= 2 and recent_types[-1] == recent_types[-2] else "优先使用最近未用过的链条"
++        return {"recent_types": recent_types, "switch_hint": switch_hint}
++
++    def _build_state_digest(
++        self,
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        wolf_strategy: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        game = turn_packet.get("game") if isinstance(turn_packet.get("game"), Mapping) else {}
++        request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
++        self_state = turn_packet.get("self") if isinstance(turn_packet.get("self"), Mapping) else {}
++        alive_ids = self._extract_id_list(game, preferred_keys=("alive_players", "alive", "living_players"))
++        dead_ids = self._extract_id_list(game, preferred_keys=("dead_players", "dead", "eliminated_players"))
++        digest: dict[str, Any] = {
++            "turn": {
++                "round": self._safe_get(game, "round"),
++                "phase": str(request.get("phase") or self._safe_get(game, "phase") or "unknown"),
++                "channel": str(request.get("channel") or "unknown"),
++                "request_id": self._safe_get(request, "request_id"),
++            },
++            "self": {
++                "player_id": self.player_id,
++                "alive": self._safe_get(self_state, "alive"),
++                "seat": self._safe_get(self_state, "seat") or self._safe_get(self_state, "seat_id"),
++            },
++            "table": {
++                "alive_count": len(alive_ids),
++                "dead_count": len(dead_ids),
++                "sheriff_id": memory_snapshot.get("game", {}).get("sheriff_id"),
++                "death_tail": self._format_id_list((memory_snapshot.get("game", {}).get("death_order") or [])[-2:]),
++            },
++            "signals": {
++                "pressure_points": self._day_pressure_points(memory_snapshot)[:2],
++                "recent_votes": (memory_snapshot.get("recent_vote_summaries") or [])[-2:],
++            },
++        }
++        latest_resolution = self._latest_night_resolution(memory_snapshot)
++        if isinstance(latest_resolution, Mapping):
++            digest["signals"]["latest_night"] = {
++                "outcome": latest_resolution.get("outcome"),
++                "risk_tag": latest_resolution.get("risk_tag"),
++                "reason": self._clip_text(str(latest_resolution.get("reason") or ""), 40),
++            }
++        if isinstance(wolf_strategy, Mapping) and wolf_strategy.get("stage") == "night":
++            locked_plan = wolf_strategy.get("locked_plan") if isinstance(wolf_strategy.get("locked_plan"), Mapping) else {}
++            digest["night_lock"] = {
++                "primary": self._target_ref_text(locked_plan.get("primary_target") or wolf_strategy.get("primary_target")),
++                "backup": self._target_ref_text(locked_plan.get("backup_target") or wolf_strategy.get("backup_target")),
++                "discussion_signal": self._clip_text(
++                    str(locked_plan.get("discussion_signal") or wolf_strategy.get("discussion_signal") or ""),
++                    60,
++                ),
++            }
++            switch_conditions = locked_plan.get("switch_conditions") or wolf_strategy.get("switch_conditions") or []
++            if isinstance(switch_conditions, list) and switch_conditions:
++                digest["night_lock"]["switch"] = [
++                    self._clip_text(str(item), 40) for item in switch_conditions[:2] if item is not None
++                ]
++        elif isinstance(wolf_strategy, Mapping) and wolf_strategy.get("stage") == "day":
++            digest["day_freshness"] = self._evidence_freshness_hint()
++            case_summary = wolf_strategy.get("case_summary")
++            if isinstance(case_summary, Mapping):
++                digest["case_summary"] = {
++                    "object": case_summary.get("object"),
++                    "evidence_type": case_summary.get("evidence_type"),
++                    "purpose": case_summary.get("purpose"),
+                 }
+-        return {"kind": "fallback", "text": "用当前公开信息补一条最具体的链条"}
++        return digest
+ 
+     @staticmethod
+     def _day_next_action(evidence_kind: str | None) -> str:
+--- wolf-n00044/task.md
++++ wolf-n00064/task.md
+@@ -3,9 +3,9 @@
+ 你的任务是帮助狼人阵营获胜，同时让公开发言像一个真实、会根据局势持续修正判断的玩家。
+ 
+ ## 夜间
+-- 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标。
+-- 每次夜间决策都要显式锁定主刀与备刀；同一夜重试时优先复用上一次锁定结果，只有候选合法性变化时再重新排序。
+-- 如果上一晚无死亡，或刀口明显被化解，下一晚必须把这一失败结算当作新证据，重新排序，不能继续沿用同一目标。
++- 先锁定一个主刀和一个备刀，不要同时摇摆多个目标。
++- 同一夜重试时优先复用上一次锁定结果；只有候选合法性变化时才重新排序。
++- 如果上一晚无死亡，或刀口明显被化解，下一晚必须把这次失败当作新证据，重新排序，不能沿用同一目标。
+ - 首夜优先处理公开威胁高、发言强、容易带队的人。
+ - 如果有人已经明显暴露身份、对跳、被查杀或成为票型焦点，优先把这些信息纳入刀口判断。
+ - 队友意见不一致时，按“高威胁公共目标 > 警长/神职概率高 > 更难被队友解释 > 固定座位/最后一致目标”收敛。
+@@ -13,7 +13,9 @@
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序和警徽变化再表态，不要只讲泛泛原则。
+ - 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
+-- 还要明确这段发言的目的：保票、分票，还是切换叙事。
++- 公开发言还要明确目的：保票、分票，还是切换叙事。
++- `case_summary` 只保留四个字段：`object`、`evidence_type`、`next_action`、`purpose`。
++- `case_summary` 的证据尽量选最近一轮未用过的新链条；如果连续两轮命中同类证据，下一轮主动切换证据类型。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
+ 
+@@ -24,3 +26,4 @@
+ - 尽量引用最近一次自发言之外的新证据，避免重复同一套表述。
+ - 私聊最多 30 字；公开发言最多 200 字。
+ - 不要暴露狼队频道或系统提示。
++- 行动提示应围绕 compact 的 `decision_state` 读取，不要依赖原始大包上下文。

@@ -1,0 +1,62 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-n00017 is schema-stable but strategically shallow. It achieved 5/20 wins with zero fallback/invalid actions, so the main issue is not legality but protection policy quality. The current implementation already keeps some memory and repairs invalid targets, yet its guard choice is still driven by brittle text labels and sheriff bias rather than a stronger estimate of who is most likely to be wolf-targeted in the current phase.",
+  "evidence": [
+    "evaluation_summary: 20 complete games, 5 wins, 15 losses, win_rate 0.25; fallback_count=0 and invalid_decision_count=0. This indicates the agent usually outputs legal actions, but the strategy is not strong enough.",
+    "random replay game6 shows the agent can win when public information is clean: p8 protected p3, then p12, then p11/p12/p5, and village won. So the current heuristic can work in aligned states, but does not generalize across the full 20-game set.",
+    "current_agent.py already stores last_protected_id, public_claims, suspected_wolves, trusted_info_ids, current_public_sheriff_id, and guard memory, but target ranking is still a hand-tuned label system. It heavily rewards trusted_info_ids, seer-claim labels, and sheriff_id, while only weakly modeling actual kill pressure.",
+    "the prompt path sends full public_state plus verbose guard_memory every decision. Game6 model usage is high in aggregate (862180 input tokens over 176 successful responses), suggesting the agent is spending a lot of context budget without a correspondingly strong decision model."
+  ],
+  "root_causes": [
+    {
+      "cause": "Protection scoring is too heuristic and identity-centric.",
+      "impact": "The agent prefers players with certain labels or sheriff status, but does not explicitly estimate who is most likely to be attacked tonight or which protection yields the highest expected village value."
+    },
+    {
+      "cause": "Public claim ingestion is lexical and lossy.",
+      "impact": "It detects keywords like 查杀, 金水, 守卫, 预言家, but does not preserve claim source, timing, contradiction history, or corroboration quality well enough to distinguish strong public info from noisy self-claims."
+    },
+    {
+      "cause": "The current prompt is verbose and partly redundant.",
+      "impact": "A large fraction of context is spent on raw state and guard notes, which increases token cost and can dilute the model's attention away from the actual protection decision."
+    },
+    {
+      "cause": "There is no explicit endgame/self-protect policy tied to exposure and remaining player count.",
+      "impact": "The agent can keep following generic priority rules even when self-protection or a very different target ordering would be better in late-game or low-information states."
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "Replace the current guard ranking with a compact threat model: for each legal target, compute a score from remaining-alive status, recent public pressure, trust/claim quality, sheriff status, previous protection, and endgame/self-protect conditions. Use this score both for repair fallback and for the guard-specific instruction hint.",
+      "rationale": "This shifts the agent from label-based protection to phase-aware expected-value protection, which is the main strategic gap behind the low win rate."
+    },
+    {
+      "file": "task_agent.py",
+      "change": "Upgrade claim tracking from keyword flags to structured records: store speaker, claim type, claimed target, and whether the claim is supported or contradicted by later public events. Use these records to downweight unsupported self-claims and overconfident but low-credibility identities.",
+      "rationale": "Current heuristics treat many public statements as equally informative. Structured claim memory will make target selection less brittle and more robust to fake identity play."
+    },
+    {
+      "file": "task_agent.py",
+      "change": "Compress the decision prompt: replace raw or broad public-state exposure with a short guard summary containing alive/dead sets, sheriff, last protected target, top 3 candidate scores, and the strongest public contradictions. Keep the tool path unchanged.",
+      "rationale": "This reduces token waste and makes the model focus on the few facts that actually matter for guard selection, while staying within the runtime limits."
+    },
+    {
+      "file": "task.md",
+      "change": "Rewrite the guard task to specify an explicit protection objective: maximize expected village survival value, not simply protect a sheriff or a loud speaker; clarify that no-death does not confirm a successful guard; add a short self-protect rule for endgame or when the guard is the clearest exposed high-value target.",
+      "rationale": "The current task text is too generic and allows the model to rely on shallow heuristics. A tighter task spec will align the next-generation agent with the improved scoring logic."
+    }
+  ],
+  "risks": [
+    "A stronger self-protect policy could be overused and reduce early protection of information roles.",
+    "More structured claim parsing can misclassify deceptive speech if the parser is too aggressive.",
+    "Prompt compression may lose context if the summary omits a crucial contradiction or recent event.",
+    "A more explicit sheriff/information-role bias could overfit to this evaluation slice and perform worse in games where the sheriff is untrustworthy."
+  ],
+  "code_agent_brief": "Please update guard task_agent.py and task.md to build a next-generation guard policy. The key goal is to replace the current label-heavy target ranking with a compact, phase-aware threat model that ranks each legal guard target by expected village value and current wolf-kill risk. Preserve legality repair and memory, but make the ranking depend on structured claim quality, recent public pressure, sheriff reliability, previous protection, and endgame/self-protect conditions. Also shrink the prompt so the model receives only a concise guard summary instead of broad raw state. In task.md, explicitly define guard success as maximizing survival of the highest-value good player, not as blindly following sheriff or any single claim. Do not change engine, schema, rules, or visibility."
+}

@@ -1,0 +1,561 @@
+--- seer-n00088/task_agent.py
++++ seer-n00131/task_agent.py
+@@ -547,10 +547,150 @@
+     return [pid] if pid else []
+ 
+ 
++_PUBLIC_SIGNAL_LIMITS = {
++    "claimants": 8,
++    "claimed_inspections": 10,
++    "pressure": 12,
++    "votes": 10,
++    "snippets": 6,
++}
++
++
++def _bounded_public_text(value: Any, limit: int = 120) -> str:
++    text = str(value or "").replace("\\n", " ").strip()
++    return text[:limit]
++
++
++def _known_ids_from_context(known_ids: Any) -> list[str]:
++    return list(dict.fromkeys(str(pid) for pid in _extract_id_list(known_ids) if str(pid)))
++
++
++def _signal_ids(text: str, known_ids: list[str]) -> list[str]:
++    # 只接受当前公开状态已经出现的玩家 id，避免自然语言中的数字被误当玩家。
++    return [pid for pid in known_ids if re.search(rf"(?<![A-Za-z0-9]){re.escape(pid)}(?![A-Za-z0-9])", text, re.I)]
++
++
++def _extract_public_vote_claim_signals(public_state: Mapping[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
++    """从公开字段提取小型信号集；这些永远不是查验事实。"""
++    if not isinstance(public_state, Mapping):
++        return {"claimants": [], "claimed_inspections": [], "pressure": [], "votes": [], "snippets": []}
++    known_ids = _known_ids_from_context(
++        public_state.get("alive_player_ids") or public_state.get("alive_players")
++        or public_state.get("players") or public_state.get("current_players")
++    )
++    result: dict[str, list[dict[str, Any]]] = {key: [] for key in _PUBLIC_SIGNAL_LIMITS}
++
++    def add(bucket: str, item: dict[str, Any]) -> None:
++        if len(result[bucket]) < _PUBLIC_SIGNAL_LIMITS[bucket] and item not in result[bucket]:
++            result[bucket].append(item)
++
++    def visit(value: Any, key_hint: str = "") -> None:
++        hint = key_hint.lower()
++        if isinstance(value, Mapping):
++            speaker = _as_str_id(value.get("speaker_id") or value.get("player_id") or value.get("voter") or value.get("from"))
++            target = _as_str_id(value.get("target_id") or value.get("target") or value.get("vote_target") or value.get("to"))
++            if speaker and target and any(token in hint for token in ("vote", "ballot", "投票", "归票")):
++                add("votes", {"from": speaker, "target": target, "source": "public_state"})
++            if speaker and any(token in hint for token in ("claim", "role_claim", "身份声明", "对跳")):
++                role = _bounded_public_text(value.get("role") or value.get("claim") or value.get("claimed_role"), 40)
++                add("claimants", {"player_id": speaker, "claim": role or "公开身份声明"})
++            for key, nested in value.items():
++                visit(nested, str(key))
++        elif isinstance(value, (list, tuple, set)):
++            for nested in value:
++                visit(nested, hint)
++    visit(public_state)
++    return result
++
++
++def _summarize_current_dialogue(
++    dialogue: Any,
++    known_ids: Any,
++) -> dict[str, list[dict[str, Any]]]:
++    """把当前轮可见发言压成有界公开信号，不保存完整对话。"""
++    ids = _known_ids_from_context(known_ids)
++    result: dict[str, list[dict[str, Any]]] = {key: [] for key in _PUBLIC_SIGNAL_LIMITS}
++    if not isinstance(dialogue, (list, tuple)):
++        return result
++
++    def add(bucket: str, item: dict[str, Any]) -> None:
++        if len(result[bucket]) < _PUBLIC_SIGNAL_LIMITS[bucket] and item not in result[bucket]:
++            result[bucket].append(item)
++
++    for entry in list(dialogue)[-12:]:
++        if isinstance(entry, Mapping):
++            speaker = _as_str_id(entry.get("speaker_id") or entry.get("player_id") or entry.get("speaker") or entry.get("from"))
++            text = _bounded_public_text(entry.get("text") or entry.get("content") or entry.get("message") or entry.get("speech"))
++        else:
++            speaker, text = None, _bounded_public_text(entry)
++        if not text:
++            continue
++        found = _signal_ids(text, ids)
++        low = text.lower()
++        role_claim = any(token in low for token in ("seer", "fortune teller", "预言家", "真预", "跳预"))
++        if speaker and role_claim:
++            add("claimants", {"player_id": speaker, "claim": "seer"})
++        inspection_words = ("查杀", "金水", "验人", "查验", "查了", "验了", "昨晚验", "check", "checked")
++        if role_claim and any(word in low for word in inspection_words):
++            for target in found[:3]:
++                match = re.search(rf"(?<![A-Za-z0-9]){re.escape(target)}(?![A-Za-z0-9])", text, re.I)
++                window = text[max(0, (match.start() if match else 0) - 10):(match.end() if match else len(text)) + 10]
++                alignment = "wolf" if any(x in window for x in ("查杀", "wolf", "狼人")) else ("village" if any(x in window for x in ("金水", "好人", "villager", "村民")) else "claimed")
++                add("claimed_inspections", {"claimant": speaker or "unknown", "target": target, "claimed_result": alignment})
++        vote_words = ("投", "归票", "主投", "票给", "vote", "voting")
++        pressure_words = ("保", "保护", "站", "踩", "质疑", "怀疑", "打", "攻击", "push", "suspect")
++        for target in found[:4]:
++            if any(word in low for word in vote_words):
++                add("votes", {"from": speaker or "unknown", "target": target, "source": "dialogue"})
++            if any(word in low for word in pressure_words):
++                label = "protect" if any(word in low for word in ("保", "保护", "站", "defend")) else "attack"
++                add("pressure", {"from": speaker or "unknown", "target": target, "signal": label})
++        if speaker:
++            add("snippets", {"speaker": speaker, "text": text})
++    return result
++
++
++def _extract_public_commitments(text: str, known_ids: Any) -> dict[str, str | None]:
++    ids = _known_ids_from_context(known_ids)
++    if not text:
++        return {"next_inspect": None, "badge_plan": None, "main_vote": None}
++
++    def after(words: tuple[str, ...]) -> str | None:
++        positions = [text.lower().find(word.lower()) for word in words]
++        positions = [pos for pos in positions if pos >= 0]
++        if not positions:
++            return None
++        tail = text[min(positions):]
++        found = _signal_ids(tail, ids)
++        return found[0] if found else None
++
++    return {
++        "next_inspect": after(("下一验", "下验", "next check")),
++        "badge_plan": after(("警徽给", "警徽交", "警徽传", "徽给", "badge to")),
++        "main_vote": after(("主投", "归票", "投", "vote")),
++    }
++
++
++def _merge_public_signals(*signals: Mapping[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
++    merged: dict[str, list[dict[str, Any]]] = {key: [] for key in _PUBLIC_SIGNAL_LIMITS}
++    for signal in signals:
++        if not isinstance(signal, Mapping):
++            continue
++        for key, limit in _PUBLIC_SIGNAL_LIMITS.items():
++            values = signal.get(key)
++            if not isinstance(values, list):
++                continue
++            for value in values:
++                if isinstance(value, Mapping) and value not in merged[key] and len(merged[key]) < limit:
++                    merged[key].append(dict(value))
++    return merged
++
++
+ def _rank_seer_inspect_targets(
+     request: Mapping[str, Any],
+     seer_context: Mapping[str, Any],
+     public_state: Mapping[str, Any],
++    public_signals: Mapping[str, Any] | None = None,
+ ) -> list[str]:
+     """按公开证据给合法夜验候选排序；绝不产生候选集之外的 id。"""
+     allowed_actions = request.get("allowed_actions") if isinstance(request, Mapping) else None
+@@ -593,15 +733,55 @@
+ 
+     if isinstance(public_state, Mapping):
+         walk(public_state)
++
++    signals = public_signals if isinstance(public_signals, Mapping) else {}
++    for claim in signals.get("claimants", []) if isinstance(signals.get("claimants"), list) else []:
++        pid = _as_str_id(claim)
++        if pid in scores:
++            scores[pid] += 6
++    for row in signals.get("claimed_inspections", []) if isinstance(signals.get("claimed_inspections"), list) else []:
++        claimant = _as_str_id(row.get("claimant") if isinstance(row, Mapping) else None)
++        target = _as_str_id(row.get("target") if isinstance(row, Mapping) else None)
++        claimed = str(row.get("claimed_result") if isinstance(row, Mapping) else "").lower()
++        if claimant in scores:
++            scores[claimant] += 3
++        # 强保已验狼、强踩已验金水的公开链条，优先验声称者/带节奏者。
++        if target in seer_context.get("known_live_wolves", []) and claimed in {"village", "good", "claimed"} and claimant in scores:
++            scores[claimant] += 4
++        if target in gold and claimed in {"wolf", "bad"} and claimant in scores:
++            scores[claimant] += 4
++    for row in signals.get("pressure", []) if isinstance(signals.get("pressure"), list) else []:
++        actor = _as_str_id(row.get("from") if isinstance(row, Mapping) else None)
++        target = _as_str_id(row.get("target") if isinstance(row, Mapping) else None)
++        signal = str(row.get("signal") if isinstance(row, Mapping) else "")
++        if actor in scores:
++            scores[actor] += 1
++        if target in scores:
++            scores[target] += 2
++        if target in seer_context.get("known_live_wolves", []) and signal == "protect" and actor in scores:
++            scores[actor] += 5
++        if target in gold and signal != "protect" and actor in scores:
++            scores[actor] += 4
++    for row in signals.get("votes", []) if isinstance(signals.get("votes"), list) else []:
++        voter = _as_str_id(row.get("from") if isinstance(row, Mapping) else None)
++        target = _as_str_id(row.get("target") if isinstance(row, Mapping) else None)
++        if voter in scores:
++            scores[voter] += 2
++        if target in scores:
++            scores[target] += 1
++
++    promised = _as_str_id(seer_context.get("last_next_inspect"))
++    if promised in scores and promised not in inspected and promised not in dead and promised not in gold:
++        scores[promised] += 7
+     for pid in candidates:
+         if pid in alive and pid not in dead:
+             scores[pid] += 2
+         if pid in inspected:
++            scores[pid] -= 12
++        if pid in gold:
+             scores[pid] -= 8
+-        if pid in gold:
+-            scores[pid] -= 5
+         if pid in dead:
+-            scores[pid] -= 10
++            scores[pid] -= 15
+     return sorted(candidates, key=lambda pid: (-scores[pid], order[pid]))
+ 
+ 
+@@ -609,6 +789,7 @@
+     request: Mapping[str, Any],
+     seer_context: Mapping[str, Any],
+     public_state: Mapping[str, Any] | None = None,
++    public_signals: Mapping[str, Any] | None = None,
+ ) -> str:
+     raw_allowed_actions = request.get("allowed_actions") if isinstance(request, Mapping) else None
+     allowed_actions = [item for item in raw_allowed_actions if isinstance(item, Mapping)] if isinstance(raw_allowed_actions, list) else []
+@@ -622,7 +803,7 @@
+         values = _extract_id_list(ids)
+         return "、".join(values) if values else "无"
+ 
+-    ranked = _rank_seer_inspect_targets(request, seer_context, public_state or {}) if inspect_allowed else []
++    ranked = _rank_seer_inspect_targets(request, seer_context, public_state or {}, public_signals) if inspect_allowed else []
+     live_wolves = _join(seer_context.get("known_live_wolves"))
+     live_gold = _join(seer_context.get("known_live_villagers"))
+     lines = [
+@@ -636,10 +817,13 @@
+     if speech_allowed:
+         lines.extend([
+             "发言严格按四段且每段短句：【查验事实】；【公开事实】（存活、公开身份声明、公开票型/发言）；【推测】；【行动】。",
+-            "【行动】只给一个主投目标、一个条件性备选、一个下一验目标；不要列多个并列主线。主投必须是存活者。",
++            "【行动】必须写具体玩家：一个主投目标、一个条件性备选、一个下一验目标；不要列多个并列主线。主投必须是存活者。禁止‘拿警徽带节奏/看情况’这类无对象主线。",
+             "有活查杀时第一句先公开‘查杀目标+其存活状态’；若有未公开活金水且自己可能夜死，同时公开金水。",
+             "无活查杀时不归票死人，只讨论该查杀的保人、带票、分票、强踩链，并把结论保持为推测。高压阶段优先短句，禁止 pass/空泛发言。",
+         ])
++        high_risk = bool({"sheriff_election_speech", "last_words"} & kinds) or str(seer_context.get("sheriff_id") or "") == str(request.get("player_id") or "")
++        if high_risk:
++            lines.append("高风险/遗产模式强制行动段包含：唯一验人事实（金水/查杀）、若我死警徽交给谁、接警徽者要复述哪条查验链、下一验/下一审目标、当前唯一主票或唯一主线。")
+         if "day_discussion" in kinds:
+             lines.append("day_discussion 短模式：先报活查杀，再报一个主票和一个条件备选；最多五个要点。")
+         if "sheriff_election_speech" in kinds:
+@@ -675,12 +859,13 @@
+     request: Mapping[str, Any],
+     seer_context: Mapping[str, Any],
+     public_state: Mapping[str, Any] | None = None,
++    public_signals: Mapping[str, Any] | None = None,
+ ) -> dict[str, Any]:
+     if not isinstance(action, dict):
+         return action
+     kind = str(action.get("kind") or "")
+     if kind == "seer_inspect":
+-        ranked = _rank_seer_inspect_targets(request, seer_context, public_state or {})
++        ranked = _rank_seer_inspect_targets(request, seer_context, public_state or {}, public_signals)
+         allowed = next(
+             (item for item in request.get("allowed_actions", [])
+              if isinstance(item, Mapping) and str(item.get("kind") or "") == kind),
+@@ -691,14 +876,20 @@
+         dead = {str(pid) for pid in seer_context.get("dead_player_ids", [])}
+         inspected = {str(pid) for pid in seer_context.get("inspection_map", {})}
+         gold = {str(pid) for pid in seer_context.get("known_live_villagers", [])}
+-        # 只有公开状态有可排序证据时才做有限纠偏；否则保留模型的合法选择。
++        # 只有公开状态/公开摘要有可排序证据时才做有限纠偏；否则保留模型的合法选择。
+         public_keys = {str(key).lower() for key in (public_state or {}).keys()}
+-        has_signal = any(any(token in key for token in ("vote", "claim", "sheriff", "badge", "警")) for key in public_keys)
+-        preferred = next(
+-            (pid for pid in ranked[:3] if pid in target_ids and pid in alive and pid not in dead
+-             and pid not in inspected and pid not in gold),
+-            None,
++        has_signal = any(any(token in key for token in ("vote", "claim", "sheriff", "badge", "警")) for key in public_keys) or any(public_signals.get(key) for key in ("claimants", "pressure", "votes") if isinstance(public_signals, Mapping))
++        promised = _as_str_id(seer_context.get("last_next_inspect"))
++        preferred = (
++            promised if promised in target_ids and promised in alive and promised not in dead
++            and promised not in inspected and promised not in gold else None
+         )
++        if preferred is None:
++            preferred = next(
++                (pid for pid in ranked[:3] if pid in target_ids and pid in alive and pid not in dead
++                 and pid not in inspected and pid not in gold),
++                None,
++            )
+         current = str(action.get("target_id"))
+         current_is_invalid_or_repeated = (
+             current not in target_ids or current == str(request.get("player_id") or "")
+@@ -733,6 +924,26 @@
+     target_id_set = {str(target_id) for target_id in target_ids}
+     if group == "vote":
+         preferred_targets = [str(pid) for pid in seer_context.get("known_live_wolves", []) if str(pid) in target_id_set]
++        if not preferred_targets:
++            current = str(action.get("target_id") or "")
++            gold = {str(pid) for pid in seer_context.get("known_live_villagers", [])}
++            alive = {str(pid) for pid in seer_context.get("alive_player_ids", [])}
++            if current in gold:
++                alternatives = [pid for pid in target_id_set if pid not in gold and (not alive or pid in alive)]
++                declared = _as_str_id(seer_context.get("last_main_vote_target") or seer_context.get("declared_main_vote"))
++                if declared in alternatives:
++                    preferred_targets = [declared]
++                else:
++                    pressure_counts: dict[str, int] = {}
++                    if isinstance(public_signals, Mapping):
++                        for row in public_signals.get("pressure", []) if isinstance(public_signals.get("pressure"), list) else []:
++                            target = _as_str_id(row.get("target") if isinstance(row, Mapping) else None)
++                            if target in alternatives:
++                                pressure_counts[target] = pressure_counts.get(target, 0) + 1
++                    if pressure_counts:
++                        preferred_targets = [max(pressure_counts, key=pressure_counts.get)]
++                    elif alternatives:
++                        preferred_targets = [alternatives[0]]
+     else:
+         preferred_targets = [str(pid) for pid in seer_context.get("known_live_villagers", []) if str(pid) in target_id_set]
+     if not preferred_targets:
+@@ -834,6 +1045,10 @@
+                         {"player_id": "p2", "alive": True}, {"player_id": "p3", "alive": True}],
+             "dead_player_ids": ["p1"], "claims": [{"player_id": "p3", "role": "seer"}],
+         },
++        "tool_context": {"current_round_dialogue": [
++            {"player_id": "p3", "text": "我是预言家，p2查杀，主投p2，下一验p0"},
++            {"player_id": "p2", "text": "我保p1，质疑p3"},
++        ]},
+         "request": {"request_id": "r", "player_id": "p0", "allowed_actions": [
+             {"kind": "seer_inspect", "target_ids": ["p0", "p1", "p2", "p3"]},
+             {"kind": "day_discussion", "max_chars": 100, "require_chinese": True},
+@@ -844,7 +1059,13 @@
+         return False
+     if "p1" in context["known_live_wolves"]:
+         return False
+-    ranked = _rank_seer_inspect_targets(packet["request"], context, packet["public_state"])
++    signals = _merge_public_signals(
++        _extract_public_vote_claim_signals(packet["public_state"]),
++        _summarize_current_dialogue(packet["tool_context"]["current_round_dialogue"], ["p0", "p1", "p2", "p3"]),
++    )
++    if not signals["claimants"] or not signals["claimed_inspections"] or not signals["pressure"]:
++        return False
++    ranked = _rank_seer_inspect_targets(packet["request"], context, packet["public_state"], signals)
+     if not ranked or ranked[0] not in {"p2", "p3"} or "p0" in ranked:
+         return False
+     compact = _compact_seer_packet(packet, context)
+@@ -854,9 +1075,24 @@
+     if "【推测】" not in speech or "【查验事实】" not in speech:
+         return False
+     corrected = _apply_seer_safety_overrides(
+-        {"kind": "seer_inspect", "target_id": "p2"}, packet["request"], context, packet["public_state"]
++        {"kind": "seer_inspect", "target_id": "p2"}, packet["request"], context, packet["public_state"], signals
+     )
+-    return corrected.get("target_id") in {"p2", "p3"}
++    if corrected.get("target_id") not in {"p2", "p3"}:
++        return False
++    vote_request = {"allowed_actions": [{"kind": "day_vote", "target_ids": ["p0", "p2", "p3"]}]}
++    vote_context = dict(context)
++    vote_context["known_live_villagers"] = ["p2"]
++    vote_context["last_main_vote_target"] = "p3"
++    vote = _apply_seer_safety_overrides({"kind": "day_vote", "target_id": "p2"}, vote_request, vote_context, packet["public_state"], signals)
++    if vote.get("target_id") != "p3":
++        return False
++    high_risk = _seer_instruction_text(
++        {"allowed_actions": [{"kind": "last_words", "max_chars": 200, "require_chinese": True}]},
++        context,
++        packet["public_state"],
++        signals,
++    )
++    return all(word in high_risk for word in ("警徽", "下一验", "主票"))
+ 
+ 
+ def normalize_decision(raw: dict[str, Any] | None, request: dict[str, Any]) -> dict[str, Any]:
+@@ -941,7 +1177,7 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
+-        # 有界、可验证的跨行动账本；只留最近一条短公开承诺，不保存完整对话或阵营判断。
++        # 有界、可验证的跨行动账本；只留短公开信号和承诺，不保存完整对话或隐藏阵营判断。
+         self._seer_ledger: dict[str, Any] = {
+             "game_id": None,
+             "inspection_map": {},
+@@ -951,6 +1187,13 @@
+             "declared_inspection_targets": [],
+             "declared_main_vote": None,
+             "last_public_speech": None,
++            "public_claimants": [],
++            "public_claimed_inspections": [],
++            "recent_pressure": [],
++            "recent_vote_targets": [],
++            "last_next_inspect": None,
++            "last_badge_plan": None,
++            "last_main_vote_target": None,
+         }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+@@ -967,9 +1210,21 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         system = self._system_prompt(private)
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
+         seer_context = _seer_context(turn_packet) if self.profile.role == "seer" else {}
++        public_signals: dict[str, Any] = {}
+         if self.profile.role == "seer":
+-            self._refresh_seer_ledger(turn_packet, seer_context)
++            alive_known = list(seer_context.get("alive_player_ids", [])) + list(seer_context.get("dead_player_ids", []))
++            public_signals = _merge_public_signals(
++                _extract_public_vote_claim_signals(turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {}),
++                _summarize_current_dialogue(current_dialogue, alive_known),
++            )
++            self._refresh_seer_ledger(turn_packet, seer_context, public_signals)
++            seer_context = dict(seer_context)
++            seer_context["last_next_inspect"] = self._seer_ledger.get("last_next_inspect")
++            seer_context["last_main_vote_target"] = self._seer_ledger.get("last_main_vote_target")
++            seer_context["declared_main_vote"] = self._seer_ledger.get("declared_main_vote")
+         prompt = (
+             _compact_seer_packet(turn_packet, seer_context)
+             if self.profile.role == "seer"
+@@ -998,17 +1253,33 @@
+             }
+         if self.profile.role == "seer":
+             prompt["seer_ledger"] = self._seer_ledger
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue") or []
++            prompt["public_signals"] = public_signals
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+             if name != CURRENT_ROUND_DIALOGUE_TOOL_NAME:
+                 return {"error": f"不支持的工具：{name}"}
++            # 工具也只返回当前轮的有界片段；完整历史必须由模型主动再次请求（且本工具不提供历史轮次）。
++            bounded_dialogue: list[Any] = []
++            used = 0
++            for entry in list(current_dialogue)[-8:]:
++                if isinstance(entry, Mapping):
++                    compact_entry = {
++                        key: _bounded_public_text(entry.get(key), 100)
++                        for key in ("speaker_id", "player_id", "speaker", "text", "content", "message", "speech")
++                        if entry.get(key) is not None
++                    }
++                else:
++                    compact_entry = _bounded_public_text(entry, 100)
++                encoded_len = len(json.dumps(compact_entry, ensure_ascii=False))
++                if used + encoded_len > 850:
++                    break
++                bounded_dialogue.append(compact_entry)
++                used += encoded_len
+             return {
+                 "round": turn_packet["game"].get("round"),
+                 "phase": turn_packet["game"].get("public_phase", turn_packet["game"].get("phase")),
+-                "dialogue": current_dialogue,
++                "dialogue": bounded_dialogue,
+             }
+ 
+         feedback = ""
+@@ -1023,6 +1294,7 @@
+                     role=self.profile.role,
+                     seer_context=seer_context,
+                     public_state=turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {},
++                    public_signals=public_signals,
+                 ),
+                 "packet": prompt,
+             }
+@@ -1054,6 +1326,7 @@
+                 action = _apply_seer_safety_overrides(
+                     action, turn_packet["request"], seer_context,
+                     turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {},
++                    public_signals,
+                 )
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+@@ -1075,6 +1348,7 @@
+         self,
+         turn_packet: Mapping[str, Any],
+         seer_context: Mapping[str, Any],
++        public_signals: Mapping[str, Any] | None = None,
+     ) -> None:
+         current_game = _game_id(turn_packet)
+         if self._seer_ledger.get("game_id") != current_game:
+@@ -1087,11 +1361,30 @@
+                 "declared_inspection_targets": [],
+                 "declared_main_vote": None,
+                 "last_public_speech": None,
++                "public_claimants": [],
++                "public_claimed_inspections": [],
++                "recent_pressure": [],
++                "recent_vote_targets": [],
++                "last_next_inspect": None,
++                "last_badge_plan": None,
++                "last_main_vote_target": None,
+             }
+         self._seer_ledger["inspection_map"] = dict(seer_context.get("inspection_map", {}))
+         self._seer_ledger["alive_ids"] = list(seer_context.get("alive_player_ids", []))
+         self._seer_ledger["dead_ids"] = list(seer_context.get("dead_player_ids", []))
+         self._seer_ledger["last_public_round"] = seer_context.get("round")
++        if isinstance(public_signals, Mapping):
++            old_signals = {
++                "claimants": self._seer_ledger.get("public_claimants", []),
++                "claimed_inspections": self._seer_ledger.get("public_claimed_inspections", []),
++                "pressure": self._seer_ledger.get("recent_pressure", []),
++                "votes": self._seer_ledger.get("recent_vote_targets", []),
++            }
++            retained = _merge_public_signals(public_signals, old_signals)
++            self._seer_ledger["public_claimants"] = retained["claimants"]
++            self._seer_ledger["public_claimed_inspections"] = retained["claimed_inspections"]
++            self._seer_ledger["recent_pressure"] = retained["pressure"]
++            self._seer_ledger["recent_vote_targets"] = retained["votes"]
+ 
+     def _record_seer_action(
+         self,
+@@ -1108,9 +1401,23 @@
+             self._seer_ledger["declared_inspection_targets"] = targets[-8:]
+         if kind == "day_vote" and target is not None:
+             self._seer_ledger["declared_main_vote"] = str(target)
++            self._seer_ledger["last_main_vote_target"] = str(target)
++        if _seer_action_group(kind) == "badge_transfer" and target is not None:
++            self._seer_ledger["last_badge_plan"] = str(target)
+         if kind in _SPEECH_ACTION_KINDS and isinstance(action.get("text"), str):
+-            # 只保留最近一轮的短摘要，绝不积累对话或解析其中的阵营判断。
+-            self._seer_ledger["last_public_speech"] = action["text"][:240]
++            # 只保留最近一轮的短摘要和可执行承诺，绝不积累完整对话或阵营判断。
++            text = action["text"][:240]
++            self._seer_ledger["last_public_speech"] = text
++            commitments = _extract_public_commitments(
++                text,
++                list(seer_context.get("alive_player_ids", [])) + list(seer_context.get("dead_player_ids", [])),
++            )
++            for key in ("next_inspect", "badge_plan", "main_vote"):
++                if commitments[key] is not None:
++                    ledger_key = {"next_inspect": "last_next_inspect", "badge_plan": "last_badge_plan", "main_vote": "last_main_vote_target"}[key]
++                    self._seer_ledger[ledger_key] = commitments[key]
++            if commitments["main_vote"] is not None:
++                self._seer_ledger["declared_main_vote"] = commitments["main_vote"]
+         self._seer_ledger["last_public_round"] = seer_context.get("round")
+ 
+     def agent_manifest(self) -> dict[str, Any]:
+@@ -1156,6 +1463,7 @@
+         role: str = "",
+         seer_context: Mapping[str, Any] | None = None,
+         public_state: Mapping[str, Any] | None = None,
++        public_signals: Mapping[str, Any] | None = None,
+     ) -> str:
+         instruction = render_prompt(
+             "player_turn_instruction.txt",
+@@ -1163,7 +1471,7 @@
+             validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
+         )
+         if role == "seer":
+-            instruction = instruction + "\n" + _seer_instruction_text(request, seer_context or {}, public_state or {})
++            instruction = instruction + "\n" + _seer_instruction_text(request, seer_context or {}, public_state or {}, public_signals)
+         return instruction
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+--- seer-n00088/task.md
++++ seer-n00131/task.md
+@@ -30,4 +30,11 @@
+ 
+ 只从当前行动契约的 `seer_inspect.target_ids` 选择：优先存活且未验的查杀链强保/强踩者、公开对跳或直接质疑预言家者、关键票仓、持续站边冲突位，其次警徽候选。降低已验金水、重复目标、死亡目标和低信息位。无法确认高价值目标时，选择合法的存活未验者。
+ 
+-警徽移交优先存活金水，其次是公开站边清晰且未保狼的存活好人。最终回答永远只能符合当前行动 JSON 契约。+警徽移交优先存活金水，其次是公开站边清晰且未保狼的存活好人。最终回答永远只能符合当前行动 JSON 契约。
++
++## 5. 预言家早死遗产包与承诺
++
++- 警上发言或遗言必须用短句留下可复制的遗产包：验人事实、活金水/活查杀、接力人、警徽去向、下一验，以及当前唯一主线/主票。不能只说“想拿警徽带节奏”“看情况”而不给具体玩家。
++- 若预言家可能夜死，应优先公开尚未公开的金水、下一验和警徽计划；若我死，接警徽者必须复述我已经公开的查验链，再按该链维护主线。
++- 金水接警徽不等于系统验明。接力人要明确说明这是预言家公开查验链的继承，不得把自己或他人的推测冒充查验事实。
++- 已公开“下一验”后尽量兑现，以保持信息链一致；只有目标死亡、已验、非法，或出现更高优先级的活查杀链时才改验，并选择当前合法目标。

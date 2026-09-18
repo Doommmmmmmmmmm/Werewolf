@@ -1,0 +1,298 @@
+--- seer-n00088/task_agent.py
++++ seer-n00133/task_agent.py
+@@ -282,6 +282,51 @@
+             if pid:
+                 return pid
+     return None
++
++
++def _current_round_dialogue_summary(turn_packet: Mapping[str, Any]) -> dict[str, Any]:
++    """Return bounded freshness metadata, never the dialogue itself."""
++    tool_context = turn_packet.get("tool_context")
++    raw_dialogue = tool_context.get("current_round_dialogue") if isinstance(tool_context, Mapping) else []
++    if isinstance(raw_dialogue, (list, tuple)):
++        entries = list(raw_dialogue)
++    elif isinstance(raw_dialogue, Mapping):
++        # A single dialogue record is also commonly represented as a mapping.
++        has_record_fields = any(
++            key in raw_dialogue for key in ("text", "content", "speaker_id", "player_id", "speaker")
++        )
++        entries = [raw_dialogue] if has_record_fields else list(raw_dialogue.values())
++    elif raw_dialogue:
++        entries = [raw_dialogue]
++    else:
++        entries = []
++
++    speaker_ids: list[str] = []
++    for entry in entries:
++        if not isinstance(entry, Mapping):
++            continue
++        speaker = _as_str_id(
++            entry.get("speaker_id")
++            or entry.get("player_id")
++            or entry.get("speaker")
++            or entry.get("author")
++            or entry.get("actor")
++            or entry.get("from")
++        )
++        if speaker and speaker not in speaker_ids:
++            speaker_ids.append(speaker)
++    game = turn_packet.get("game")
++    game = game if isinstance(game, Mapping) else {}
++    phase = game.get("public_phase", game.get("phase"))
++    request = turn_packet.get("request")
++    if phase is None and isinstance(request, Mapping):
++        phase = request.get("phase")
++    return {
++        "current_round_dialogue_count": len(entries),
++        "current_round_speaker_ids": speaker_ids[:32],
++        "current_sheriff_id": _extract_sheriff_id({"public_state": turn_packet.get("public_state")}),
++        "current_phase": phase,
++    }
+ 
+ 
+ def _extract_inspection_records(private_information: Mapping[str, Any], alive_ids: set[str]) -> list[dict[str, Any]]:
+@@ -504,6 +549,7 @@
+         phase = request.get("phase")
+ 
+     sheriff_id = _extract_sheriff_id(turn_packet)
++    freshness = _current_round_dialogue_summary(turn_packet)
+     dead_ids = _extract_dead_player_ids(public_state) if isinstance(public_state, Mapping) else []
+     inspection_map = {
+         str(item["target_id"]): {
+@@ -528,6 +574,10 @@
+         "known_live_villagers": known_live_villagers,
+         "known_dead_villagers": known_dead_villagers,
+         "uninspected_alive_ids": uninspected_alive_ids,
++        "current_round_dialogue_count": freshness["current_round_dialogue_count"],
++        "current_round_speaker_ids": freshness["current_round_speaker_ids"],
++        "current_sheriff_id": freshness["current_sheriff_id"],
++        "current_phase": freshness["current_phase"],
+     }
+ 
+ 
+@@ -630,11 +680,18 @@
+         f"查验事实账本：活查杀={live_wolves}；死查杀={_join(seer_context.get('known_dead_wolves'))}；活金水={live_gold}；死金水={_join(seer_context.get('known_dead_villagers'))}。",
+         "只有 seer_context.inspections 中的记录才是查验事实；不得补写、改写或把推测当查验。死亡目标不能作为今天归票。",
+         "票型、发言和站边只能写‘我推测/票型显示/需要验证’，禁止用‘确定、明显帮狼、狼队协作’把有限关联说成身份事实。",
++        "当前轮新鲜度摘要："
++        f"current_round_dialogue_count={seer_context.get('current_round_dialogue_count', 0)}；"
++        f"current_round_speaker_ids={_join(seer_context.get('current_round_speaker_ids'))}；"
++        f"current_sheriff_id={seer_context.get('current_sheriff_id') or '无'}；"
++        f"current_phase={seer_context.get('current_phase') or request.get('phase') or 'unknown'}。",
+     ]
+     if inspect_allowed:
+         lines.append("本次合法夜验候选（已排序，仅可从 allowed_actions.target_ids 选择）：" + (_join(ranked[:5]) if ranked else "无") + "。")
+     if speech_allowed:
+         lines.extend([
++            "每次发言前必须先调用 read_current_round_dialogue；以工具返回的当前轮内容和当前 public_state 覆盖任何旧摘要。不得把完整历史自动拼入上下文。",
++            "每次发言必须重新核对当前 phase 和当前 sheriff_id；当前轮已有发言不得声称‘无人发言’，已有警长不得声称‘警徽空缺’。不得复制上一阶段或上一轮的整段话术。",
+             "发言严格按四段且每段短句：【查验事实】；【公开事实】（存活、公开身份声明、公开票型/发言）；【推测】；【行动】。",
+             "【行动】只给一个主投目标、一个条件性备选、一个下一验目标；不要列多个并列主线。主投必须是存活者。",
+             "有活查杀时第一句先公开‘查杀目标+其存活状态’；若有未公开活金水且自己可能夜死，同时公开金水。",
+@@ -816,7 +873,60 @@
+         "public_state": compact_public,
+         "request": compact_request,
+         "role_context": context,
++        "current_round_freshness": {
++            "current_round_dialogue_count": context.get("current_round_dialogue_count", 0),
++            "current_round_speaker_ids": list(context.get("current_round_speaker_ids", []))[:32],
++            "current_sheriff_id": context.get("current_sheriff_id"),
++            "current_phase": context.get("current_phase"),
++        },
+     }
++
++
++def _seer_speech_semantic_error(
++    action: Mapping[str, Any],
++    request: Mapping[str, Any],
++    seer_context: Mapping[str, Any],
++    public_state: Mapping[str, Any] | None = None,
++    *,
++    previous_speech: str | None = None,
++    previous_speech_digest: str | None = None,
++    previous_round: Any = None,
++) -> str | None:
++    """Reject only public, deterministic stale-fact speech patterns."""
++    if str(action.get("kind") or "") not in _SPEECH_ACTION_KINDS:
++        return None
++    text = str(action.get("text") or "").strip().lower()
++    if not text:
++        return None
++    try:
++        dialogue_count = int(seer_context.get("current_round_dialogue_count") or 0)
++    except (TypeError, ValueError):
++        dialogue_count = 0
++    if dialogue_count > 0 and any(
++        phrase in text for phrase in ("无人发言", "没有人发言", "没人发言")
++    ):
++        return "当前公开事实与文本冲突，请重新按当前轮状态作答"
++    public_sheriff_id = _extract_sheriff_id({"public_state": public_state or {}})
++    if public_sheriff_id and any(
++        phrase in text for phrase in ("警徽空缺", "没有警长", "无警长", "没有警徽")
++    ):
++        return "当前公开事实与文本冲突，请重新按当前轮状态作答"
++    current_round = seer_context.get("round")
++    if (
++        (previous_speech or previous_speech_digest)
++        and previous_round is not None
++        and current_round is not None
++        and previous_round == current_round
++        and (
++            (previous_speech is not None and text == previous_speech.strip().lower())
++            or (
++                previous_speech_digest is not None
++                and hashlib.sha256(text.encode("utf-8")).hexdigest() == previous_speech_digest
++            )
++        )
++    ):
++        return "当前公开事实与文本冲突，请重新按当前轮状态作答"
++    return None
+ 
+ 
+ def _run_seer_self_checks() -> bool:
+@@ -852,6 +962,44 @@
+         return False
+     speech = _seer_instruction_text(packet["request"], context, packet["public_state"])
+     if "【推测】" not in speech or "【查验事实】" not in speech:
++        return False
++
++    speech_request = {"allowed_actions": [{"kind": "day_discussion", "max_chars": 200}]}
++    current_context = dict(context)
++    current_context.update({
++        "round": 2,
++        "current_round_dialogue_count": 1,
++        "current_round_speaker_ids": ["p2"],
++        "current_sheriff_id": "p3",
++    })
++    stale_text = "目前无人发言，警徽空缺。"
++    if _seer_speech_semantic_error(
++        {"kind": "day_discussion", "text": stale_text},
++        speech_request,
++        current_context,
++        {"sheriff_id": "p3"},
++        previous_speech=stale_text,
++        previous_round=2,
++    ) is None:
++        return False
++    election_context = dict(context)
++    election_context.update({"round": 1, "current_round_dialogue_count": 0})
++    if _seer_speech_semantic_error(
++        {"kind": "sheriff_election_speech", "text": stale_text},
++        speech_request,
++        election_context,
++        {},
++    ) is not None:
++        return False
++    if decision_error(
++        {"kind": "seer_inspect", "target_id": "p3"},
++        {"allowed_actions": [{"kind": "seer_inspect", "target_ids": ["p2", "p3"]}]},
++    ) is not None:
++        return False
++    if decision_error(
++        {"kind": "wolf_kill", "target_id": "p3"},
++        {"allowed_actions": [{"kind": "wolf_kill", "target_ids": ["p2", "p3"]}]},
++    ) is not None:
+         return False
+     corrected = _apply_seer_safety_overrides(
+         {"kind": "seer_inspect", "target_id": "p2"}, packet["request"], context, packet["public_state"]
+@@ -941,17 +1089,20 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
+-        # 有界、可验证的跨行动账本；只留最近一条短公开承诺，不保存完整对话或阵营判断。
++        # 有界、可验证的跨行动账本；只保存结构化承诺，不保存公开话术。
+         self._seer_ledger: dict[str, Any] = {
+             "game_id": None,
+             "inspection_map": {},
+             "alive_ids": [],
+             "dead_ids": [],
+             "last_public_round": None,
++            "last_action_kind": None,
+             "declared_inspection_targets": [],
+             "declared_main_vote": None,
+-            "last_public_speech": None,
+         }
++        # 仅供本地防止同轮逐字复制；只保存摘要，永不注入模型 prompt。
++        self._last_seer_speech_digest: str | None = None
++        self._last_seer_speech_round: Any = None
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+         """接收公开同步；详细历史仍不跨行动保存。"""
+@@ -997,7 +1148,8 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             }
+         if self.profile.role == "seer":
+-            prompt["seer_ledger"] = self._seer_ledger
++            # 账本只含短结构化字段；尤其不放入上一段公开发言。
++            prompt["seer_ledger"] = dict(self._seer_ledger)
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+@@ -1056,6 +1208,15 @@
+                     turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {},
+                 )
+             error = decision_error(action, turn_packet["request"])
++            if error is None and self.profile.role == "seer":
++                error = _seer_speech_semantic_error(
++                    action,
++                    turn_packet["request"],
++                    seer_context,
++                    turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {},
++                    previous_speech_digest=self._last_seer_speech_digest,
++                    previous_round=self._last_seer_speech_round,
++                )
+             if error is None:
+                 if self.profile.role == "seer":
+                     self._record_seer_action(action, seer_context)
+@@ -1084,14 +1245,15 @@
+                 "alive_ids": [],
+                 "dead_ids": [],
+                 "last_public_round": None,
++                "last_action_kind": None,
+                 "declared_inspection_targets": [],
+                 "declared_main_vote": None,
+-                "last_public_speech": None,
+             }
++            self._last_seer_speech_digest = None
++            self._last_seer_speech_round = None
+         self._seer_ledger["inspection_map"] = dict(seer_context.get("inspection_map", {}))
+         self._seer_ledger["alive_ids"] = list(seer_context.get("alive_player_ids", []))
+         self._seer_ledger["dead_ids"] = list(seer_context.get("dead_player_ids", []))
+-        self._seer_ledger["last_public_round"] = seer_context.get("round")
+ 
+     def _record_seer_action(
+         self,
+@@ -1108,10 +1270,14 @@
+             self._seer_ledger["declared_inspection_targets"] = targets[-8:]
+         if kind == "day_vote" and target is not None:
+             self._seer_ledger["declared_main_vote"] = str(target)
++        self._seer_ledger["last_action_kind"] = kind
+         if kind in _SPEECH_ACTION_KINDS and isinstance(action.get("text"), str):
+-            # 只保留最近一轮的短摘要，绝不积累对话或解析其中的阵营判断。
+-            self._seer_ledger["last_public_speech"] = action["text"][:240]
+-        self._seer_ledger["last_public_round"] = seer_context.get("round")
++            # 只保存文本摘要用于本地防复制检查，不进入 seer_ledger 或模型 prompt。
++            self._last_seer_speech_digest = hashlib.sha256(
++                action["text"].strip().lower().encode("utf-8")
++            ).hexdigest()
++            self._last_seer_speech_round = seer_context.get("round")
++            self._seer_ledger["last_public_round"] = seer_context.get("round")
+ 
+     def agent_manifest(self) -> dict[str, Any]:
+         return {
+--- seer-n00088/task.md
++++ seer-n00133/task.md
+@@ -19,8 +19,11 @@
+ 
+ 每次白天只设一个主票。已有警徽时尤其不要并列归票；主投必须是存活目标。任何票型结论的语气不得超过“推测”强度：不得把“可能、倾向、票型关联”说成确定身份、明显狼队协作或已证实。
+ 
+-## 3. 阶段切换
++## 3. 当前轮新鲜度与阶段切换
+ 
++- 每次发言前先调用 `read_current_round_dialogue`，重新核对当前 `phase`、当前轮已有发言者和公开的 `sheriff_id`；以工具返回和 `public_state` 为准，覆盖旧摘要。
++- 不得复制上一阶段或上一轮的整段话术。若当前轮已有公开发言，不得声称“无人发言/没有人发言”；若公开状态已有警长，不得声称“警徽空缺/没有警长”。
++- **查验事实**只来自查验账本；**当前公开事实**只来自当前 `public_state` 和当前轮工具结果；二者必须明确区分，不得把推测或过期阶段描述当作公开事实。
+ - 有活查杀：第一句先报查杀和存活状态，归票优先活查杀。
+ - 无活查杀：只分析该查杀的保人、带票、分票、强踩和站边冲突链，主线保持为推测，不归票死人。
+ - 高风险（可能夜死、无遗言或已有警徽）：提前公开关键金水、下一验和警徽去向。

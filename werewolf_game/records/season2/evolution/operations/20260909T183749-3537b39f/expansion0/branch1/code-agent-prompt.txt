@@ -1,0 +1,164 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-n00098 的主要问题不是 schema 合法性，而是守卫行动层面的可执行性与记忆使用不足：评测 20 局仅 4 胜 16 负、无非法行动，说明输出稳定但策略收益低。随机回放中最致命的是第 2 夜守卫在真预言家/警长 p5 公开后选择 pass，导致 p5 被狼刀杀死；随后白天又公开声称“我昨晚守的是5号”，与审计行动矛盾并暴露守卫身份。后续它能在第 3 夜守中 p3、第 5 夜守中 p11，但第 6 夜又保护了可疑且实际为狼的警长 p9，暴露出当前代码把“警长/公开焦点/身份声称”过度等同于保护价值，缺少对可疑度和真实可信链的区分。下一代应做最小改动：强制夜间有可用 guard_protect 时不 pass；把守卫自身私有行动记忆注入模型上下文；在发言提示中禁止虚假报守护对象和无谓跳守卫；重构候选评分，降低可疑警长、悍跳、被查杀、冲票位的保护优先级。",
+  "evidence": [
+    {
+      "source": "read_evaluation_summary",
+      "detail": "guard-n00098 最近评测 20 局，win_count=4，loss_count=16，win_rate=0.2；focus_fallback_count=0，focus_invalid_decision_count=0。说明问题不是非法行动或 fallback，而是合法行动质量。"
+    },
+    {
+      "source": "random_game_replay seq19-21",
+      "detail": "第 1 夜守卫 p4 选择 guard_protect p4，自守合法；当夜实际狼刀 p3，女巫救 p3，守卫未产生收益。首夜信息少，自守不一定错误，但没有与公开信息无关。"
+    },
+    {
+      "source": "random_game_replay seq63-68, seq96, seq109-117",
+      "detail": "第 1 天公开信息显示 p5 自称预言家并当选警长，持续报 p3 金水；p6、p8、p9 多人对跳，其中 p6 被全场归票出局。对守卫可见信息而言，p5 至少是最高价值公开信息位/警徽链节点。"
+    },
+    {
+      "source": "random_game_replay seq150-154",
+      "detail": "第 2 夜守卫行动为 pass，guarded_targets 为空。当前代码的 _repair_guard_decision 只修复 kind=guard_protect 的非法/重复目标，不会把 pass 修复为保护目标。"
+    },
+    {
+      "source": "random_game_replay seq156-173",
+      "detail": "第 2 夜狼人一致刀 p5，p5 死亡；审计显示 p5 当夜查验 p8 为 wolf，但死亡后该信息无法有效公开。若守卫当夜保护 p5，可阻断一次关键狼刀。"
+    },
+    {
+      "source": "random_game_replay seq196",
+      "detail": "第 2 天 p4 发言称“我昨晚守的是5号”，但审计 seq153-154 显示昨晚实际 pass。这是守卫私有记忆未注入模型导致的虚假自述，同时公开暴露守卫身份。"
+    },
+    {
+      "source": "random_game_replay seq227-245",
+      "detail": "第 3 夜守卫保护 p3，狼人也刀 p3，成功形成平安夜。这说明候选排序有时能保护警徽链，但不稳定。"
+    },
+    {
+      "source": "random_game_replay seq291-308",
+      "detail": "第 4 夜因不能连守 p3，守卫改自守 p4，狼人再次刀 p3，p3 死亡。该夜不能连守导致无法救 p3，可接受；但也体现出守卫已公开后自守被采用。"
+    },
+    {
+      "source": "random_game_replay seq353-370",
+      "detail": "第 5 夜守卫保护 p11，狼人刀 p11，成功守出平安夜。"
+    },
+    {
+      "source": "random_game_replay seq383-408, seq412-424",
+      "detail": "第 5 天 p11 被放逐后将警徽转给 p9；第 6 夜守卫保护 p9，但狼人实际刀 p2。终局 reveal 显示 p9 是 wolf。当前策略显然可能把警长/焦点位当成保护对象，即使该玩家在残局中高度可疑。"
+    },
+    {
+      "source": "current_agent code",
+      "detail": "_guard_candidate_profile 中 claim、exposure、public_focus、salient、stage_bonus 会提高 information_value/public_pressure，自身或焦点也会加分；suspicion_penalty 只在 claim 且 vote/pressure 时较弱触发，缺少独立的“疑似狼/悍跳/查杀/冲票”负权重。"
+    },
+    {
+      "source": "current_agent code",
+      "detail": "decide 构造的 prompt 只有当前状态、规则、request、history_policy，不包含 last_protected_id、last_protected_round、上一夜是否 pass、当前候选排序等私有守卫记忆；新会话模式下模型无法可靠记住自己上一夜实际动作。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "夜间 pass 未被策略层禁止",
+      "detail": "规则可能允许 pass，但守卫有可用 guard_protect 时，pass 几乎总是浪费能力。当前 _repair_guard_decision 只处理 guard_protect 的 target_id，不处理 kind=pass，因此模型一次保守输出就会直接导致空守。"
+    },
+    {
+      "cause": "守卫私有行动记忆没有进入模型上下文",
+      "detail": "Task-Agent 每次决策是新模型会话；代码虽然维护 last_protected_id，但只用于本地修复，不告诉模型。结果模型在白天发言时会编造上一夜守护对象，且夜间也不能用真实上一夜行动解释自己的选择。"
+    },
+    {
+      "cause": "发言约束没有防止守卫暴露和虚假报守",
+      "detail": "当前 prompt 主要强调发言围绕公开矛盾，但没有明确要求：不要主动跳守卫、不要公开守护对象、不要声称守护成功、只有在私有记忆确认时才能提及上一夜动作。随机回放中 p4 直接说“我昨晚守的是5号”，既虚假又暴露。"
+    },
+    {
+      "cause": "保护价值与公开可疑度混淆",
+      "detail": "当前风险画像把 claim、focus、sheriff、public、pressure 等都当作保护相关信号，虽然有 suspicion_penalty，但不足以处理悍跳预言家、被多人怀疑、冲票位、残局警长狼等情形。第 6 夜保护实际为狼的 p9 是这种混淆的典型表现。"
+    },
+    {
+      "cause": "缺少针对警徽链的可信度判断",
+      "detail": "警长/警徽链确实可能是刀口，但不是天然可信好人。随机回放里 p9 接警徽时已处残局，且之前推动 p11 出局；保护它不如保护 p2、p7 或自守。当前代码没有区分“由可信预言家/金水链传递的警徽”与“可疑玩家获得警徽”。"
+    },
+    {
+      "cause": "当前排序只作为非法行动修复，不主动纠正明显低质合法选择",
+      "detail": "即使 _guard_candidate_ranking 算出较好候选，只要模型选择的是合法非重复目标或 pass，当前 repair 层大多保留。对守卫这种低频高价值行动，应至少对 pass、明显高疑似狼目标、无信息自守做有限覆盖。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 decide 构造 prompt 时，如果 self.profile.role == 'guard'，加入一个只含合法私有信息和公开派生信息的 private_guard_context，例如：last_protected_id、last_protected_round、last_guard_action_kind、alive_count、current_sheriff_id、self_publicly_exposed、guard_candidate_ranking 前 5 名及每名的 reason_codes。不要注入审计不可见狼刀或完整历史。",
+      "rationale": "新会话模型无法记住自己上一夜是否守人、守了谁；注入精简私有记忆可防止虚假发言，也让模型理解不能连守和为什么某些目标排名更高。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展 _record_successful_guard_action：当守卫在夜间提交 pass 时，也记录 last_guard_action_kind='pass'、last_guard_action_round=round_no；当提交 guard_protect 时记录 kind='guard_protect'、target_id 和 round。新增字段 self.last_guard_action_kind、self.last_guard_action_round。",
+      "rationale": "目前只记录成功保护目标，不记录 pass；这会让后续发言无法知道上一夜实际上空守，从而出现“昨晚守的是5号”这类幻觉。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _repair_guard_decision：如果 request.allowed_actions 中存在 kind='guard_protect' 且有 target_ids，并且模型输出 kind='pass'，则将行动改为 {'kind':'guard_protect','target_id':ranked[0]['candidate']}；仅当没有合法保护目标时才保留 pass。该逻辑应在 decision_error 前执行。",
+      "rationale": "守卫夜间空守通常是严重低质合法行动。随机回放第 2 夜 pass 直接导致真预言家/警长死亡。此改动小、确定性强，不改变规则，只在候选 agent 内避免浪费能力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _guard_candidate_profile 的评分维度，新增 wolf_suspicion 或 distrust 字段；从公开发言文本中识别“查杀、狼人、悍跳、假预言家、冲票、带节奏、出他/票他”等指向候选的负面信号。保护排序中加入强负权重：score_key 在 wolf_attack_risk 后比较 -wolf_suspicion；total_score 扣除 wolf_suspicion * 40 左右。残局 alive_count<=7 时加倍惩罚。",
+      "rationale": "当前把被讨论/被投票/自称神职过多转化为保护价值，导致可疑悍跳或狼警长也可能被守。独立可疑度能避免第 6 夜保护 p9 这类错误。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "调整 claim 与 sheriff 加分：身份声称只有在没有被同轮多人对跳、查杀、悍跳指控时才给 information_value；current_sheriff_id 只给小额保护 bonus，并在 wolf_suspicion 高、刚被可疑传警徽、或其发言承认平民无信息时取消该 bonus。不要把 sheriff/focus 直接当 wolf_attack_risk。",
+      "rationale": "警长常是刀口，但不是确认好人。p9 作为实际狼在残局拿到警徽后被守，说明当前逻辑过度迷信警徽/公开焦点。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _render_guard_private_context 或 _guard_candidate_reason_codes：为排名结果生成短 reason_codes，如 ['current_sheriff_low_suspicion','claimed_seer_uncontested','self_exposed_endgame','high_wolf_suspicion_penalty','repeat_forbidden_excluded']，并限制整体长度在几百字符内。",
+      "rationale": "模型需要知道本地排序依据，但不能塞完整历史。短理由能提高夜间选择和白天发言一致性，同时不突破 prompt 预算。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _turn_instruction 中为 guard 的 speak/last_words 阶段加入单独安全提示：不要主动公开自己是守卫；不要公开昨夜/历史守护对象；不要声称守护成功或失败；若必须回应，只说“我只能基于公开信息判断，不能确认刀口原因”；只有 private_guard_context 明确 last_guard_action_kind='guard_protect' 且策略允许时才可提及，但默认仍不提。",
+      "rationale": "随机回放中 p4 白天虚假声称守 p5，并实际暴露守卫身份。守卫发言应保护身份和私有信息，除非残局或被迫跳身份。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _dialogue_text_signals / _ingest_dialogue_entries 中区分“保护信号”和“攻击/怀疑信号”：例如“我是预言家/女巫/猎人”给 speaker 的 claim；“pX 查杀/狼人/悍跳/出pX/票pX”给 pX 的 wolf_suspicion 和 pressure，而不是 claim 价值。避免把包含“预言家”的句子错误加到被指控对象上。",
+      "rationale": "当前文本扫描较粗，容易把同一句对跳/查杀文本中的身份词和玩家编号都混成 claim/focus，从而提高错误对象的保护优先级。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _guard_smoke_checks 中增加测试：1）当 allowed_actions 同时有 pass 和 guard_protect 时，pass 会被修复为最高 ranked target；2）被“查杀/悍跳/狼人”标记的候选不应因 claim/sheriff 排到低疑似候选之前；3）last_guard_action_kind='pass' 时 private_guard_context 不得声称有 last_protected_id。",
+      "rationale": "历史上多个 guard 分支因 smoke 失败被丢弃；新增纯函数级 smoke 可防止这次修改破坏合法性，也确保关键行为可验证。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充守卫专用操作规程：夜间只要 guard_protect 可用就不要 pass；白天默认不跳守卫、不报守护对象、不编造守护成功/失败；警长/警徽链只有在低可疑且来源可信时才是高保护目标；残局优先保护低疑似关键好人或已暴露的自己，避免保护被多人查杀/悍跳指控的警长。",
+      "rationale": "代码层修复 pass 和评分，task.md 层约束模型语言和高层选择，二者互补且不涉及引擎或规则修改。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "强制 pass 转 protect 可能在极少数战术场景下降低灵活性",
+      "mitigation": "只在存在合法 guard_protect target_ids 时触发；守卫通常没有理由空守，收益大于风险。"
+    },
+    {
+      "risk": "新增 wolf_suspicion 可能误伤真神职，因为真预言家也常被狼人悍跳指控",
+      "mitigation": "不要单凭一次指控完全排除；使用多信号累计、残局加重、与 claim/sheriff 加分抵消。只对高疑似目标降低保护，不硬禁。"
+    },
+    {
+      "risk": "私有 guard_context 若措辞不当，可能诱导模型白天泄露守护信息",
+      "mitigation": "上下文应标注为“仅供你内部决策，公开发言默认不得透露”；发言阶段再重复禁止报守护对象。"
+    },
+    {
+      "risk": "文本正则解析中文发言容易不完美",
+      "mitigation": "采用保守关键词和 reason_codes，不把解析结果当确认身份；只用于排序倾向。"
+    },
+    {
+      "risk": "过度改造候选评分会引入复杂 bug",
+      "mitigation": "优先做最小补丁：pass 修复、私有记忆注入、发言禁止虚假报守、轻量 wolf_suspicion；避免大规模重写整个 agent。"
+    },
+    {
+      "risk": "保护警长权重下降可能错过真预言家警长刀口",
+      "mitigation": "保留低疑似 current_sheriff 的小额 bonus；只在高疑似、被查杀/悍跳、残局冲票等情况下取消或反向惩罚。"
+    }
+  ],
+  "code_agent_brief": "请只修改候选工作区的 task_agent.py 和 task.md，不要改 Game Engine、规则、schema、工具或评测。目标是在 guard-n00098 基础上做最小可执行改进：\n1. 在 TaskAgent.__init__ 增加 self.last_guard_action_kind 和 self.last_guard_action_round。\n2. 修改 _record_successful_guard_action，使 guard_protect 记录 kind/target/round，夜间 pass 也记录 kind='pass' 和 round。确保 decide 在任何合法行动返回前都调用该记录逻辑，或对 guard pass 单独记录。\n3. 在 decide 构造 prompt 时，guard 角色增加 private_guard_context，内容包括 last_protected_id、last_protected_round、last_guard_action_kind、last_guard_action_round、alive_count、current_sheriff_id、self_publicly_exposed，以及 guard_protect 阶段的前 5 个候选排名和简短 reason_codes。该上下文只能来自自身行动记忆和公开状态/当前轮可见发言，不能读审计狼刀。\n4. 修改 _repair_guard_decision：若 allowed_actions 里有 guard_protect 且存在 target_ids，而模型输出 pass，则改成 guard_protect ranked[0]['candidate']；如果 guard_protect 目标非法/重复，仍按现有 ranked 修复。不要在无合法目标时臆造。\n5. 给候选画像新增 wolf_suspicion/distrust：从公开发言和结构化字段中识别“查杀、狼人、悍跳、假预言家、冲票、带节奏、出/票/归票某人”等对 candidate 的负面指向。排序中对 wolf_suspicion 施加强负权重，残局 alive_count<=7 时更强。claim、sheriff、focus 不应直接等同于刀口；高疑似 claim/sheriff 不能因身份或警徽大幅加分。\n6. 调整 _dialogue_text_signals/_ingest_dialogue_entries，尽量区分 speaker 自称身份与对他人的查杀/怀疑，避免把“pX 是狼人/悍跳预言家”解析成 pX 的可信 claim。\n7. 在 _turn_instruction 或 system prompt 的 guard 发言提示中明确：默认不跳守卫，不公开守护对象，不声称守护成功/失败，不编造上一夜守护；如被问到也用公开信息表述。\n8. 在 task.md 同步补充：夜间有 guard_protect 时不要 pass；警长/警徽链必须低疑似才优先保护；发言不要泄露或虚构守卫行动。\n9. 更新 _guard_smoke_checks，至少覆盖 pass->protect、可疑悍跳不应优先于低疑似关键位、pass 记忆不会生成虚假 last_protected_id。保持所有输出 schema 合法。"
+}

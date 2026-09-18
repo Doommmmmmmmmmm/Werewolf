@@ -1,0 +1,689 @@
+--- hunter-n00008/task_agent.py
++++ hunter-n00040/task_agent.py
+@@ -7,7 +7,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
+-from collections import deque
++from collections import Counter, deque
+ from collections.abc import Mapping
+ import hashlib
+ import inspect
+@@ -21,6 +21,7 @@
+ 
+ 
+ _CHINESE_CHARACTER = re.compile(r"[\u3400-\u9fff]")
++_PLAYER_ID_PATTERN = re.compile(r"\b[a-zA-Z]{0,4}\d+\b")
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL_NAME = "read_current_round_dialogue"
+ DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5
+@@ -31,7 +32,7 @@
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _PASS_LIKE_ACTION_KINDS = frozenset({"pass", "skip", "wait", "idle", "noop", "none"})
+-DEFAULT_PUBLIC_MEMORY_SIZE = 12
++DEFAULT_PUBLIC_MEMORY_SIZE = 24
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -183,6 +184,8 @@
+         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
+         self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)
++        self._player_notes: dict[str, dict[str, Any]] = {}
++        self._round_memory: deque[str] = deque(maxlen=10)
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -201,10 +204,14 @@
+             if event:
+                 self._public_memory.append(event)
+ 
+-    def _recent_memory(self, limit: int = 5) -> list[str]:
++    def _recent_memory(self, limit: int = 8) -> list[str]:
+         if limit <= 0:
+             return []
+-        return list(self._public_memory)[-limit:]
++        combined = list(self._public_memory)
++        for item in self._round_memory:
++            if item not in combined:
++                combined.append(item)
++        return combined[-limit:]
+ 
+     def _decision_brief(
+         self,
+@@ -216,40 +223,54 @@
+             item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)
+         ]
+         phase = self._request_phase_label(turn_packet, request, allowed_actions)
+-        recent_memory = self._recent_memory(5)
++        recent_memory = self._recent_memory(8)
++        evidence_snapshot = self._evidence_snapshot(recent_memory)
+         brief: dict[str, Any] = {
+             "phase": phase,
+             "recent_public_signals": recent_memory,
++            "evidence_snapshot": evidence_snapshot,
+             "current_round_dialogue_preview": self._compact_dialogue(current_dialogue, limit=3),
+         }
+         mode = self._request_mode(allowed_actions)
+         if mode == "hunter_reaction":
+-            ranking = self._hunter_target_ranking(allowed_actions, recent_memory)
++            ranking = self._hunter_target_ranking(allowed_actions, recent_memory, turn_packet)
+             brief.update(
+                 {
+                     "decision_mode": "hunter_reaction",
+-                    "focus": "先比较合法 target_ids 的票型、改口、身份声明和死亡链条；证据不足时优先跳过。",
++                    "focus": "先比票型、改口、身份声明和死亡链条；只有多源证据都很弱时才考虑跳过。",
+                     "target_ranking": ranking["target_ranking"],
+                     "skip_option": ranking["skip_option"],
+                     "skip_condition": ranking["skip_condition"],
++                    "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "top_contradictions": evidence_snapshot["top_contradictions"],
++                    "claimed_roles": evidence_snapshot["claimed_roles"],
++                    "hard_clears": evidence_snapshot["hard_clears"],
+                 }
+             )
+         elif mode == "last_words":
+             brief.update(
+                 {
+                     "decision_mode": "last_words",
+-                    "focus": "收束到已公开的票型、身份矛盾和死亡顺序，不要泛化找狼。",
++                    "focus": "收束到已公开的票型、身份冲突、改口与死亡顺序，先列证据再下结论。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
++                    "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "top_contradictions": evidence_snapshot["top_contradictions"],
++                    "claimed_roles": evidence_snapshot["claimed_roles"],
++                    "hard_clears": evidence_snapshot["hard_clears"],
+                 }
+             )
+         elif mode == "speak":
+             brief.update(
+                 {
+                     "decision_mode": "speak",
+-                    "focus": "回应当前争议，优先点出最近票型变化与身份声明矛盾。",
++                    "focus": "回应当前争议，优先点出票型变化、身份声明矛盾和谁在保谁。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
++                    "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "top_contradictions": evidence_snapshot["top_contradictions"],
++                    "claimed_roles": evidence_snapshot["claimed_roles"],
++                    "hard_clears": evidence_snapshot["hard_clears"],
+                 }
+             )
+         else:
+@@ -257,6 +278,7 @@
+                 {
+                     "decision_mode": mode,
+                     "focus": "遵守当前阶段的合法行动范围，并尽量保持公开信息一致。",
++                    "evidence_snapshot": evidence_snapshot,
+                 }
+             )
+         return brief
+@@ -330,12 +352,206 @@
+         for line in reversed(recent_memory):
+             if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "自相矛盾", "投票", "死亡", "警长")):
+                 return line
++        for player_id in reversed(list(self._player_notes.keys())):
++            note = self._player_notes.get(player_id) or {}
++            contradictions = list(note.get("contradictions") or [])
++            if contradictions:
++                return f"{player_id}:{contradictions[-1]}"
+         return recent_memory[-1] if recent_memory else "暂无明确矛盾"
++
++    def _player_note(self, player_id: str) -> dict[str, Any]:
++        note = self._player_notes.get(player_id)
++        if note is None:
++            note = {
++                "speeches": deque(maxlen=4),
++                "claims": deque(maxlen=4),
++                "revealed_roles": deque(maxlen=3),
++                "vote_history": deque(maxlen=6),
++                "attack_lines": deque(maxlen=4),
++                "support_lines": deque(maxlen=4),
++                "contradictions": deque(maxlen=4),
++                "death_links": deque(maxlen=4),
++                "latest_vote": "",
++                "status": "unknown",
++                "hard_clear": False,
++                "soft_clear": False,
++                "last_round": None,
++                "last_phase": None,
++            }
++            self._player_notes[player_id] = note
++        return note
++
++    @staticmethod
++    def _unique_strings(values: object) -> list[str]:
++        if not isinstance(values, list):
++            return []
++        seen: set[str] = set()
++        result: list[str] = []
++        for value in values:
++            text = str(value).strip()
++            if text and text not in seen:
++                seen.add(text)
++                result.append(text)
++        return result
++
++    @staticmethod
++    def _role_looks_clear(role: str) -> bool:
++        text = str(role).strip()
++        if not text:
++            return False
++        if any(keyword in text for keyword in ("狼人", "狼", "悍跳", "假", "伪")):
++            return False
++        return any(keyword in text for keyword in ("预言家", "女巫", "猎人", "守卫", "白痴", "好人", "平民", "民"))
++
++    @staticmethod
++    def _player_ids_from_text(text: str) -> list[str]:
++        if not text:
++            return []
++        seen: set[str] = set()
++        result: list[str] = []
++        for match in _PLAYER_ID_PATTERN.findall(text):
++            player_id = str(match).strip()
++            if player_id and player_id not in seen:
++                seen.add(player_id)
++                result.append(player_id)
++        return result
++
++    def _player_label(self, player_id: str) -> str:
++        note = self._player_notes.get(player_id)
++        if not note:
++            return player_id
++        tags: list[str] = []
++        if note.get("status") in {"dead", "out"}:
++            tags.append("死")
++        if note.get("hard_clear"):
++            tags.append("硬清")
++        elif note.get("soft_clear"):
++            tags.append("软清")
++        claims = self._unique_strings(list(note.get("claims") or []) + list(note.get("revealed_roles") or []))
++        if claims:
++            tags.append("/".join(claims[:2]))
++        latest_vote = str(note.get("latest_vote") or "").strip()
++        if latest_vote:
++            tags.append(f"票{latest_vote}")
++        return f"{player_id}({'/'.join(tags)})" if tags else player_id
++
++    def _note_public_record(self, record: Mapping[str, Any]) -> None:
++        actor = str(record.get("actor") or "").strip()
++        target = str(record.get("target") or "").strip()
++        kind = str(record.get("kind") or "").strip().lower()
++        text = str(record.get("text") or "").strip()
++        role = str(record.get("role") or "").strip()
++        round_value = record.get("round")
++        phase_value = record.get("phase")
++        summary = str(record.get("summary") or "").strip()
++        mentioned_ids = self._player_ids_from_text(text)
++        related_ids = self._unique_strings([value for value in [actor, target, *mentioned_ids] if value])
++        speech_kind = kind in {"speak", "speech", "say", "dialogue", "statement", "text"}
++        is_vote = kind in {"vote", "voting"} or record.get("vote") is not None
++        is_death = kind in {"death", "died", "eliminate", "eliminated", "kill", "killed"} or record.get("death") is not None
++        is_claim = kind == "claim"
++        is_reveal = kind in {"reveal", "identity", "open_role"}
++        negative_words = ("改口", "矛盾", "对跳", "反水", "卖队", "带节奏", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")
++        positive_words = ("可信", "一致", "解释清楚", "对得上", "稳定", "金水", "好人", "站对", "硬清")
++        contradiction_words = ("改口", "矛盾", "对跳", "反水", "自相矛盾")
++        for player_id in related_ids:
++            note = self._player_note(player_id)
++            note["last_round"] = round_value
++            note["last_phase"] = phase_value
++        if actor:
++            actor_note = self._player_note(actor)
++            if speech_kind and text:
++                actor_note["speeches"].append(self._compact_text(text, limit=56))
++            if is_vote:
++                if target:
++                    actor_note["latest_vote"] = target
++                    actor_note["vote_history"].append(target)
++            if is_claim:
++                previous_claims = self._unique_strings(list(actor_note["claims"]))
++                if role:
++                    if previous_claims and role not in previous_claims:
++                        actor_note["contradictions"].append(self._compact_text(summary or text or role, limit=60))
++                    actor_note["claims"].append(self._compact_text(role, limit=24))
++                if text and text != role:
++                    actor_note["claims"].append(self._compact_text(text, limit=32))
++            if is_reveal:
++                previous_roles = self._unique_strings(list(actor_note["revealed_roles"]))
++                if role:
++                    if previous_roles and role not in previous_roles:
++                        actor_note["contradictions"].append(self._compact_text(summary or text or role, limit=60))
++                    actor_note["revealed_roles"].append(self._compact_text(role, limit=24))
++                    if self._role_looks_clear(role):
++                        actor_note["hard_clear"] = True
++                if text and any(keyword in text for keyword in ("金水", "查验好人", "已验好", "确认好人")):
++                    actor_note["hard_clear"] = True
++            if text and any(keyword in text for keyword in contradiction_words):
++                actor_note["contradictions"].append(self._compact_text(summary or text, limit=60))
++            if text and any(keyword in text for keyword in ("金水", "可信", "好人", "站边", "支持")):
++                actor_note["soft_clear"] = True
++        if is_death:
++            dead_ids = self._unique_strings([value for value in [target, actor, *mentioned_ids] if value])
++            for player_id in dead_ids:
++                note = self._player_note(player_id)
++                note["status"] = "dead"
++                note["death_links"].append(self._compact_text(summary or text or f"{player_id}死亡", limit=60))
++        if text:
++            summary_text = self._compact_text(summary or text, limit=64)
++            if any(keyword in text for keyword in negative_words) and target:
++                self._player_note(target)["attack_lines"].append(summary_text)
++            if any(keyword in text for keyword in positive_words) and target:
++                self._player_note(target)["support_lines"].append(summary_text)
++            for player_id in mentioned_ids:
++                if player_id == actor:
++                    continue
++                mention_note = self._player_note(player_id)
++                if any(keyword in text for keyword in negative_words):
++                    mention_note["attack_lines"].append(summary_text)
++                if any(keyword in text for keyword in positive_words):
++                    mention_note["support_lines"].append(summary_text)
++                mention_note["last_round"] = round_value
++                mention_note["last_phase"] = phase_value
++        if target and is_vote:
++            self._player_note(target)["attack_lines"].append(self._compact_text(summary or f"{actor}投{target}", limit=60))
++        if target and is_death:
++            self._player_note(target)["death_links"].append(self._compact_text(summary or text or f"{target}死亡", limit=60))
++
++    def _evidence_snapshot(self, recent_memory: list[str]) -> dict[str, list[str]]:
++        vote_pressure: Counter[str] = Counter()
++        role_claims: dict[str, list[str]] = {}
++        top_contradictions: list[str] = []
++        hard_clears: list[str] = []
++        for player_id, note in self._player_notes.items():
++            latest_vote = str(note.get("latest_vote") or "").strip()
++            if latest_vote:
++                vote_pressure[latest_vote] += 1
++            contradictions = list(note.get("contradictions") or [])
++            if contradictions:
++                top_contradictions.append(
++                    f"{self._player_label(player_id)}:{self._compact_text(contradictions[-1], limit=40)}"
++                )
++            claims = self._unique_strings(list(note.get("claims") or []) + list(note.get("revealed_roles") or []))
++            for role in claims:
++                role_claims.setdefault(role, []).append(player_id)
++            if note.get("hard_clear"):
++                hard_clears.append(self._player_label(player_id))
++        claimed_roles: list[str] = []
++        for role, players in sorted(role_claims.items(), key=lambda item: (-len(item[1]), item[0])):
++            claimed_roles.append(f"{role}:{'/'.join(players[:3])}")
++            if len(claimed_roles) >= 4:
++                break
++        return {
++            "top_vote_pressure": [f"{player_id}×{count}" for player_id, count in vote_pressure.most_common(3)],
++            "top_contradictions": top_contradictions[:3],
++            "claimed_roles": claimed_roles[:4],
++            "hard_clears": hard_clears[:4],
++            "recent_signals": recent_memory[-4:],
++        }
+ 
+     def _hunter_target_ranking(
+         self,
+         allowed_actions: list[Mapping[str, Any]],
+         recent_memory: list[str],
++        turn_packet: Mapping[str, Any],
+     ) -> dict[str, Any]:
+         target_ids: list[str] = []
+         for action in allowed_actions:
+@@ -348,52 +564,132 @@
+                     target_ids.append(target_id)
+         ranking: list[dict[str, Any]] = []
+         for target_id in target_ids:
+-            score, reasons = self._score_hunter_target(target_id, recent_memory)
++            score_info = self._score_hunter_target(target_id, recent_memory, turn_packet)
+             ranking.append(
+                 {
+                     "target_id": target_id,
+-                    "score": round(score, 2),
+-                    "reasons": reasons,
++                    "score": round(score_info["score"], 2),
++                    "reasons": score_info["reasons"],
++                    "signals": score_info["signals"],
+                 }
+             )
+         ranking.sort(key=lambda item: item["score"], reverse=True)
+         skip_option = self._pass_like_action_kind(allowed_actions)
+         best_score = ranking[0]["score"] if ranking else 0.0
++        strongest_signals = max(
++            (
++                sum(1 for value in item.get("signals", {}).values() if isinstance(value, int) and value > 0)
++                for item in ranking
++            ),
++            default=0,
++        )
+         if skip_option:
+-            skip_condition = "若没有明确矛盾、票型偏差或身份冲突，优先跳过。"
++            if strongest_signals >= 2 or best_score >= 1.4:
++                skip_condition = "只有当所有合法目标都只剩单一薄弱线索、且没有改口/对跳/死亡链条冲突时才可跳过。"
++            else:
++                skip_condition = "证据过弱且没有明显多源冲突时可以跳过；否则优先出手。"
+         else:
+-            skip_condition = "没有跳过动作时，只选分数最高且风险最低的目标。"
+-        if best_score < 1.0:
+-            skip_condition = "证据不足时直接跳过；若不能跳过，再选最弱风险目标。"
++            skip_condition = "没有跳过动作时，必须从合法目标里选风险最低且证据最弱的那个。"
+         return {
+             "target_ranking": ranking[:4],
+             "skip_option": skip_option,
+             "skip_condition": skip_condition,
+         }
+ 
+-    def _score_hunter_target(self, target_id: str, recent_memory: list[str]) -> tuple[float, list[str]]:
++    def _score_hunter_target(
++        self,
++        target_id: str,
++        recent_memory: list[str],
++        turn_packet: Mapping[str, Any],
++    ) -> dict[str, Any]:
+         pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])")
+         score = 0.0
+         reasons: list[str] = []
++        signals = {
++            "vote_pressure": 0,
++            "contradictions": 0,
++            "claim_conflict": 0,
++            "death_links": 0,
++            "clear_hits": 0,
++            "recent_mentions": 0,
++        }
++        vote_pressure = 0
++        for player_id, note in self._player_notes.items():
++            if str(note.get("latest_vote") or "").strip() == target_id:
++                vote_pressure += 1
++            if player_id == target_id:
++                continue
++            for line in list(note.get("attack_lines") or [])[-2:]:
++                if pattern.search(line):
++                    signals["recent_mentions"] += 1
++            for line in list(note.get("support_lines") or [])[-1:]:
++                if pattern.search(line):
++                    signals["recent_mentions"] += 1
++        if vote_pressure:
++            signals["vote_pressure"] = vote_pressure
++            score += 0.8 + min(vote_pressure, 4) * 0.55
++            reasons.append(f"票压{vote_pressure}")
++        target_note = self._player_notes.get(target_id) or {}
++        contradictions = list(target_note.get("contradictions") or [])
++        if contradictions:
++            signals["contradictions"] = len(contradictions)
++            score += 0.7 + 0.35 * min(len(contradictions), 3)
++            reasons.append("改口/对跳:" + self._compact_text(contradictions[-1], limit=48))
++        death_links = list(target_note.get("death_links") or [])
++        if death_links:
++            signals["death_links"] = len(death_links)
++            score += 0.6 + 0.25 * min(len(death_links), 3)
++            reasons.append("死亡链:" + self._compact_text(death_links[-1], limit=48))
++        target_claims = self._unique_strings(list(target_note.get("claims") or []) + list(target_note.get("revealed_roles") or []))
++        if len(target_claims) >= 2:
++            signals["claim_conflict"] = len(target_claims)
++            score += 0.9
++            reasons.append("多次身份声明:" + "/".join(target_claims[:2]))
++        if target_claims:
++            role_claim_counts: dict[str, list[str]] = {}
++            for player_id, note in self._player_notes.items():
++                claims = self._unique_strings(list(note.get("claims") or []) + list(note.get("revealed_roles") or []))
++                for role in claims:
++                    role_claim_counts.setdefault(role, []).append(player_id)
++            for role in target_claims:
++                claimers = role_claim_counts.get(role, [])
++                if len(claimers) >= 2:
++                    signals["claim_conflict"] = max(signals["claim_conflict"], len(claimers))
++                    score += 0.45 + 0.15 * min(len(claimers), 4)
++                    reasons.append(f"对跳{role}:{'/'.join(claimers[:3])}")
++                    break
++        recent_hits = 0
+         for line in recent_memory:
+             if not pattern.search(line):
+                 continue
+-            line_score = 0.2
+-            if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "带节奏", "卖队", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")):
+-                line_score += 1.3
++            recent_hits += 1
++            if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "卖队", "带节奏", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")):
++                score += 0.9
+                 reasons.append(self._compact_text(line, limit=60))
+-            if any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
+-                line_score += 0.4
+-            if any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水")):
+-                line_score -= 0.5
+-            if "狼人" in line:
+-                line_score += 0.8
+-            if "好人" in line:
+-                line_score -= 0.2
+-            score += line_score
++            elif any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
++                score += 0.25
++            elif any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水", "好人")):
++                score -= 0.35
++        signals["recent_mentions"] += recent_hits
++        if recent_hits and not reasons:
++            reasons.append(self._compact_text(f"最近记忆命中{recent_hits}次", limit=60))
++        if target_note.get("hard_clear"):
++            signals["clear_hits"] += 1
++            score -= 1.8
++            reasons.append("公开硬清")
++        if target_note.get("soft_clear"):
++            signals["clear_hits"] += 1
++            score -= 0.8
++            reasons.append("软清/正向背书")
++        if target_note.get("status") in {"dead", "out"}:
++            score -= 0.6
++            reasons.append("已出局")
+         if not reasons:
+-            reasons.append("公开记忆里缺少直接矛盾，只能低置信度判断")
+-        return score, reasons[:3]
++            reasons.append("公开证据单薄")
++        # 若允许，优先比较多源冲突；单一薄证据不应直接压成高优先级。
++        if signals["vote_pressure"] == 0 and signals["contradictions"] == 0 and signals["claim_conflict"] == 0 and signals["death_links"] == 0:
++            score = max(0.0, score - 0.6)
++        return {"score": score, "reasons": reasons[:4], "signals": signals}
+ 
+     @staticmethod
+     def _pass_like_action_kind(allowed_actions: list[Mapping[str, Any]]) -> str:
+@@ -406,48 +702,121 @@
+     def _extract_public_events(self, sync_packet: Mapping[str, Any]) -> list[str]:
+         events: list[str] = []
+         seen: set[str] = set()
++        round_groups: dict[str, list[dict[str, Any]]] = {}
+         default_round = sync_packet.get("round")
+         default_phase = sync_packet.get("phase") or sync_packet.get("public_phase")
+ 
++        def build_record(item: object) -> dict[str, Any] | None:
++            if isinstance(item, str):
++                text = item.strip()
++                if not text:
++                    return None
++                summary = self._compact_text(text, limit=72)
++                return {
++                    "round": default_round,
++                    "phase": default_phase,
++                    "actor": "",
++                    "target": "",
++                    "kind": "text",
++                    "text": text,
++                    "role": "",
++                    "vote": None,
++                    "death": None,
++                    "summary": summary,
++                }
++            if not isinstance(item, Mapping):
++                return None
++            round_value = item.get("round", default_round)
++            phase_value = item.get("phase", item.get("public_phase", default_phase))
++            actor = str(
++                item.get("speaker")
++                or item.get("player_id")
++                or item.get("from_player_id")
++                or item.get("from")
++                or item.get("actor")
++                or item.get("source")
++                or ""
++            ).strip()
++            target = str(item.get("target_id") or item.get("target") or item.get("votee") or "").strip()
++            kind = str(item.get("kind") or item.get("action") or item.get("type") or "").strip().lower()
++            text = str(item.get("text") or item.get("content") or item.get("message") or "").strip()
++            role = str(item.get("role") or item.get("revealed_role") or item.get("identity") or "").strip()
++            vote = item.get("vote")
++            if not target and vote is not None and kind in {"vote", "voting"}:
++                target = str(vote).strip()
++            summary = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)
++            if not summary:
++                return None
++            return {
++                "round": round_value,
++                "phase": phase_value,
++                "actor": actor,
++                "target": target,
++                "kind": kind,
++                "text": text,
++                "role": role,
++                "vote": vote,
++                "death": item.get("death"),
++                "summary": summary,
++            }
++
+         def add_event(item: object) -> None:
+-            event = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)
++            record = build_record(item)
++            if not record:
++                return
++            event = record["summary"]
+             if not event or event in seen:
+                 return
+             seen.add(event)
++            self._note_public_record(record)
+             events.append(event)
++            group_key = f"r{record['round']}" if record.get("round") is not None else "r?"
++            phase_key = str(record.get("phase") or "?")
++            round_groups.setdefault(f"{group_key}/{phase_key}", []).append(record)
+ 
+         for key in ("events", "public_events", "log", "logs", "history", "records", "timeline"):
+             value = sync_packet.get(key)
+             if isinstance(value, list):
+                 for item in value:
+                     add_event(item)
+-                    if len(events) >= 8:
+-                        return events
+-        for key in ("public_state", "state", "game"):
+-            value = sync_packet.get(key)
+-            if value is not None:
+-                add_event(value)
+-                if len(events) >= 8:
+-                    return events
+-
+-        def walk(item: object, depth: int) -> None:
+-            if len(events) >= 8 or depth > 2:
+-                return
+-            if isinstance(item, Mapping):
+-                if self._looks_like_public_event(item):
+-                    add_event(item)
+-                else:
+-                    for value in item.values():
+-                        if isinstance(value, (Mapping, list, tuple)):
+-                            walk(value, depth + 1)
+-                return
+-            if isinstance(item, (list, tuple)):
+-                for value in item:
+-                    walk(value, depth + 1)
+-                    if len(events) >= 8:
+-                        return
+-
+-        walk(sync_packet, 0)
++                    if len(events) >= 10:
++                        break
++            if len(events) >= 10:
++                break
++        if len(events) < 10:
++            for key in ("public_state", "state", "game"):
++                value = sync_packet.get(key)
++                if value is not None:
++                    add_event(value)
++                    if len(events) >= 10:
++                        break
++        if len(events) < 10:
++            def walk(item: object, depth: int) -> None:
++                if len(events) >= 10 or depth > 2:
++                    return
++                if isinstance(item, Mapping):
++                    if self._looks_like_public_event(item):
++                        add_event(item)
++                    else:
++                        for value in item.values():
++                            if isinstance(value, (Mapping, list, tuple)):
++                                walk(value, depth + 1)
++                    return
++                if isinstance(item, (list, tuple)):
++                    for value in item:
++                        walk(value, depth + 1)
++                        if len(events) >= 10:
++                            return
++
++            walk(sync_packet, 0)
++        for group_key, group in round_groups.items():
++            summary = self._summarize_round_group(group_key, group)
++            if summary and summary not in seen:
++                seen.add(summary)
++                events.append(summary)
++                self._round_memory.append(summary)
++            if len(events) >= 12:
++                break
+         return events
+ 
+     @staticmethod
+@@ -547,6 +916,30 @@
+             return prefix + " ".join(parts)
+         return " ".join(parts)
+ 
++    def _summarize_round_group(self, group_key: str, group: list[dict[str, Any]]) -> str | None:
++        pieces: list[str] = []
++        for record in group:
++            actor = str(record.get("actor") or "").strip()
++            target = str(record.get("target") or "").strip()
++            kind = str(record.get("kind") or "").strip().lower()
++            text = str(record.get("text") or "").strip()
++            role = str(record.get("role") or "").strip()
++            if kind in {"vote", "voting"} or record.get("vote") is not None:
++                if actor or target:
++                    pieces.append(f"{actor or '?'}→{target or str(record.get('vote') or '?')}")
++            elif kind in {"death", "died", "eliminate", "eliminated", "kill", "killed"} or record.get("death") is not None:
++                pieces.append(f"{target or actor or '?'}死亡")
++            elif kind in {"reveal", "identity", "open_role", "claim"} or role:
++                pieces.append(f"{actor or '?'}:{self._compact_text(role or text or '身份', limit=18)}")
++            elif text and any(keyword in text for keyword in ("改口", "矛盾", "对跳", "反水", "查杀", "金水", "站边", "投票")):
++                pieces.append(f"{actor or '?'}:{self._compact_text(text, limit=22)}")
++            if len(pieces) >= 3:
++                break
++        pieces = self._unique_strings(pieces)
++        if not pieces:
++            return None
++        return f"[{group_key}] " + "；".join(pieces[:3])
++
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+             raise ValueError("行动包被发送给了错误玩家")
+@@ -565,7 +958,7 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
+-            "memory_brief": self._recent_memory(5),
++            "memory_brief": self._recent_memory(8),
+             "decision_brief": self._decision_brief(turn_packet, current_dialogue),
+             "history_policy": {
+                 "default_context": "current_state_only",
+--- hunter-n00008/task.md
++++ hunter-n00040/task.md
+@@ -2,8 +2,8 @@
+ 
+ 你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。
+ 
+-- 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据：发言、票型、改口、身份声明、死亡顺序。
+-- 公开发言要回应当下争议，优先比较“谁支持谁、谁反复改口、谁的票型和身份声明不一致”。
+-- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择与票型、发言和死亡链条最不一致的人。
+-- 如果公开证据不足，或目标之间没有明显差异，要明确走跳过条件；不要把“带走最像狼的人”当成固定模板。
+-- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。+- 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据账本：谁支持谁、谁投了谁、谁改口、谁对跳、谁公开声明了什么身份、谁已经死亡或出局。
++- 公开发言优先回应当前争议，按这个顺序组织判断：先看票型和身份声明是否一致，再看改口、对跳和死亡链条，最后才看主观像狼与否。
++- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择同时被票型、身份冲突、改口/对跳和死亡链条指向的人。
++- 只有当所有合法目标都只有单一薄弱线索、且看不出明显多源冲突时，才可以选择跳过；如果已经出现明显证据差异，即使分数不高也不要把“跳过”当默认。
++- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手；如果目标中存在明显硬清或公开确认的好人，优先保护。

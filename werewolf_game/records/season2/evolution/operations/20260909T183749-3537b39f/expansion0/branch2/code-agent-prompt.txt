@@ -1,0 +1,159 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-n00098 已消除了非法行动和运行失败，但胜率仍为 20%（20 局中胜 4 局），与其父节点 guard-n00037 的 20% 基本相同。下一代不应继续扩大通用排序权重，而应修复守卫公开信息解析和可信度建模：当前实现把身份声称、警长身份、被点名和公开热度混合成保护价值，且会把发言者的身份声称错误传播给其提及的玩家，导致守卫反复保护可疑的悍跳狼，而漏保更有价值的真实神职或明确关键好人。",
+  "evidence": [
+    {
+      "fact": "当前节点评测为 20 局完成、胜 4 局、负 16 局，胜率 0.2；focus_role_only 下守卫决策 314 次，fallback 0，invalid 0。",
+      "source": "read_evaluation_summary"
+    },
+    {
+      "fact": "父节点 guard-n00037 同样为 20% 胜率，说明 n00098 的预算限制、工具边界和当前启发式扩展没有形成可观测收益。",
+      "source": "read_previous_diagnosis/guard-n00037 and read_evaluation_summary"
+    },
+    {
+      "fact": "回放中第 1 夜狼人明确一致选择 p5，守卫也选择 p5，形成一次有效保护；但这主要是模型从当前公开身份和发言中命中，不能证明长期排序逻辑正确。",
+      "source": "game_index 12, events 19-43"
+    },
+    {
+      "fact": "第 2 夜 p2 已公开自称预言家并给 p5 金水，p7 与其对跳；狼人实际选择 p2。守卫却保护了 p7，导致真实预言家 p2 被杀。",
+      "source": "game_index 12, events 150-171"
+    },
+    {
+      "fact": "第 3 夜 p11 接过狼方 p7 的警徽并继续以预言家身份主导场面，狼人讨论中明确将 p11 作为主刀目标；守卫保护 p11，虽然该夜因狼人平票没有击杀。这里保护可疑身份位的结果是偶然未造成损失，并非可靠判断。",
+      "source": "game_index 12, events 226-243"
+    },
+    {
+      "fact": "第 4 夜狼人明确选择 p5，守卫选择 p4，导致 p5 被杀；p5 随后公开揭示为猎人。由于守卫事前没有稳定识别公开关键好人或刀口候选，保护落在低置信目标。",
+      "source": "game_index 12, events 290-314"
+    },
+    {
+      "fact": "第 5 夜狼人选择 p4，守卫再次保护 p11；p4 被杀。守卫仍然把持警徽且持续报验的 p11 视为高价值保护位，尽管 p11 的身份链来自已确认狼人 p7 的警徽转移。",
+      "source": "game_index 12, events 349-364"
+    },
+    {
+      "fact": "第 6 夜仅剩少量玩家时，守卫自守；狼人攻击 p6，女巫毒杀 p9。自守本身符合残局规则，但不能挽救此前对关键公开信息位判断错误造成的局面。",
+      "source": "game_index 12, events 394-414"
+    },
+    {
+      "fact": "当前代码的 _dialogue_entries 处理会对整条发言提取 claim 信号，然后将该信号应用到所有被提及玩家；只有 speaker_id 的 claim 被部分跳过，但目标玩家仍可能获得 claim 分数。比如发言者声称自己是预言家并提到 p5 时，p5 可能被错误记录为身份声称对象。",
+      "source": "current_agent.py: _ingest_dialogue_entries"
+    },
+    {
+      "fact": "当前 _guard_candidate_profile 将 claim、exposure、public_focus、public_pressure 转换为 information_value；claim 本身没有可靠身份、对跳、查验一致性或狼方支持链的区分，因此悍跳预言家和真实预言家都可能被排序为高价值保护对象。",
+      "source": "current_agent.py: _guard_candidate_profile and _signal_for_key"
+    },
+    {
+      "fact": "当前 repair 层只在模型选择非法目标、缺失目标或重复目标时修正，合法但明显不合理的目标会原样保留。因此启发式记忆即使识别到更好的候选，也无法纠正模型对可疑身份位的合法选择。",
+      "source": "current_agent.py: _repair_guard_decision"
+    },
+    {
+      "fact": "当前代码将 guard_can_repeat_protect 缺失解释为禁止重复，并且对上一目标进行大幅降权。这在本实验规则中正确，但应保持为协议安全逻辑，不应与目标可信度混合。",
+      "source": "current_agent.py: _guard_repeat_forbidden and _guard_candidate_ranking"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "身份声称被当作保护价值，而不是未经验证的候选信号。代码对 claim 给予较高 information_value，且没有区分单一声称、对跳、来自已暴露狼的支持、警徽转移和查验链一致性。",
+      "confidence": "高"
+    },
+    {
+      "cause": "公开发言信号的归因错误。发言者说“我是预言家，验 p5 为好人”时，claim 语义应归属于发言者，查验结果才可能作用于 p5；现有实现会把整条 claim 信号传播给提及对象，污染候选画像。",
+      "confidence": "高"
+    },
+    {
+      "cause": "缺乏反向惩罚模型。当前有 suspicion_penalty，但它主要处理 claim 与 vote/pressure 同时出现，不能识别“与另一预言家对跳”“警徽由已知狼转移”“被可信公开信息强烈质疑”等结构性不可信信号。",
+      "confidence": "高"
+    },
+    {
+      "cause": "保护目标排序没有明确区分外部刀口价值与公开信息价值。残局、自守、警徽、发言热度、身份声称和明确狼刀风险被压进相近的分数体系，导致可疑警长或悍跳位长期压过真实但受攻击的神职。",
+      "confidence": "中高"
+    },
+    {
+      "cause": "模型提示虽然反复强调“身份声称不等于可信好人”，但行动包仍很长，当前轮工具结果可能被截断，且最终合法目标不受强制可信度门控；自然语言提醒不足以抵消污染后的数值记忆和模型偏好。",
+      "confidence": "中高"
+    },
+    {
+      "cause": "评测中没有运行错误、fallback 或非法行动问题，故下一代不应把主要精力放在 schema 重试或预算扩展；主要收益应来自公开状态解析、可信度排序和目标选择纠偏。",
+      "confidence": "高"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "重写 _ingest_dialogue_entries 的信号归因：claim 只计入 speaker_id；被提及玩家不得因该发言自动获得 claim。将查验结果、被怀疑、投票、警徽、明确夜刀等分别解析为独立事件。对“我是预言家/女巫/守卫”等身份声明仅记录 speaker 的 claim 和 claim_type，不把同句中的 target_ids 当作 claim 对象。",
+      "rationale": "这是当前最明确的确定性 bug，会直接把 p5、p2 等被提及玩家的画像污染，导致排序依据失真。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加守卫专用的轻量公开事实状态，例如 claim_ledger、counterclaim_groups、sheriff_history、public_confirmed_good_candidates 和 explicit_attack_signals；只从当前已可见 public_state/current_round_dialogue 更新，不存储任何隐藏身份或引擎未公开结果。每个 claim 记录 speaker、claimed_role、round、mentioned_result、是否存在对跳、是否被公开矛盾支持。",
+      "rationale": "守卫需要的不是完整历史，而是少量结构化的公开关系；这能在新模型会话之间保留公开可见的关键链条，同时不违反信息边界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 claim 可信度加入结构性分层：单独身份声称只提供小幅信息价值；出现同角色对跳时降低双方的 claim 保护价值并优先比较查验一致性；若警徽或核心链来自已明确暴露的狼人，则对继承者施加明显 suspicion penalty；身份声称与公开系统事实冲突时施加更高惩罚。",
+      "rationale": "回放中 p7、p11 的连续身份链正是失败核心。不能把“有警徽/会报验”直接等价为可信好人。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _guard_candidate_profile 的 score_key：第一层只放合法性、重复限制和明确近期 wolf_attack_risk；第二层放高可信公开好人/神职链；第三层才放一般信息价值、pressure、vote、public_focus。对 claim、sheriff、被点名、话多不得直接增加 wolf_attack_risk；对未验证或冲突身份应减少 information_value。",
+      "rationale": "守卫的首要目标是拦截狼刀，不是保护最热或最会发言的人。分层排序可避免低质量热度信号压过明确刀口和可信信息位。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加“可信度门控”而非只做非法目标修复：当模型选择的是合法但被结构化状态标记为高冲突/狼支持链的目标，且存在分数明显更高的非冲突候选时，将 target_id 修正为最佳候选；当候选分差很小则保留模型选择。门控必须只使用公开状态和当前 target_ids。",
+      "rationale": "当前 repair 只负责协议安全，无法纠正第 2、3、5 夜这类合法但战略上明显偏向可疑狼位的选择。使用分差阈值可避免启发式覆盖模型在信息不足时的合理判断。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "将 explicit_attack_signals 与普通 dialogue pressure 分离，并严格限制词法匹配：只有 wolf_target、wolf_kill、night_kill、attack_target、明确“今晚刀/狼刀/击杀”等公开字段或文本才计入 threat；普通“查杀”“投票”“怀疑”“关注”不得转成夜刀风险。",
+      "rationale": "现有实现已有部分区分，但文本扫描仍可能把“查杀”或“狼”混成 pressure/claim。守卫必须避免把白天矛盾误当成夜间刀口。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "补充纯函数单测和 smoke checks：1) speaker claim 不传播给 mentioned target；2) 两个预言家对跳时双方均不是自动高优先级；3) 已知狼转移警徽给 claim 位时该位获得惩罚；4) 明确 attack_target 优先于普通 vote_target；5) 重复目标仍被排除；6) 合法但高冲突目标在存在明显更优候选时被门控替换；7) 无公开冲突时不强行覆盖模型选择。",
+      "rationale": "历史上 guard 分支出现过 smoke failure；先用局部纯函数锁定边界，降低候选因实现错误被直接淘汰的风险。"
+    },
+    {
+      "file": "task.md",
+      "change": "在守卫操作规程中加入简短、可执行的决策顺序：先合法性/重复，再明确狼刀；其次是公开系统事实支持的可信好人或神职；身份声称、警徽、投票和热度只有在无冲突时作辅助；对跳和狼支持链必须降权；没有更高可信外部目标且满足公开暴露或残局条件时才自守。",
+      "rationale": "代码状态和模型提示应使用同一优先级，避免 task.md、system prompt 与修复逻辑互相矛盾。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "限制注入模型的 guard_memory_summary 大小，只输出当前合法 target_ids 的逐候选摘要：repeat_forbidden、explicit_threat、claim_status、counterclaim、suspicion_reasons、stage；不要把整个 risk_profile 或历史文本放入 prompt。",
+      "rationale": "当前评测显示 prompt 字符数很大且工具调用频繁。结构化短摘要能把模型注意力集中到可选目标，并降低长历史导致的决策漂移。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "公开信息中的身份声称可能是真实也可能是伪装；过强惩罚所有 claim 或对跳会导致真实预言家无法被保护。",
+      "mitigation": "只对冲突、狼支持链、系统事实矛盾施加高惩罚；单一未冲突 claim 仅提供小幅辅助价值，并保留模型选择。"
+    },
+    {
+      "risk": "将 p7 或 p11 这类可疑警徽位强制降权，可能错过狼人实际会攻击的高价值狼队伪装位，尤其在其他候选没有公开证据时。",
+      "mitigation": "把明确近期 wolf_attack_risk 放在最高层；只有存在更高可信外部候选且分差超过阈值时才进行门控替换。"
+    },
+    {
+      "risk": "文本解析关键词可能误读中文发言，尤其是“查杀”“狼坑”“不是狼”等否定或引用语境。",
+      "mitigation": "优先使用结构化 public_state 字段；文本只生成低权重辅助信号，并增加否定、引用和 speaker/target 归因测试。"
+    },
+    {
+      "risk": "跨轮公开记忆若没有按 round 去重，重复同步可能累计同一信号。",
+      "mitigation": "沿用每玩家每轮每信号上限、round decay 和事件指纹；不要因为同一 public_state 被 observe 与 decide 两次而重复加分。"
+    },
+    {
+      "risk": "可信度门控属于行动覆盖，可能掩盖模型对复杂局面的正确判断。",
+      "mitigation": "只修正高冲突目标且存在显著更优候选的情况；所有修正必须通过纯函数测试，并保留低分差时的模型原选择。"
+    },
+    {
+      "risk": "增加结构化摘要可能提高 prompt 长度并触碰外部预算。",
+      "mitigation": "只输出 target_ids 子集的短字段摘要，设置字符上限，继续使用受限工具和现有 max_prompt_chars，不扩大任何运行预算。"
+    }
+  ],
+  "code_agent_brief": "请基于当前 guard-n00098 的 task_agent.py/task.md 实施一个最小、可测试的下一代守卫代理。第一优先修复 _ingest_dialogue_entries 的归因 bug：身份声称只能归给发言者，不能传播给被提及玩家；查验、投票、怀疑、明确夜刀分别记录。第二优先增加小型公开信息 ledger，记录身份声称、对跳、警徽转移来源、公开矛盾和明确 attack 信号，禁止读取或推断隐藏身份。第三优先重构守卫候选评分：合法性和禁止重复是硬约束，明确公开狼刀信号最高，可信且无冲突的公开神职/好人链其次，普通 claim、警徽、投票、被点名、热度只能作低权重辅助；与已知狼支持链相连或存在对跳的身份位必须降权。第四优先扩展 _repair_guard_decision，使其在模型选择合法但高冲突目标、且存在明显更优非冲突候选时进行有限门控替换；分差小则保留模型选择。不要修改引擎、规则、可见性、schema、工具实现、模型网关或预算。请添加纯函数 smoke/unit checks，至少覆盖 claim 不传播、对跳降权、狼转移警徽惩罚、明确 attack 优先、重复排除、合法目标门控和低分差保留模型选择。最后同步更新 task.md 和 guard system/turn prompt，使三者采用同一决策顺序，并确保所有新增摘要严格限制在当前公开状态、当前轮对话和当前 target_ids 内。"
+}

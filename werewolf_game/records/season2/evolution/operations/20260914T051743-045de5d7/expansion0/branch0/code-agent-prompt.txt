@@ -1,0 +1,160 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00102 已达到 15/20 胜、75% 胜率，20 局均完成且无非法行动，说明当前基础协议和整体策略有效；但随机回放暴露出夜刀失败记忆、白天票型算术、队友牺牲时机和发言事实约束的系统性缺陷。下一代应保留现有合法行动校验与轻量记忆框架，改为“结构化公开信息账本 + 阶段化决策控制器”，优先提升平安夜后的适应性、查杀队友时的收口能力，以及避免编造时间线。",
+  "evidence": [
+    {
+      "fact": "当前节点评测为 20 局 15 胜 5 负，胜率 0.75；focus 角色无 fallback、无 invalid decision。",
+      "source": "read_evaluation_summary"
+    },
+    {
+      "fact": "回放中首夜狼人一致刀 p5，但 p5 女巫自救，结果为平安夜。",
+      "source": "replay events 23-43"
+    },
+    {
+      "fact": "第二夜狼人一致刀警长/预言家 p10，但守卫保护 p10，再次平安夜；第三夜又一致刀警长 p6，而守卫保护 p6，仍然平安夜。",
+      "source": "replay events 153-170 and 232-247"
+    },
+    {
+      "fact": "当前代码仅在 target_id 同时等于 last_wolf_target 且存在于 failed_kill_targets 时处罚失败目标；失败目标一旦不是上一刀目标，就没有持续冷却惩罚。",
+      "source": "current_agent._target_threat_profile"
+    },
+    {
+      "fact": "第三轮白天 p10 遗言明确查杀 p12，但 p2、p7、p12 仍投 p5，最终 p12 以 4.5 票出局；代码只有 alive_wolves <= 2 时才避免主动投队友，未处理“队友已被强查杀且数学上接近必死”的情况。",
+      "source": "replay events 187-213 and current_agent._build_day_vote_strategy"
+    },
+    {
+      "fact": "第四轮 p7 已被多名好人集中质疑，p2 投 p11 而不是根据预计票型进行切割或改变目标；p7 最终以 4.5 票出局。",
+      "source": "replay events 324-348"
+    },
+    {
+      "fact": "回放中的 p3 狼人在首轮发言中声称“上警报过2、7”，与首轮尚未发生验人这一系统时间线冲突，随后被全体集中出局。现有 task 和 wolf_narrative 要求具体，但没有明确禁止模型编造未发生的行动、验人或历史事件。",
+      "source": "replay events 63, 104-143"
+    },
+    {
+      "fact": "狼人夜间讨论中的队友建议没有直接参与 _rank_targets 的排序；当前排序主要依赖 public_state、公开发言摘要、警长位和简单票压，无法把已形成的狼队共识作为结构化输入。",
+      "source": "current_agent._build_wolf_strategy and _rank_targets"
+    },
+    {
+      "fact": "当前 prompt 同时包含 public_state、memory、wolf_strategy.current_round_dialogue 和顶层 current_round_dialogue，存在重复注入；该节点某次完整回放出现 prompt_over_limit=1，最大 prompt_chars 达到 12710。",
+      "source": "random_game_replay.model_token_usage"
+    },
+    {
+      "fact": "当前 _detect_claims_from_dialogue 只把角色关键词归属到发言者，并没有稳定记录“谁查杀谁、谁给谁金水、谁与谁对跳”的关系边；因此白天投票控制器不能可靠判断某个队友是否处于高可信查杀压力。",
+      "source": "current_agent._detect_claims_from_dialogue"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "夜刀控制器把“上一刀失败”当成一次性局部信号，而不是按目标和轮次维护冷却账本。failed_kill_targets 虽然被保存，但评分只处罚当前 last_wolf_target，导致之前失败的 p6 在后续轮次仍可能重新成为最高分目标。",
+      "confidence": "高"
+    },
+    {
+      "cause": "夜刀评分偏向警长、公开神职和票型核心，却没有把守卫连续保护模式、连续平安夜后的换层级策略、未知猎人反杀风险和残局存活结构纳入统一效用函数。",
+      "confidence": "高"
+    },
+    {
+      "cause": "白天投票策略主要靠关键词 pressured 和 dangerous_claims，缺少结构化的“发言者—目标—结果—可信度”关系图，也没有根据预计票数、警长权重和队友是否数学必死来选择保狼、切割或制造分票。",
+      "confidence": "高"
+    },
+    {
+      "cause": "当前 alive_wolves <= 2 的固定阈值过于粗糙。四狼残局、三狼面对连续查杀、以及队友已有多数票时需要不同策略，单一阈值会造成不必要的硬保或错误分票。",
+      "confidence": "高"
+    },
+    {
+      "cause": "狼队讨论没有结构化进入夜刀规划。虽然模型能通过受限工具读取当前狼频道，但代码的候选排序不计算已有队友建议的频次、置信度或冲突。",
+      "confidence": "中高"
+    },
+    {
+      "cause": "公开叙事约束强调点名对象和行动建议，却没有事实来源分层及时间线校验，模型可能为了满足“具体”要求而创造不存在的验人、上警或历史行动。",
+      "confidence": "高"
+    },
+    {
+      "cause": "上下文压缩策略存在重复字段和固定前缀偏差，既可能超出运行预算，也可能把有限上下文消耗在重复对话上，降低模型对高价值票型与身份关系的注意力。",
+      "confidence": "高"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "扩展 _wolf_memory，保存带 round、target、failure_count、last_failed_round 的 night_failure_ledger；在 observe 识别 NO_ONE_DIED 或已观测到目标未死亡时写入账本。将 _target_threat_profile 中“只处罚 last_wolf_target”的逻辑改为对所有近期失败目标施加轮次衰减惩罚，并默认至少冷却一夜；连续失败两次的目标在非残局阶段直接列为 avoid_targets。",
+      "rationale": "修复当前失败目标记忆未真正生效的问题，避免 p6 这种已被守过的目标在后续又因警长权重重新登顶。保留残局或唯一真神职强杀时的显式 override，避免硬规则误伤。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _extract_public_claim_edges，输出 claim_type、speaker_id、target_id、result、round、source_phase、confidence；至少识别“查杀/金水/验了/对跳/守了/猎人”等关系。不要再只返回按 speaker 聚合的角色关键词。将 claims_internal 和 day vote strategy 改为消费 claim edges。",
+      "rationale": "当前 claims 结构无法表达 p10 查杀 p12 这类关键关系，导致投票控制器不能判断队友是否已被查杀或某条验人链是否在多个公开信息源中得到支持。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _build_day_vote_strategy 的队友保护逻辑：计算 alive_wolves、候选目标、公开发言中的预计票数和警长权重；将队友分为 safe、pressured、mathematically_doomed 三档。若队友是 mathematically_doomed，推荐切割该队友或投向其主要对立目标以保留叙事；若队友未到必死程度，默认不投队友；若存在多个狼，允许有限倒钩但避免所有狼人完全同票。",
+      "rationale": "替代单一 alive_wolves <= 2 阈值，覆盖 p12 被遗言查杀、p7 已被集中质疑等场景，同时保持狼人阵营的票权和后续叙事。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _estimate_vote_pressure，解析当前发言中的“今天出X/票X/优先X/跟X”等明确意向，并结合已知警长权重生成粗略票型预测。day_vote 阶段优先使用预测结果选择能改变出局结果的目标，而不是仅按 dangerous_claims 的候选顺序。",
+      "rationale": "当前推荐列表没有实际票数模型，无法判断投一个好人是否会改变结果，也无法及时从保队友切换到切割或分票。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在夜间 _build_wolf_strategy 中解析 current_round_dialogue 的狼队发言，统计对每个合法 target_id 的支持数、最近发言者和反对理由；当存在明显多数且目标未命中近期失败冷却时，将其作为 team_consensus_target。若共识目标处于冷却或属于高反杀风险目标，再回退到结构化评分排序。",
+      "rationale": "当前代码读取狼频道但完全不使用队友建议，导致“讨论层”和“投票层”脱节。结构化采纳多数意见可以提高队伍一致性，同时保留代码对明显危险目标的否决权。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _rank_targets 的评分项：加入 failure_cooldown、guard_pattern_risk、known_claimed_power_role、sheriff_vote_value、endgame_vote_swing、hunter_exposure_risk 和 team_consensus。将近期平安夜后的默认策略设为换到不同威胁层级，并在已有失败目标不止一个时优先选择非连续守护锚点，而不是继续追逐最高身份价值目标。",
+      "rationale": "回放显示连续追杀 p10、p6 让守卫连续形成有效保护；下一代需要最大化“成功击杀概率 × 阵营票权收益”，而不是单纯最大化公开身份价值。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "压缩 _build_compact_turn_prompt：删除 wolf_strategy 中重复的 current_round_dialogue，recent_public_history 仅保留结构化 claims、votes、deaths 和最近两条相关文本；public_state 的 players 改为保留全部玩家的 id、seat、alive 三字段，避免只保留前八名；对长文本先按事件类型截断。增加一个最终长度预算测试，确保 system + messages 在 12000 字符内留出安全余量。",
+      "rationale": "当前回放已经出现 prompt_over_limit=1，且高座位玩家和重复对话可能被截断。保留全体玩家身份索引和关系账本比重复自然语言更有价值。"
+    },
+    {
+      "file": "task.md",
+      "change": "增加明确的公开事实纪律：只能引用行动包、公开同步、当前可见对话和自己真实做过的行动；不得声称自己或他人执行过未出现在可见资料中的验人、守护、投票、上警或夜间动作；首轮没有验人记录时不得暗示已有验人链。每次发言仍需包含具体对象、依据和下一步，但依据必须标明是“系统事实”还是“玩家声明”。",
+      "rationale": "直接修复 p3 编造“首轮上警验过2、7”的失败模式，降低模型为了满足具体化要求而制造时间线矛盾的风险。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为公开发言 prompt 增加一个轻量自检字段要求：先在内部区分 facts、claims、hypotheses，再输出公开 JSON；输出文本不得把 claims 或 hypotheses 写成系统事实。不要把内部推理写入行动或审计记录，只把约束注入 system/task prompt。",
+      "rationale": "不改变输出 schema，也不需要隐藏状态；通过事实分层降低把未验证遗言、角色声明或猜测包装成确定信息的概率。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "保留现有 normalize_decision、decision_error 和重试流程不变，仅补充针对 wolf_kill_vote 与 day_vote 的候选目标合法性单元测试，以及对 night_failure_ledger、claim_edges、mathematically_doomed 判断的纯函数测试。",
+      "rationale": "当前节点已经零非法行动，改动应避免破坏稳定的协议层；测试重点应放在新增策略逻辑而不是重写行动提交链路。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "失败目标冷却过强时，可能错过真实预言家或残局唯一可击杀目标。",
+      "mitigation": "仅在非残局默认冷却；当目标是唯一高可信预言家、存在明确收口收益或无其他合法目标时允许 override，并把 override 原因注入 wolf_strategy。"
+    },
+    {
+      "risk": "队友多数意见可能是错误共识，机械跟随会放大狼队集体误判。",
+      "mitigation": "共识只作为候选加分，不覆盖失败冷却、目标死亡和自刀限制；若共识目标风险显著高于第二目标，保留评分控制器否决。"
+    },
+    {
+      "risk": "中文关系抽取可能把“有人说X是狼”误解析为发言者本人查杀 X，或把引用他人话语误当成真实声明。",
+      "mitigation": "claim edge 保存 source_text、source_phase 和 confidence；只把明确模式视为 hard claim，模糊引用仅作为 soft evidence；不要把解析结果直接当引擎事实。"
+    },
+    {
+      "risk": "mathematically_doomed 判断不准确，可能过早牺牲仍可救的队友。",
+      "mitigation": "要求同时满足多个信号，例如明确查杀、至少两名独立发言支持、预计票数接近不可逆，或警长明确归票；单一遗言或单人怀疑不得触发强制切割。"
+    },
+    {
+      "risk": "压缩 prompt 过度会丢失自然语言语境，使发言变得机械。",
+      "mitigation": "保留最近两到三条与当前焦点直接相关的原文，其余转为结构化摘要；以 prompt 最大 12000 字符下至少保留 1000 字符余量为测试标准。"
+    },
+    {
+      "risk": "增加策略字段和账本可能提高代码复杂度，导致候选 smoke 失败。",
+      "mitigation": "只修改 task_agent.py 和 task.md；新增逻辑使用纯 Python、现有 Mapping/JSON 数据和有限列表；所有新增字段设置空值回退，保证缺少公开资料时仍能产生合法行动。"
+    }
+  ],
+  "code_agent_brief": "请在候选工作区中只修改 task_agent.py 和 task.md，不触碰 Game Engine、规则、可见性、行动 schema、模型客户端、工具实现或审计逻辑。以当前 wolf-n00102 代码为基线，实施以下最小改进并保持现有合法行动校验与重试行为不变：1）把失败夜刀从“仅处罚 last_wolf_target”改为按目标和轮次维护冷却账本，非残局至少冷却一夜，连续失败目标默认跳过；2）把公开发言解析为 speaker-target-result 的 claim edges，支持查杀、金水、对跳、守护和猎人声明；3）重写 day_vote 策略，基于已知活狼、明确查杀关系、当前发言中的预计票数和警长权重，把队友区分为可保护、受压、数学上接近必死三档，队友接近必死时允许自然切割，否则避免投队友；4）夜间读取当前狼频道，统计队友对合法刀口的共识，但共识不能覆盖失败冷却、死亡目标和高风险否决；5）把夜刀评分改为同时考虑失败冷却、连续守护风险、警长/票权收益、公开神职声明、残局收口和未知猎人反杀风险；6）去掉 prompt 中重复的 current_round_dialogue，保留全体玩家的简短 id/seat/alive 索引和最近结构化关系，确保 system 与 messages 总长度明显低于 12000 字符；7）在 task.md 中明确禁止编造未出现在可见资料中的验人、守护、投票、上警或历史事件，并要求区分系统事实、玩家声明和推测。请增加或运行纯函数测试，覆盖：失败目标冷却、两次平安夜后的换刀、明确查杀队友时的切割、无明确查杀时保护队友、警长权重下的预计票型、狼频道共识、缺少字段时的安全回退、以及所有现有行动仍通过 normalize_decision/decision_error。目标不是保证每局必胜，而是修复回放中连续追守护位、忽略队友必死查杀、无票型算术和编造时间线这四类可重复失败。"
+}

@@ -1,0 +1,104 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00003 的主要问题不是合法性，而是“太保守、缺少可执行的女巫决策器”。它在本局没有产生非法行动，但最终把唯一毒药一直留到结束，面对多轮公开的高置信狼信息仍然持续 pass，导致 0 次毒杀、胜率只有 0.3。当前实现更像通用对话代理加一个低置信毒药回退，而不是能稳定执行女巫任务的下一代 Task-Agent。",
+  "evidence": [
+    {
+      "type": "replay",
+      "finding": "本局女巫首夜救了 p5，随后到游戏结束都没有使用毒药；最终结算时 role_state 仍显示 witch 的 poison_available=true。",
+      "why_it_matters": "说明资源管理过于保守，至少在这局里没有把毒药转化为任何局势收益。"
+    },
+    {
+      "type": "replay",
+      "finding": "第 4 天公开信息里，p12 作为预言家多次直接点出 p7 查杀、p10 查杀，并且 p12 已被警长体系与后续发言强化为核心信息源；女巫在对应夜晚仍然 pass。",
+      "why_it_matters": "这是典型的“公开高置信证据出现后仍不出毒”的失分点。"
+    },
+    {
+      "type": "code",
+      "finding": "current_agent._apply_role_safe_fallback 只会把模型已输出的 poison 动作在低置信时改成 pass，没有任何“主动决定何时毒人”的规则层。",
+      "why_it_matters": "这会让模型的保守倾向直接变成长期不出毒，而不是由代码强制执行女巫任务。"
+    },
+    {
+      "type": "code",
+      "finding": "current_agent._high_confidence_targets 只是用关键词加 p\\d+ 正则从拼接文本里抓候选 id，既粗糙又容易混入无关编号，也没有明确区分“谁说了什么”和“谁被证明了什么”。",
+      "why_it_matters": "这类置信提取不足以支撑女巫的高价值毒杀决策。"
+    },
+    {
+      "type": "evaluation_summary",
+      "finding": "该节点已被 retained，且没有非法决策问题；失败主要是胜率低而不是协议错误。",
+      "why_it_matters": "说明下一代改动应聚焦策略层，而不是修复 schema 或回退逻辑。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "缺少女巫专用的正向决策逻辑",
+      "evidence": "代码里只有毒药低置信回退，没有“何时救、何时毒、何时留”的决策器。",
+      "impact": "模型一旦偏保守，就会长期 pass，毒药无法发挥作用。"
+    },
+    {
+      "cause": "高置信目标识别过于粗糙",
+      "evidence": "当前实现靠关键词和正则抓 p 号，没有把公开发言中的指控、查验、票型和可信来源结构化。",
+      "impact": "即使场上已经出现明确狼链，也难以稳定触发毒杀。"
+    },
+    {
+      "cause": "没有局势压力/终局逻辑",
+      "evidence": "在后期仅剩少数存活者、狼队接近控场时，代码仍然允许模型继续保守 pass。",
+      "impact": "资源留到死局，错过最能改变胜负的窗口。"
+    },
+    {
+      "cause": "任务说明没有被代码层转成可执行约束",
+      "evidence": "task 里强调了高置信毒、保留资源和隐藏私密信息，但 agent 仍主要依赖大模型临场理解。",
+      "impact": "行为稳定性不足，容易在长局里退化为泛化发言代理。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增 witch 专用的决策函数，例如 `_plan_witch_action(...)`：先读取 allowed_actions、private_information、public_state、recent_public_summaries 和 current_round_dialogue，再按固定优先级选择 heal / poison / pass。毒杀条件应基于结构化的公开高置信证据，而不是仅靠模型自己想。",
+      "rationale": "把“要不要用药”从语言模型自由发挥，提升为可重复的策略决策。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 `_high_confidence_targets` 改成结构化打分器：只从公开发言和公开票型中提取与具体玩家绑定的查杀、验人、强狼、反复一致指控；避免把 request_id、game_id 或无关 p 号混入候选集，并设置明确阈值后才允许毒杀。",
+      "rationale": "让“高置信”真正对应公开证据，而不是宽松字符串匹配。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 prompt 的 compact memory 中加入更明确的女巫态势摘要，例如最近夜刀目标、当前存活人数、公开确认角色、最近几轮投票归向、已有公开查杀/金水列表。",
+      "rationale": "减少模型在长局中忘记关键局势，帮助它判断什么时候必须出药。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "保留现有 legality 校验和 pass 回退，但把回退限定为“无足够证据时保留资源”，不要让低置信回退覆盖掉已满足阈值的高置信毒杀。",
+      "rationale": "避免安全回退吞掉真正该出的毒。"
+    },
+    {
+      "file": "task.md",
+      "change": "把女巫任务改写成更可执行的决策梯度：明确‘公开出现直接查杀/多方一致锁定时优先毒杀；没有足够证据时可弃权；不要把夜间私密信息带入公开发言’。",
+      "rationale": "让系统提示和代码策略一致，降低模型在长局中走向过度保守的概率。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "毒杀阈值过低会误毒好人",
+      "mitigation": "只接受“直接命中玩家 + 多来源公开证据 + 当前局势必要性”同时成立的情况。"
+    },
+    {
+      "risk": "结构化抽取器可能漏掉少数口语化表达",
+      "mitigation": "保留模型自由判断，但必须通过明确阈值才能触发强制毒杀。"
+    },
+    {
+      "risk": "增加更多摘要字段会抬高 prompt 长度",
+      "mitigation": "只保留短字段和最近少量轮次，避免把完整历史塞回去。"
+    },
+    {
+      "risk": "过度规则化可能让女巫在边缘局势下失去灵活性",
+      "mitigation": "把规则层限定为‘选择候选’，而不是完全替代模型；无高置信时仍允许 pass。"
+    }
+  ],
+  "code_agent_brief": "请在 task_agent.py 里给 witch 增加一个真正的决策层，而不是只做合法性回退：新增 `_plan_witch_action`，根据 `allowed_actions`、`private_information`、`public_state`、`current_round_dialogue` 和压缩记忆，先判断解药/毒药是否可用，再用结构化规则判断是否存在高置信公开目标；若有则输出对应 heal 或 poison，否则 pass。把现有 `_high_confidence_targets` 从粗糙的正则拼接改为只解析公开发言中的显式查杀/验人/强狼/多方一致指控，并排除 request_id 等无关 p 号。保留现在的合法性校验和安全回退，但不要让回退吞掉满足阈值的毒杀。同步把 task.md 的女巫任务改成更明确的决策梯度，强调‘高置信才出毒、无证据就保留、严禁泄露夜间私密信息’。"
+}

@@ -1,0 +1,60 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-base 的主要问题不是通用狼人杀策略，而是守卫动作生成在“合法目标管理”上失效：模型在多局中反复输出不在当前 allowed target_ids 里的守护目标，触发运行时校验失败并回退为 pass，直接放弃了关键夜守。评测显示该节点 win_rate 仅 0.10，invalid_decision_count=23，recommended_status=discarded。下一代 Task-Agent 应优先修复守卫的状态记忆、合法目标选择与失败兜底，而不是继续强化白天话术。",
+  "evidence": [
+    "read_evaluation_summary 显示：game_count=20、win_count=2、loss_count=18、win_rate=0.1、fallback_count=23、invalid_decision_count=23，且 status_reasons 为 invalid_decisions=23 > 10。",
+    "同一评测摘要中，guard-base 在 game0 出现两次 participant_error，报错都是“target_id 必须是 target_ids 中的一项”，attempted_action 均为 guard_protect p9，最终被 fallback 为 pass。",
+    "game3 也出现三次同类 participant_error：guard_protect 先指向 p4，再两次指向 p5，均被判定为非法目标并回退。",
+    "random_game_replay 中，第 3、4 夜守卫阶段都记录了 RUNNER_ERROR / FALLBACK_ACTION，说明模型持续给出当前阶段不允许的守护目标，而不是偶发一次。",
+    "current_agent.py 的 observe() 明确丢弃 sync_packet，不维护跨行动状态；这与守卫需要记住上一晚保护对象、避免连守的需求直接冲突。",
+    "最新快照里公开/审计状态包含 role_state.last_protected_id=p1，但当前基线并未利用这类状态来约束后续守护决策。",
+    "评测中大多数失败不是游戏策略输赢，而是 schema/合法性错误导致的行动回退，说明主要瓶颈在决策约束层而非战术层。"
+  ],
+  "root_causes": [
+    "守卫决策没有稳定利用“上一晚保护对象”这一必须约束，导致连续夜晚重复选择被规则禁止的目标。",
+    "Task-Agent 的 observe() 是空实现，跨回合不保留可用于守卫的最小状态，模型每回合都像从零开始。",
+    "当前实现依赖模型自己从长 prompt 中理解 allowed_actions，但没有在代码层做 guard_protect 的专门合法性修复，系统性错误会连续重试后仍失败。",
+    "错误反馈只说“上一次行动未通过校验”，信息过于抽象，未把当前合法 target_ids、上一轮守护对象、可自守/不可连守等关键约束显式喂给模型。",
+    "该节点缺少针对守卫角色的确定性兜底逻辑：当模型给出非法 target 时，没有自动改写为当前合法且优先级最高的目标，因此直接浪费行动。",
+    "白天发言部分虽然能运行，但没有形成可用于后续夜守的结构化信息沉淀，整体上策略与状态脱节。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 TaskAgent 中增加最小状态缓存，例如 last_protected_id、last_night_round、last_public_confirmed_guard_target；在 observe() 或 decide() 前从 turn_packet / private_information / public_state.role_state 中提取并更新这些字段。",
+      "rationale": "守卫是否可连守、上一晚守了谁，是后续合法性判断的核心。当前完全不保留状态，导致模型反复踩中禁选目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 guard 专用的目标选择后处理：当 action.kind == 'guard_protect' 时，先检查 target_id 是否在 allowed_actions 的 target_ids 中；若不在，则不直接报错，而是从合法候选中按确定性规则自动改写为一个合法目标（优先避免 last_protected_id，其次按存活/关键身份/座位顺序选取）。",
+      "rationale": "把“模型偶尔犯错”从致命错误变为可修复错误，直接降低 invalid_decision_count 和 fallback_count。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _system_prompt 或 _turn_instruction 中为 guard 注入更短、更明确的约束摘要：必须读取并尊重上一次守护对象；若当前 target_ids 不包含原目标，必须改选合法目标；不要把“守护成功”当成确认事实。",
+      "rationale": "现有提示过于通用，模型容易忽略守卫特有的合法性约束。把关键约束前置能减少重复非法输出。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 decision_error 的反馈改成更具可操作性：在 guard_protect 非法时，反馈中直接包含当前合法 target_ids、last_protected_id、以及“请从合法候选中重选，不要再次给出 p9 这类非法目标”的具体信息。",
+      "rationale": "当前反馈过于抽象，模型重试时缺少纠错方向；具体化反馈能提高第二、第三次尝试的修正率。"
+    },
+    {
+      "file": "task.md",
+      "change": "补一段守卫最小任务的执行规则：优先选择关键生存目标；严禁连守同一人；若当前包给出的合法目标与预期冲突，以合法性优先；没有可靠目标时选择当前合法且最有价值的生存目标，而不是随机或沿用旧目标。",
+      "rationale": "task.md 是角色行为的高层约束文档，应和代码里的合法性修复逻辑一致，避免提示与实现分裂。"
+    }
+  ],
+  "risks": [
+    "自动修复非法 target 可能掩盖模型自身的推理问题，短期提升合法率但不一定完全提升胜率。",
+    "如果 private_information 或 role_state 的实际字段结构与预期不一致，状态提取代码可能需要多做兼容分支。",
+    "过于固定的合法目标兜底规则可能在少数局面里选到次优保护对象，导致策略变保守。",
+    "如果 prompt 中把守卫约束写得过长，可能挤占 12000 字符预算，影响其他角色信息的可见性。"
+  ],
+  "code_agent_brief": "请只改 task_agent.py 和必要的 task.md，不要动引擎或 schema。目标是把 guard-base 从“会运行但经常提交非法守护目标”升级为“能记住上一晚守护对象、稳定输出合法 guard_protect、并在模型出错时自动修复”。核心实现点：1) 保留并更新 last_protected_id 等最小状态；2) 对 guard_protect 做本地合法性修复，若 target_id 不在当前 target_ids 中，自动改选一个合法目标；3) 在 system/turn prompt 中显式强调禁止连守和必须使用合法 target_ids；4) 将校验失败反馈改得更具体。验收标准是显著降低 participant_error / fallback_count，尤其消灭“target_id 必须是 target_ids 中的一项”这类重复错误。"
+}

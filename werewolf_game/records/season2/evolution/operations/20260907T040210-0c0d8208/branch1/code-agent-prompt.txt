@@ -1,0 +1,53 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00027 的主要问题不是行动合法性，而是“查验信息→公共压力→投票收益”的转化链仍然不够结构化。评测里它 20 局只赢 7 局，且 focus-role 没有明显 schema 崩坏；回放显示预言家拿到连续好人查验后，公开发言仍偏分散，没能稳定压住对跳与票型，最终好人线在第 6 轮前后失去节奏并输局。下一代 Task-Agent 应该优先补齐结构化记忆、结果归一化、对跳/票型时间线和高压短发言模板。",
+  "evidence": [
+    "read_evaluation_summary 显示 seer-n00027：20 局全完成，win_count=7、loss_count=13、win_rate=0.35；focus_role_only 口径下没有显著 invalid_decision 作为主因，说明主要短板在决策质量而不是 schema 合法性。",
+    "随机回放中，p6 作为预言家在第 1、2、3 夜分别验到 p3、p2、p12 均为好人，但公开发言并没有把这些结果转成持续的公共压力点；尤其在第 2 天游说中，虽然说出了事实，但随后被 p3/p5/p7/p11 的对跳和反压带偏，未形成稳定证据链。",
+    "回放里 p6 在第 2 天游明确说过“事实：我验p3、p2均为好人”，但后续发言仍出现多目标、解释型、非压票式展开；第 3 天游虽继续报出 p12=好人，但当晚就被狼队集火击杀，说明其信息未转化为足够强的生存优势。",
+    "当前 task_agent.py 的 SeerMemory 只保存 inspected、declared_claims、challenged_players、recent_vote_summary 等粗粒度摘要，没有 claim_timeline、vote_timeline、pressure_targets、self_risk_mode 这种可驱动决策的结构化状态。",
+    "当前代码的 _inspection_result_text 只把 'wolf' 和少数 villager 同义词标准化为内部结果，但回放里的查验结果字段是 team='village'；这会让后续的冲突检测、查杀/金水对照和事实摘要失去标准化基础。",
+    "read_other_branch 显示 sibling n00051 已开始补 claim_timeline、vote_timeline、pressure_targets、self_risk_mode 和更固定的发言骨架，这与当前节点的瓶颈高度一致，说明改造方向已经被部分分支验证。"
+  ],
+  "root_causes": [
+    "结果归一化不完整：查验返回里的 team='village' 没有稳定映射到内部可推理标签，导致查验结果无法可靠参与矛盾判断与发言摘要。",
+    "记忆结构偏摘要而非状态机：只记“谁说过什么”，没记“谁先说、谁后对跳、哪条票型何时形成、当前谁是主要压力目标”，因此难以把查验事实固化成证据链。",
+    "发言约束仍偏软：_turn_instruction 区分了不同模式，但没有强制模型按固定骨架输出，遇到高压局面时容易变成解释型、多目标、非压票式表达。",
+    "夜验目标选择只看静态启发式：当前 _rank_inspect_targets 主要依据 sheriff、对跳、公开声明和发言密度，缺少“未解决对跳链”“已验证矛盾”“下一日最可能形成票型优势”这些结构化信号。",
+    "自保模式缺失：当预言家成为主要票口或公开压力上升时，代码没有独立的短发言/自保模板，容易在对跳局里把信息优势说散。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增统一的查验结果标准化函数，把 team='village'、'villager'、'好人' 等统一映射为内部 villager，把 wolf/werewolf/狼 等统一映射为 wolf；在 _update_inspection_records、_seer_facts_summary、_claim_conflicts_with_known_inspection 中全部改用标准化结果。",
+      "rationale": "先修正事实层表示，确保查验结果能稳定进入后续冲突检测、摘要和投票逻辑。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展 SeerMemory，加入 claim_timeline、vote_timeline、pressure_targets、self_risk_mode 和 inspection_map 这类结构化字段，并在 _update_claims_from_dialogue、_update_claims_and_challenges_from_packet、_summarize_vote_info 中记录轮次、先后顺序、票向和首次出现时间。",
+      "rationale": "让 Task-Agent 具备“可回看”的时间线状态，而不是只有碎片化文本摘要。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _build_seer_brief 与 _turn_instruction：为 night_inspect、sheriff_election_speech、day_speech、vote、self_risk 五种模式生成固定骨架，强制输出顺序为“1 个事实 + 1 个主要矛盾 + 1 个明确票向/自保位”；高压时自动切换短模板。",
+      "rationale": "把“事实先行、单点施压、可验证落票”从建议变成硬约束，减少多目标发散和逻辑打架。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 _rank_inspect_targets：把未解决对跳链、近期公共矛盾、票型领投者、警长链关键位作为优先项；对已被查验、已被稳定保真、或信息增益已耗尽的对象降权，并输出可解释的 target_reasons。",
+      "rationale": "让夜验服务于次日的公共压力和归票，而不是只服务静态标签排序。"
+    }
+  ],
+  "risks": [
+    "过度结构化可能让发言更像模板，降低在复杂局面的自然性与欺骗适配性。",
+    "更强的对跳/票型优先级如果实现过激，可能在前期把有限查验浪费在“看起来热闹但未必高收益”的目标上。",
+    "记忆字段增加后，如果摘要和时间线同步不严密，反而可能把旧信息错误地当成最新状态，造成错误归票。",
+    "高压短模板若过于简化，可能在某些局面下丢失足够的解释力度，导致好人不愿跟票。"
+  ],
+  "code_agent_brief": "请只修改 task_agent.py，目标是把 seer-n00027 升级成“结构化证据驱动”的下一代 Task-Agent，不要改 Game Engine、规则、schema 或工具实现。必须完成三件事：1) 统一标准化查验结果，确保 team='village' 能进入内部 villager 逻辑；2) 扩展 SeerMemory 为时间线/状态机型记忆，至少加入 claim_timeline、vote_timeline、pressure_targets、self_risk_mode、inspection_map，并在现有 ingest 路径里写入；3) 把 _build_seer_brief 和 _turn_instruction 改成按模式输出固定骨架，尤其在 day_speech/vote/self_risk 时强制“事实→矛盾→票向/自保”的短模板。同时把 _rank_inspect_targets 改成优先未解决对跳链、公共矛盾和票型关键位，并输出 reasons 供发言引用。要求改动最小、保持现有 TaskAgent 接口不变、通过语法检查，并尽量复用当前工具与记忆框架。"
+}

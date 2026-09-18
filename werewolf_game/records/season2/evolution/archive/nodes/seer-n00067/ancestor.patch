@@ -1,0 +1,466 @@
+--- seer-n00025/task_agent.py
++++ seer-n00067/task_agent.py
+@@ -311,7 +311,11 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            if mode == "night_inspect":
++                action = self._apply_inspect_target_bias(action, turn_packet["request"], seer_brief)
+             error = decision_error(action, turn_packet["request"])
++            if error is None:
++                error = self._strategy_error(action, turn_packet["request"], mode, seer_brief)
+             if error is None:
+                 return action
+             if _attempt >= self.max_decision_retries:
+@@ -396,17 +400,25 @@
+             )
+         if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
+             pieces.append(
+-                "风险发言模式：只输出 1 个已知事实 + 1 个可验证投票方向；不要一次性摊开全部查验、全部名单或完整推理链。"
+-            )
++                "风险发言模式：只压缩推理，不压缩查验链；优先简短报出查杀、仍存活金水和今日归票，不要漏掉已知事实。"
++            )
++        public_plan = seer_brief.get("public_plan") if isinstance(seer_brief, Mapping) else None
++        if isinstance(public_plan, Mapping):
++            if public_plan.get("must_announce"):
++                pieces.append("查验链：" + "；".join(str(item) for item in public_plan["must_announce"]))
++            if public_plan.get("protected_targets"):
++                pieces.append("今日保护：" + "、".join(str(item) for item in public_plan["protected_targets"]))
++            if public_plan.get("vote_target_from_inspection"):
++                pieces.append("归票优先：" + "、".join(str(item) for item in public_plan["vote_target_from_inspection"]))
+         if seer_brief.get("facts"):
+             facts = seer_brief["facts"]
+-            if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
+-                facts = facts[:1]
+-            pieces.append("事实摘要：" + ";".join(facts))
++            pieces.append("事实摘要：" + "；".join(facts))
+         if seer_brief.get("pressure_points"):
+-            pieces.append("当前压力点：" + ";".join(seer_brief["pressure_points"]))
++            pieces.append("当前压力点：" + "；".join(seer_brief["pressure_points"]))
+         if seer_brief.get("self_risk"):
+             pieces.append("自保判断：" + str(seer_brief["self_risk"]))
++        if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
++            pieces.append("风险模式只压缩推理，不压缩查验链；有查杀要先报查杀，有仍存活金水要重申保护。")
+         if feedback:
+             pieces.append(f"上一次输出未通过校验：{feedback}")
+         pieces.append("最终回答只能是符合契约的 JSON 对象。")
+@@ -528,16 +540,21 @@
+                 packet,
+                 (
+                     ("public_state", "sheriff_candidates"),
++                    ("public_state", "sheriff", "candidate_ids"),
++                    ("public_state", "candidate_ids"),
+                     ("public_state", "candidates"),
+                     ("public_state", "election_candidates"),
+                     ("game", "sheriff_candidates"),
+                     ("sheriff_candidates",),
++                    ("candidate_ids",),
+                     ("candidates",),
+                 ),
+             )
+         )
+         if sheriff_candidates:
+-            self._seer_memory.sheriff_candidates = sheriff_candidates
++            self._seer_memory.sheriff_candidates = self._unique_stable(
++                list(self._seer_memory.sheriff_candidates) + sheriff_candidates
++            )
+ 
+         vote_summary, vote_detail = self._summarize_vote_info(packet)
+         if vote_summary:
+@@ -738,32 +755,56 @@
+         return text
+ 
+     def _summarize_vote_info(self, packet: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+-        vote_value = self._first_present(
+-            packet,
+-            (
+-                ("public_state", "votes"),
+-                ("public_state", "vote"),
+-                ("public_state", "vote_result"),
+-                ("public_state", "day_vote"),
+-                ("public_state", "election_vote"),
+-                ("game", "votes"),
+-                ("votes",),
+-                ("vote_result",),
+-            ),
+-        )
+-        if vote_value is None:
++        vote_values: list[Any] = []
++        for path in (
++            ("public_state", "votes"),
++            ("public_state", "vote"),
++            ("public_state", "vote_result"),
++            ("public_state", "day_vote"),
++            ("public_state", "election_vote"),
++            ("game", "votes"),
++            ("votes",),
++            ("vote_result",),
++        ):
++            value = self._first_present(packet, (path,))
++            if value is not None:
++                vote_values.append(value)
++        for path in (("public_state", "events"), ("public_state", "event_log"), ("events",), ("event_log",), ("log",), ("history",)):
++            value = self._first_present(packet, (path,))
++            extracted = self._extract_vote_payloads(value)
++            if extracted:
++                vote_values.extend(extracted)
++        if not vote_values:
+             return "", {}
+-        detail = self._compact_value(vote_value, max_depth=2)
+-        summary = self._vote_summary_text(vote_value)
+-        return summary, detail if isinstance(detail, dict) else {"vote": detail}
++        summary_parts: list[str] = []
++        detail_parts: list[Any] = []
++        for value in vote_values[:_SUMMARY_LIST_LIMIT]:
++            summary = self._vote_summary_text(value)
++            if summary:
++                summary_parts.append(summary)
++            detail_parts.append(self._compact_value(value, max_depth=2))
++        summary_text = "；".join(part for part in summary_parts if part)
++        if not detail_parts:
++            return summary_text, {}
++        if len(detail_parts) == 1 and isinstance(detail_parts[0], dict):
++            return summary_text, detail_parts[0]
++        return summary_text, {"votes": detail_parts}
+ 
+     def _vote_summary_text(self, value: Any) -> str:
+         if isinstance(value, Mapping):
++            voter = self._extract_single_player_id(
++                value.get("voter") or value.get("from") or value.get("player_id") or value.get("source") or value.get("speaker")
++            )
+             target = self._extract_single_player_id(
+-                value.get("target") or value.get("target_id") or value.get("lynch") or value.get("eliminate")
+-            )
++                value.get("target") or value.get("target_id") or value.get("lynch") or value.get("eliminate") or value.get("to")
++            )
++            kind = self._stringify(value.get("kind") or value.get("type") or value.get("event_type")).lower()
+             counts = value.get("counts") or value.get("votes") or value.get("detail")
+             counts_text = self._vote_summary_text(counts)
++            if voter and target:
++                return f"{voter}->{target}"
++            if kind and target:
++                return f"{kind}:{target}"
+             if target and counts_text:
+                 return f"{target} | {counts_text}"
+             if target:
+@@ -772,7 +813,7 @@
+                 return counts_text
+             items = []
+             for key, nested in value.items():
+-                if key in {"round", "day", "phase"}:
++                if key in {"round", "day", "phase", "kind", "type", "event_type"}:
+                     continue
+                 ids = self._extract_player_ids(nested)
+                 if ids:
+@@ -781,16 +822,21 @@
+                     text = self._truncate_text(self._stringify(nested), 60)
+                     if text:
+                         items.append(f"{key}:{text}")
+-            return "；".join(items[:_SUMMARY_LIST_LIMIT])
++            return ";".join(items[:_SUMMARY_LIST_LIMIT])
+         if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+             items = []
+             for item in list(value)[:_SUMMARY_LIST_LIMIT]:
++                if isinstance(item, Mapping):
++                    summary = self._vote_summary_text(item)
++                    if summary:
++                        items.append(summary)
++                        continue
+                 ids = self._extract_player_ids(item)
+                 if ids:
+                     items.append("、".join(ids[:3]))
+                 else:
+                     items.append(self._truncate_text(self._stringify(item), 60))
+-            return "；".join(item for item in items if item)
++            return ";".join(item for item in items if item)
+         return self._truncate_text(self._stringify(value), 80)
+ 
+     def _extract_dialogue_digest(self, packet: Mapping[str, Any]) -> list[str]:
+@@ -809,15 +855,16 @@
+     def _summarize_dialogue(self, dialogue: Any) -> list[str]:
+         if not dialogue:
+             return []
+-        items: list[str] = []
+         if isinstance(dialogue, Mapping):
+             dialogue = [dialogue]
+         if not isinstance(dialogue, Sequence) or isinstance(dialogue, (str, bytes, bytearray)):
+             text = self._truncate_text(self._stringify(dialogue), _CURRENT_DIALOGUE_TEXT_LIMIT)
+             return [text] if text else []
+-        for item in dialogue:
+-            if len(items) >= _CURRENT_DIALOGUE_ITEM_LIMIT:
+-                break
++
++        scored_items: list[tuple[int, int, str]] = []
++        recent_start = max(0, len(dialogue) - 4)
++        keyword_tokens = ("预言家", "查验", "查杀", "金水", "对跳", "归票", "投票", "质疑", "警长", "验过", "验了")
++        for index, item in enumerate(dialogue):
+             if isinstance(item, Mapping):
+                 speaker = self._extract_single_player_id(
+                     item.get("speaker") or item.get("player_id") or item.get("id") or item.get("from")
+@@ -835,11 +882,31 @@
+             text = self._truncate_text(text.strip(), _CURRENT_DIALOGUE_TEXT_LIMIT)
+             if not text:
+                 continue
+-            if speaker:
+-                items.append(f"{speaker}:{text}")
+-            else:
+-                items.append(text)
+-        return items
++            line = f"{speaker}:{text}" if speaker else text
++            score = 0
++            if speaker == self.player_id:
++                score += 50
++            if any(token in text for token in keyword_tokens):
++                score += 30
++            if index >= recent_start:
++                score += 10
++            if any(token in text for token in ("查杀", "金水", "对跳", "归票", "投票")):
++                score += 10
++            scored_items.append((score, index, line))
++
++        if not scored_items:
++            return []
++        picked: list[tuple[int, str]] = []
++        seen: set[str] = set()
++        for score, index, line in sorted(scored_items, key=lambda item: (-item[0], item[1])):
++            if line in seen:
++                continue
++            seen.add(line)
++            picked.append((index, line))
++            if len(picked) >= _CURRENT_DIALOGUE_ITEM_LIMIT:
++                break
++        picked.sort(key=lambda item: item[0])
++        return [line for _, line in picked]
+ 
+     def _current_round_dialogue_tool_result(
+         self, turn_packet: Mapping[str, Any], current_dialogue: Any
+@@ -1006,6 +1073,157 @@
+             return "villager"
+         return text
+ 
++    def _format_inspection_fact(self, round_no: str, target: str, result: str) -> str:
++        label = "查杀" if result == "wolf" else "金水" if result == "villager" else result
++        prefix = f"{round_no}轮" if round_no else "查验"
++        return f"{prefix}{target}={label}"
++
++    def _build_public_plan(
++        self, turn_packet: Mapping[str, Any], mode: str, allowed_targets: Sequence[str]
++    ) -> dict[str, Any]:
++        alive = set(
++            self._seer_memory.alive
++            or self._extract_player_ids(
++                self._first_present(
++                    turn_packet,
++                    (("public_state", "alive"), ("public_state", "alive_players"), ("public_state", "survivors")),
++                )
++            )
++        )
++        allowed_target_set = set(self._unique_stable([str(target) for target in allowed_targets if str(target)]))
++        known_wolves: list[dict[str, str]] = []
++        confirmed_villagers: list[dict[str, str]] = []
++        for item in self._seer_memory.inspected:
++            if not isinstance(item, Mapping):
++                continue
++            round_no = self._stringify(item.get("round"))
++            target = self._stringify(item.get("target"))
++            result = self._inspection_result_text(item.get("result"))
++            if not target or result not in {"wolf", "villager"}:
++                continue
++            entry = {"round": round_no, "player_id": target, "result": result}
++            if result == "wolf":
++                known_wolves.append(entry)
++            else:
++                confirmed_villagers.append(entry)
++
++        living_known_wolves = [item["player_id"] for item in known_wolves if item["player_id"] in alive]
++        living_confirmed_villagers = [item["player_id"] for item in confirmed_villagers if item["player_id"] in alive]
++        must_announce: list[str] = []
++        if known_wolves:
++            must_announce = [
++                self._format_inspection_fact(item.get("round", ""), item["player_id"], "wolf")
++                for item in known_wolves
++            ]
++        elif living_confirmed_villagers:
++            must_announce = [
++                self._format_inspection_fact(item.get("round", ""), item["player_id"], "villager")
++                for item in confirmed_villagers
++                if item["player_id"] in alive
++            ]
++        vote_target_from_inspection = [
++            player_id for player_id in living_known_wolves if not allowed_target_set or player_id in allowed_target_set
++        ]
++        self_preservation_emergency = bool(
++            self._self_is_under_pressure(turn_packet)
++            and not vote_target_from_inspection
++            and mode in {"sheriff_election_speech", "day_speech", "vote", "general"}
++        )
++        return {
++            "known_wolves": known_wolves,
++            "confirmed_villagers": confirmed_villagers,
++            "living_confirmed_villagers": living_confirmed_villagers,
++            "must_announce": must_announce,
++            "protected_targets": living_confirmed_villagers,
++            "vote_target_from_inspection": vote_target_from_inspection,
++            "self_preservation_emergency": self_preservation_emergency,
++        }
++
++    def _extract_vote_payloads(self, value: Any) -> list[Any]:
++        payloads: list[Any] = []
++        seen: set[str] = set()
++
++        def push(item: Any) -> None:
++            try:
++                key = json.dumps(item, ensure_ascii=False, separators=(",", ":"), default=str)
++            except TypeError:
++                key = self._stringify(item)
++            if key in seen:
++                return
++            seen.add(key)
++            payloads.append(item)
++
++        def walk(node: Any) -> None:
++            if node is None:
++                return
++            if isinstance(node, Mapping):
++                kind = self._stringify(node.get("kind") or node.get("type") or node.get("event_type")).lower()
++                if kind and any(token in kind for token in ("vote", "ballot", "lynch", "elect")):
++                    push(node)
++                elif any(key in node for key in ("voter", "target", "target_id", "vote", "votes")):
++                    push(node)
++                for nested in node.values():
++                    walk(nested)
++                return
++            if isinstance(node, Sequence) and not isinstance(node, (str, bytes, bytearray)):
++                for item in node:
++                    walk(item)
++
++        walk(value)
++        return payloads
++
++    def _strategy_error(
++        self,
++        action: dict[str, Any],
++        request: Mapping[str, Any],
++        mode: str,
++        seer_brief: Mapping[str, Any],
++    ) -> str | None:
++        action_kind = str(action.get("kind") or "").lower()
++        public_plan = seer_brief.get("public_plan") if isinstance(seer_brief, Mapping) else None
++        if not isinstance(public_plan, Mapping):
++            public_plan = {}
++        allowed_targets = self._allowed_target_ids(request.get("allowed_actions") if isinstance(request, Mapping) else None)
++        if mode in {"sheriff_election_speech", "day_speech"} and action_kind == "pass":
++            has_facts = bool(seer_brief.get("facts")) or bool(public_plan.get("must_announce"))
++            self_is_candidate = self.player_id in self._seer_memory.sheriff_candidates or self.player_id == self._seer_memory.sheriff_id
++            if has_facts or self_is_candidate:
++                return "预言家有查验事实或竞选身份时不能跳过发言，必须用最短格式报验人"
++        if self._kind_looks_like_vote(action_kind):
++            target_id = self._stringify(action.get("target_id"))
++            living_confirmed_villagers = set(self._stringify(item) for item in public_plan.get("living_confirmed_villagers", []))
++            living_known_wolves = [self._stringify(item) for item in public_plan.get("vote_target_from_inspection", [])]
++            if target_id and target_id in living_confirmed_villagers and not public_plan.get("self_preservation_emergency"):
++                return "不能把票投给已验且仍存活的好人，除非公共计划标记为自保紧急"
++            if living_known_wolves and any(target in allowed_targets for target in living_known_wolves):
++                if target_id not in living_known_wolves:
++                    return "已验狼在可投范围内时，投票必须指向已验狼"
++        return None
++
++    def _apply_inspect_target_bias(
++        self, action: dict[str, Any], request: Mapping[str, Any], seer_brief: Mapping[str, Any]
++    ) -> dict[str, Any]:
++        action_kind = str(action.get("kind") or "").lower()
++        if not self._kind_looks_like_inspect(action_kind):
++            return action
++        preferred_targets = [self._stringify(item) for item in seer_brief.get("preferred_targets", []) if self._stringify(item)]
++        if not preferred_targets:
++            return action
++        allowed_targets = self._allowed_target_ids(request.get("allowed_actions") if isinstance(request, Mapping) else None)
++        preferred_targets = [target for target in preferred_targets if not allowed_targets or target in allowed_targets]
++        if not preferred_targets:
++            return action
++        current_target = self._stringify(action.get("target_id"))
++        if current_target == preferred_targets[0]:
++            return action
++        reasons = [self._stringify(item) for item in seer_brief.get("target_reasons", [])]
++        top_reason = reasons[0] if reasons else ""
++        if any(token in top_reason for token in ("警长/候选", "对跳/质疑焦点", "公开身份声明", "近期票型关键位")):
++            biased = dict(action)
++            biased["target_id"] = preferred_targets[0]
++            return biased
++        return action
++
+     def _build_seer_brief(self, turn_packet: Mapping[str, Any], mode: str) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+         allowed_actions = request.get("allowed_actions") if isinstance(request, Mapping) else None
+@@ -1016,10 +1234,12 @@
+         pressure_points = self._pressure_points_summary(turn_packet)
+         self_risk = self._self_risk_summary(turn_packet)
+         risk_mode = self._risk_mode_summary(turn_packet, mode, self_risk)
++        public_plan = self._build_public_plan(turn_packet, mode, target_candidates)
+         brief: dict[str, Any] = {
+             "mode": mode,
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+             "facts": facts,
++            "public_plan": public_plan,
+             "pressure_points": pressure_points,
+             "self_risk": self_risk,
+             "risk_mode": risk_mode,
+@@ -1080,19 +1300,27 @@
+         return "常规风险：优先保留信息优势，不要过度展开。"
+ 
+     def _self_is_under_pressure(self, turn_packet: Mapping[str, Any]) -> bool:
+-        phase = self._extract_phase(turn_packet).lower()
+-        channel = str((turn_packet.get("request") or {}).get("channel") or "").lower()
+-        pressure_tokens = ("elect", "sheriff", "竞选", "警长")
+-        election_context = any(token in phase for token in pressure_tokens) or any(token in channel for token in pressure_tokens)
+         self_seen = self.player_id in self._seer_memory.challenged_players
+         exposed_claims = len(self._seer_memory.declared_claims) >= 4
+-        return self_seen or election_context or exposed_claims
++        return self_seen or exposed_claims
+ 
+     def _risk_mode_summary(
+         self, turn_packet: Mapping[str, Any], mode: str, self_risk: str
+     ) -> dict[str, Any]:
+         under_pressure = self._self_is_under_pressure(turn_packet)
++        phase = self._extract_phase(turn_packet).lower()
++        channel = str((turn_packet.get("request") or {}).get("channel") or "").lower()
++        election_context = any(token in phase for token in ("elect", "sheriff", "竞选", "警长")) or any(
++            token in channel for token in ("elect", "sheriff", "竞选", "警长")
++        )
+         if not under_pressure:
++            if election_context:
++                return {
++                    "active": False,
++                    "level": "medium",
++                    "mode": mode,
++                    "rule": "竞选期允许完整报首验和警徽流；只压缩推理，不压缩查验链。",
++                }
+             return {
+                 "active": False,
+                 "level": "normal",
+@@ -1104,14 +1332,14 @@
+                 "active": True,
+                 "level": "high",
+                 "mode": mode,
+-                "rule": "只说 1 个已知事实 + 1 个可验证投票方向；不要一次性公开全部查验。",
++                "rule": "只压缩推理，不压缩查验链；有查杀先报查杀，存活金水要重申保护。",
+                 "self_risk": self_risk,
+             }
+         return {
+             "active": True,
+             "level": "medium",
+             "mode": mode,
+-            "rule": "保持发言克制，优先用最小事实集推动投票。",
++            "rule": "保持发言克制，但不要漏报已知查杀或仍存活金水。",
+             "self_risk": self_risk,
+         }
+ 
+--- seer-n00025/task.md
++++ seer-n00067/task.md
+@@ -31,4 +31,6 @@
+ - 不要编造没有收到的查验结果。
+ - 不要忽视生存风险；必要时先短发言、后补证据。
+ - 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先短发言并只释放足够推动投票的最小事实集，而不是一次性展开全部查验。
++- 参选预言家且已有首验时，不得退水或跳过发言；最短模板也要包含“身份 + 查验链 + 今日保护/归票”。
++- 风险模式只压缩推理，不压缩查杀或仍存活金水；夜验优先未验的警上候选、对跳者和压金水的人。
+ - 预言家的价值在于把真信息变成公共压力，而不是单纯报身份。

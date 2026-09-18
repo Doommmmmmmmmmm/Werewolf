@@ -1,0 +1,367 @@
+--- villager-n00028/task_agent.py
++++ villager-n00054/task_agent.py
+@@ -1,7 +1,7 @@
+ """最小可运行的角色 Task-Agent。
+ 
+ 每次行动从一个新的模型会话开始。模型默认只收到当前状态；本轮对话只能通过唯一的
+-受限工具按需读取。这里不包含策略进化、长期记忆、外部检索或其他 Harness。
++受限工具按需读取。这里不包含策略进化、跨局长期记忆、外部检索或其他 Harness。
+ """
+ 
+ from __future__ import annotations
+@@ -305,49 +305,196 @@
+     return targets
+ 
+ 
++def _rank_candidate_labels(value: Any, *, limit: int = 2) -> list[str]:
++    ranked: list[tuple[str, int, int]] = []
++    if isinstance(value, Mapping):
++        for index, (key, item) in enumerate(value.items()):
++            label = _player_label(key) or str(key).strip()
++            if not label:
++                continue
++            score: int | None = None
++            if isinstance(item, bool):
++                score = 1 if item else 0
++            elif isinstance(item, (int, float)):
++                score = int(item)
++            elif isinstance(item, Mapping):
++                numeric_values = [
++                    int(sub_item)
++                    for sub_item in item.values()
++                    if isinstance(sub_item, (int, float)) and not isinstance(sub_item, bool)
++                ]
++                if numeric_values:
++                    score = max(numeric_values)
++            elif isinstance(item, (list, tuple, set)):
++                score = len(item)
++            if score is not None:
++                ranked.append((label, score, index))
++        return [label for label, _, _ in sorted(ranked, key=lambda item: (-item[1], item[2], item[0]))[:limit]]
++    if isinstance(value, (list, tuple, set)):
++        labels: list[str] = []
++        for item in value:
++            if len(labels) >= limit:
++                break
++            if isinstance(item, Mapping):
++                target = (
++                    item.get("target_id")
++                    or item.get("targetId")
++                    or item.get("target")
++                    or item.get("vote_target")
++                    or item.get("player_id")
++                    or item.get("playerId")
++                    or item.get("id")
++                )
++                label = _player_label(target) or _player_label(item)
++            else:
++                label = _player_label(item)
++            if label and label not in labels:
++                labels.append(label)
++        return labels[:limit]
++    label = _player_label(value)
++    return [label] if label else []
++
++
++def _derive_local_memory(sync_packet: Mapping[str, Any] | Any) -> dict[str, str]:
++    public_state = sync_packet.get("public_state") if isinstance(sync_packet, Mapping) else sync_packet
++    source = public_state if isinstance(public_state, Mapping) else sync_packet
++    memory: dict[str, str] = {}
++
++    round_values = _search_public_values(sync_packet, ("round", "turn", "day", "phase"), max_results=1)
++    if round_values:
++        text = _format_compact_value(round_values[0], limit=2)
++        if _is_meaningful_compact_text(text):
++            memory["round"] = text
++
++    alive_values = _search_public_values(source, ("alive_players", "living_players", "survivors", "live_players", "living"), max_results=1)
++    if alive_values:
++        text = _format_compact_value(alive_values[0], limit=8)
++        if _is_meaningful_compact_text(text):
++            memory["alive"] = text
++
++    dead_values = _search_public_values(source, ("dead_players", "eliminated_players", "dead", "graveyard", "death_list"), max_results=1)
++    if dead_values:
++        text = _format_compact_value(dead_values[0], limit=8)
++        if _is_meaningful_compact_text(text):
++            memory["dead"] = text
++
++    sheriff_values = _search_public_values(source, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=1)
++    if sheriff_values:
++        text = _format_compact_value(sheriff_values[0], limit=4)
++        if _is_meaningful_compact_text(text):
++            memory["sheriff"] = text
++
++    vote_values = _search_public_values(source, ("vote_history", "votes", "ballots", "vote_matrix", "voting"), max_results=1)
++    vote_text = ""
++    if vote_values:
++        vote_text = _format_vote_snapshot(vote_values[0])
++        if _is_meaningful_compact_text(vote_text):
++            memory["vote"] = vote_text
++        suspects = _rank_candidate_labels(vote_values[0], limit=2)
++        if suspects:
++            memory["suspects"] = " > ".join(suspects)
++
++    if not memory.get("suspects"):
++        suspect_values = _search_public_values(source, ("suspects", "suspect", "suspected", "pressure_target", "main_target", "wolf_candidate", "wolf_candidates", "priority_target", "focus_target"), max_results=1)
++        if suspect_values:
++            text = _format_compact_value(suspect_values[0], limit=4)
++            if _is_meaningful_compact_text(text):
++                memory["suspects"] = text
++
++    claim_values = _search_public_values(source, ("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks", "self_reports", "reports"), max_results=1)
++    conflict_values = _search_public_values(source, ("conflict", "conflicts", "contradiction", "contradictions", "inconsistency", "inconsistencies", "mismatch", "mismatches", "dispute", "problem", "warning", "suspicion", "suspicions"), max_results=1)
++    conflict_bits: list[str] = []
++    if conflict_values:
++        text = _format_compact_value(conflict_values[0], limit=4)
++        if _is_meaningful_compact_text(text):
++            conflict_bits.append(text)
++    claim_text = _format_compact_value(claim_values[0], limit=4) if claim_values else ""
++    if _is_meaningful_compact_text(claim_text) and _is_meaningful_compact_text(vote_text):
++        conflict_bits.append("自报/查验与票型交叉核对")
++    if _is_meaningful_compact_text(claim_text) and _is_meaningful_compact_text(memory.get("sheriff", "")):
++        conflict_bits.append("警徽链/原话交叉核对")
++    if conflict_bits:
++        memory["conflicts"] = "；".join(list(dict.fromkeys(conflict_bits))[:2])
++
++    return memory
++
++
++def _format_local_memory_brief(memory: Mapping[str, str]) -> str:
++    if not memory:
++        return ""
++    label_pairs = (
++        ("round", "轮次"),
++        ("alive", "存活"),
++        ("dead", "已死"),
++        ("sheriff", "警徽"),
++        ("vote", "票型"),
++        ("suspects", "嫌疑"),
++        ("conflicts", "冲突"),
++    )
++    parts = []
++    for key, label in label_pairs:
++        text = str(memory.get(key, "")).strip()
++        if _is_meaningful_compact_text(text):
++            parts.append(f"{label}:{text}")
++    return f"【局内记忆】{';'.join(parts)}。" if parts else ""
++
++
+ def render_public_state_brief(public_state: Any, request: Mapping[str, Any]) -> str:
+     phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "unknown")
+-    lines = [f"【当前公开态势】阶段：{phase}。"]
+-
++    lines = [f"【公开态势】阶段：{phase}。"]
++
++    system_bits: list[str] = []
+     alive_count = _extract_first_public_count(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living"))
+     if alive_count is not None:
+-        lines.append(f"存活人数：{alive_count}。")
++        system_bits.append(f"存活人数：{alive_count}")
+ 
+     alive_values = _search_public_values(public_state, ("alive_players", "living_players", "survivors", "live_players", "living"), max_results=1)
+     if alive_values:
+         text = _format_compact_value(alive_values[0], limit=8)
+         if _is_meaningful_compact_text(text):
+-            lines.append(f"存活名单：{text}。")
++            system_bits.append(f"存活：{text}")
+ 
+     dead_values = _search_public_values(public_state, ("dead_players", "eliminated_players", "dead", "graveyard", "death_list"), max_results=1)
+     if dead_values:
+         text = _format_compact_value(dead_values[0], limit=8)
+         if _is_meaningful_compact_text(text):
+-            lines.append(f"已死名单：{text}。")
+-
+-    sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=2)
+-    if sheriff_values:
+-        text = _format_compact_value(sheriff_values[0], limit=4)
++            system_bits.append(f"已死：{text}")
++
++    sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=1)
++    sheriff_text = _format_compact_value(sheriff_values[0], limit=4) if sheriff_values else ""
++    if _is_meaningful_compact_text(sheriff_text):
++        system_bits.append(f"警长/警徽：{sheriff_text}")
++
++    if system_bits:
++        lines.append("系统事实：" + "；".join(system_bits) + "。")
++
++    claim_values = _search_public_values(public_state, ("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks", "self_reports", "reports"), max_results=1)
++    claim_text = _format_compact_value(claim_values[0], limit=6) if claim_values else ""
++    if _is_meaningful_compact_text(claim_text):
++        lines.append(f"玩家声明：{claim_text}。")
++
++    vote_values = _search_public_values(public_state, ("vote_history", "votes", "ballots", "vote_matrix", "voting"), max_results=1)
++    vote_text = _format_vote_snapshot(vote_values[0]) if vote_values else ""
++    conflict_values = _search_public_values(public_state, ("conflict", "conflicts", "contradiction", "contradictions", "inconsistency", "inconsistencies", "mismatch", "mismatches", "dispute", "problem", "warning", "suspicion", "suspicions"), max_results=1)
++    conflict_bits: list[str] = []
++    if conflict_values:
++        text = _format_compact_value(conflict_values[0], limit=4)
+         if _is_meaningful_compact_text(text):
+-            lines.append(f"警长/警徽：{text}。")
+-
+-    claim_values = _search_public_values(public_state, ("public_claims", "claims", "claims", "revealed_roles", "role_claims", "check_log", "checks"), max_results=1)
+-    if claim_values:
+-        text = _format_compact_value(claim_values[0], limit=6)
+-        if _is_meaningful_compact_text(text):
+-            lines.append(f"公开查验/自报：{text}。")
+-
+-    vote_values = _search_public_values(public_state, ("vote_history", "votes", "ballots", "vote_matrix", "voting"), max_results=1)
+-    if vote_values:
+-        text = _format_vote_snapshot(vote_values[0])
+-        if _is_meaningful_compact_text(text):
+-            lines.append(f"近期票型：{text}。")
++            conflict_bits.append(text)
++    if _is_meaningful_compact_text(claim_text) and _is_meaningful_compact_text(vote_text):
++        conflict_bits.append("自报/查验与票型交叉核对")
++    if _is_meaningful_compact_text(claim_text) and _is_meaningful_compact_text(sheriff_text):
++        conflict_bits.append("警徽链/原话交叉核对")
++    if _is_meaningful_compact_text(vote_text):
++        conflict_bits.append("票型是否与当前死亡/公开自报一致")
++    if conflict_bits:
++        lines.append("需复核冲突：" + "；".join(list(dict.fromkeys(conflict_bits))[:2]) + "。")
+ 
+     targets = _collect_allowed_targets(request)
+     if targets:
+         lines.append(f"本次可选目标：{'、'.join(targets[:6])}。")
+ 
+-    return "\n".join(lines[:7])
++    return "\n".join(lines[:5])
+ 
+ 
+ def render_villager_decision_checklist(request: Mapping[str, Any], public_state: Any | None = None) -> str:
+@@ -361,7 +508,7 @@
+         for item in allowed_actions
+         if isinstance(item, Mapping)
+     } if isinstance(allowed_actions, list) else set()
+-    lines = ["【平民决策清单】先分系统事实 / 玩家声明 / 自己推测；投票前至少比较两个候选。"]
++    lines = ["【平民决策清单】先读 current_round_dialogue，再分系统事实 / 玩家声明 / 自己推测；不要把转述当系统事实。"]
+     has_vote = any(key in phase_lower for key in ("vote", "投票")) or any("vote" in kind for kind in allowed_kinds)
+     has_speak = any(key in phase_lower for key in ("speak", "discussion", "发言", "白天", "day")) or any(
+         kind in {"speak", "discussion", "day_speak"} for kind in allowed_kinds
+@@ -371,32 +518,34 @@
+         key in allowed_kinds for key in ("sheriff_vote", "sheriff")
+     )
+     alive_count = _extract_first_public_count(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living")) if public_state is not None else None
+-    sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=2) if public_state is not None else []
++    sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=1) if public_state is not None else []
+     sheriff_text = _format_compact_value(sheriff_values[0], limit=4) if sheriff_values else ""
+     if not _is_meaningful_compact_text(sheriff_text):
+         sheriff_text = ""
+-    claim_values = _search_public_values(public_state, ("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks"), max_results=1) if public_state is not None else []
++    claim_values = _search_public_values(public_state, ("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks", "self_reports", "reports"), max_results=1) if public_state is not None else []
++    claim_text = _format_compact_value(claim_values[0], limit=4) if claim_values else ""
+     vote_values = _search_public_values(public_state, ("vote_history", "votes", "ballots", "vote_matrix", "voting"), max_results=1) if public_state is not None else []
+-
++    vote_text = _format_vote_snapshot(vote_values[0]) if vote_values else ""
++
++    if has_speak:
++        lines.append("day_discussion：先核对公开原话；必须点出 1 个关注对象和 1 个暂不投对象，并说明依据哪条公开信息。")
+     if has_vote:
+-        lines.append("投票时优先保护可信金水、持续报验且查杀被票型或发言支持的预言家、强神声明者和警徽传递链；只有硬对跳、明显矛盾、查杀命中或事实错误时才推翻。")
+-        lines.append("优先找未被金水覆盖且存在票型异常、事实错误、被查杀或爆狼线索指向的人。")
+-    if has_speak:
+-        lines.append("发言至少点出一个关注对象和一个暂不投对象，并说明依据哪条公开信息。")
++        lines.append("day_vote：先比较至少 2 个候选再投；如果只剩一条公开链，也要拿它和一个由票型/死亡顺序/事实矛盾推出来的替代嫌疑直接对比。")
++        lines.append("投票比较时优先用存活/死亡名单、投票轨迹、公开查验链、警徽转移/失徽状态和当前公开自报。")
+     if has_last_words:
+-        lines.append("遗言只留公开事实、票型、查验链和怀疑对象，不把推测说成系统事实。")
++        lines.append("last_words：只留公开事实、票型、查验链和怀疑对象，不把推测说成系统事实。")
+     if has_sheriff:
+-        lines.append("警长/警徽相关回合优先看报验链是否清晰一致；接徽时继承公开遗产但不要把它当系统确认。")
++        lines.append("警长/警徽回合：先核对公开原话；警徽若已死、失徽或传递中断，就按当前存活证据重新排序。")
++    if claim_values:
++        lines.append("公开查验/自报只算玩家声明，先和系统死亡/存活/投票记录交叉核对，再决定是否保留权重。")
++    if vote_values:
++        lines.append("若票型已形成，优先检查谁在跟票、反票、票型异常或死亡顺序冲突中更难自洽。")
+     if alive_count is not None and alive_count <= 6:
+-        lines.append("残局强制规则：先在当前存活者里排出两个嫌疑人，并明确说明谁更像狼、为什么；不能只复读旧链或只保守跟票。")
+-        lines.append("比较时优先用存活/死亡顺序、投票轨迹、公开查验链和当前矛盾来重排嫌疑，不要让已死或无徽的旧权威自动保留高权重。")
+-    if sheriff_text:
+-        lines.append("若警长已死、失徽、转移或其身份链被公开打断，就按当前存活证据重新排序，不再默认跟随旧警徽链。")
+-    if claim_values and not sheriff_text:
+-        lines.append("公开查验链若只剩单一路径，也必须拿它和一个基于票型/死亡/矛盾的替代嫌疑直接对比后再投。")
+-    if vote_values:
+-        lines.append("投票比较时优先看谁更像被跟票、谁的死亡顺序与公开声明冲突、谁在当前存活集里更难自洽。")
+-    lines.append("残局或持警徽时，额外复盘存活名单、已死名单、可信查验链和灰区名单，再决定出谁。")
++        lines.append("残局强制：先在当前存活者里点名 2 个嫌疑人并排序，再决定投谁；不能只复读旧链或只保守跟票。")
++        lines.append("比较时优先用存活/死亡顺序、投票轨迹、公开查验链和当前矛盾来重排嫌疑。")
++    if _is_meaningful_compact_text(claim_text) and not _is_meaningful_compact_text(sheriff_text):
++        lines.append("如果场上只剩单公开链，必须与一个基于票型/死亡/矛盾推出来的替代嫌疑直接对比。")
++    lines.append("证据权重：系统记录 > 清晰公开链 > 玩家声明 > 自己推测。")
+     return "\n".join(lines)
+ 
+ 
+@@ -545,12 +694,15 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._local_memory: dict[str, str] = {}
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步并覆盖更新极小局内记忆。"""
++
++        if isinstance(sync_packet, Mapping):
++            self._local_memory = _derive_local_memory(sync_packet)
++        else:
++            self._local_memory = {}
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -595,7 +747,7 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], turn_packet["public_state"], feedback),
++                "instruction": self._turn_instruction(turn_packet["request"], turn_packet["public_state"], feedback, self._local_memory),
+                 "packet": prompt,
+             }
+             try:
+@@ -671,12 +823,13 @@
+         )
+ 
+     @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], public_state: Any, feedback: str) -> str:
++    def _turn_instruction(request: Mapping[str, Any], public_state: Any, feedback: str, local_memory: Mapping[str, str]) -> str:
+         checklist = render_villager_decision_checklist(request, public_state)
+         public_brief = render_public_state_brief(public_state, request)
++        memory_text = _format_local_memory_brief(local_memory)
+         feedback_text = f"上一次输出未通过校验：{feedback}" if feedback else ""
+         validation_feedback = "\n".join(
+-            part for part in (public_brief, feedback_text, checklist) if part
++            part for part in (public_brief, memory_text, feedback_text, checklist) if part
+         )
+         return render_prompt(
+             "player_turn_instruction.txt",
+--- villager-n00028/task.md
++++ villager-n00054/task.md
+@@ -2,17 +2,13 @@
+ 
+ 你的任务是帮助好人阵营找出狼人并完成放逐，同时像真实玩家一样参与讨论。
+ 
+-## 闭眼村民可执行清单
++## 闭眼村民工作流
+ 
+-- 先把信息分成三栏：**系统事实/公开事件**、**玩家声明**、**自己的推测**；只有前两栏能直接当依据。
+-- 白天发言不要空转：至少点出**一个你关注的人**和**一个你暂不投的人**，并说明各自基于哪条公开信息。
+-- 投票前必须先比较**至少两个候选**，再给出最终票；不要只凭模糊印象或跟票习惯决定。
+-- 保护可信公开链：对**持续报验且查杀被票型或发言支持的预言家**、**已公开金水**、**强神声明者**、**警徽传递链**，默认提高保护权重；除非出现**硬对跳、明显矛盾、查杀命中、事实错误**，否则不要优先投他们。
+-- 公开信息权重从高到低通常是：**系统死亡/存活/投票** > **清晰且持续的查验链** > **玩家遗言与自报** > **你的猜测**。
+-- 狼人遗言自爆、点队友或反咬他人都只能算玩家声明，不能当系统事实；但如果它和查杀、票型、发言矛盾一起出现，要纳入高权重候选。
+-- 当存活人数较少，或你自己持有警徽时，先复盘四件事：**存活名单、已死名单、可信查验链、灰区名单**；优先找**未被金水覆盖**且存在**事实错误、票型异常、被查杀/爆狼线索**的人。
+-- 少弃票：只有在候选几乎无差异且继续投票会明显误伤强神时才考虑 pass；否则尽量给出当前证据最强的票。
+-- 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实，也不能把猜测说成事实。
+-- 终局加严：当存活人数 <= 6 时，必须先点名**两个当前嫌疑人**并给出排序；明确说明谁更像狼、为什么更像狼，依据必须来自**存活/死亡名单、投票轨迹、公开查验链、警徽转移/失徽状态、当前公开自报**。
+-- 终局时不要继续把**已死的**或**已经无徽/被打断链条的**公开持证者当作默认高权重；只有当前存活证据仍支持时才保留优势。
+-- 如果场上只剩一条公开链，也要把它和一个基于票型、死亡顺序、事实矛盾推出来的第二嫌疑直接对比，再决定投谁。
++- 先记 **系统事实/公开事件**，再记 **玩家声明**，最后才是 **自己的推测**。
++- 白天发言前先看 `current_round_dialogue`，核对原话；**自报、转述、系统事实** 必须分层处理，不能互相替代。
++- 发言时至少点出 **1 个关注对象** 和 **1 个暂不投对象**，并说明依据哪条公开信息。
++- 投票前必须比较 **至少 2 个候选**，再给出最终票；不要只凭单点印象或惯性跟票。
++- 如果场上只有一条公开链，必须把它和一个由 **票型 / 死亡顺序 / 公开矛盾** 推出的替代嫌疑直接对比。
++- 当存活人数 `<= 6` 时，先写出 **两个当前嫌疑人及其排序**，再决定投谁。
++- 遇到警徽链、查验链或自报时，先核对公开原话和系统记录；**已死** 或 **断链** 的旧权威不要默认保留高权重。
++- 公开信息权重通常是：**系统死亡 / 存活 / 投票** > **清晰公开链** > **玩家声明** > **自己的推测**。

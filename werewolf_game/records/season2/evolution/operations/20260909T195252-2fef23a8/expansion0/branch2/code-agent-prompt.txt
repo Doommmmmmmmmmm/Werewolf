@@ -1,0 +1,67 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00015 的主要问题不是模型输出格式或工具能力，而是预言家查验状态没有可靠地注入新会话，导致第2夜重复查验已验目标、触发非法行动并被强制 fallback 为 pass。该节点20局仅胜4局，胜率0.2；在审计回放中，p11首夜验出p6为狼后，第二夜再次提交p6，重试仍失败，最终没有获得第二夜查验信息。下一代应采用最小的结构化查验状态注入加合法目标保护，而不是复制其他分支的大型长期记忆系统。",
+  "evidence": [
+    "评测汇总显示 seer-n00015 共20局完成，胜4局、负16局，胜率0.2；focus_role_only 下仍有2次 invalid_decision 和2次 fallback，说明存在少量但具有直接影响的行动可靠性问题。",
+    "game8 中p11第1夜合法查验p6，收到私有结果p6=wolf；第2夜又提交seer_inspect(target_id=p6)，审计记录显示该目标不在target_ids中，模型重试后仍失败，Runtime随后使用pass fallback。",
+    "game8 最终role_state显示p11实际拥有inspections={p6: wolf, p9: wolf}，说明引擎确实保存了查验结果，但当前_seer_known_results只从private顶层若干字段提取，未显式遍历role_state、seer_state或其他嵌套状态，存在结果未被注入模型上下文的明显缺口。",
+    "当前代码的_seer_phase_hint只用自然语言提示“避开已验位”，没有把已验目标和当前合法target_ids形成强约束，也没有在模型输出非法时为seer_inspect选择合法替代目标。",
+    "当前Task-Agent每次decide都建立新的模型会话，跨决策信息只能依赖turn_packet中的private_information或代码注入的摘要；代码没有跨行动记忆，因此一旦嵌套查验状态未被提取，模型就无法可靠知道上一夜验过谁。",
+    "game8中p11首日公开了p6查杀并成功推动p3被放逐，第三夜又验出p9为狼；这表明基础的查验公开和归票能力并非完全失效。更直接的可修复损失点是第二夜重复查验造成的信息断档，而不是需要重写完整狼人杀策略。",
+    "seer-n00014和seer-n00013的分支尝试引入了较大的状态摘要与发言模式系统，但现有证据未证明这些复杂结构能稳定提升胜率；其中n00014的历史诊断也指出主要问题是信息转化质量，而不是schema。对n00015更适合先修复确定性的查验状态与行动合法性问题。"
+  ],
+  "root_causes": [
+    "查验结果提取范围过窄。_extract_seer_known_results只检查private_information顶层的固定键及少数指定嵌套键，没有覆盖实际可能承载引擎角色状态的role_state、seer_state或更深层嵌套结构。",
+    "查验结果没有被转化为当前夜晚的可执行约束。模型虽然收到“避开已验位”的文字提示，但看不到可靠的已验列表时无法遵守；即使看到，也没有代码层的重复目标保护。",
+    "非法seer_inspect会进入通用重试流程。重试不会增加工具预算，也不会自动重新计算合法候选，因而模型可能在相同缺失上下文下重复返回同一非法目标，最终丢失整夜行动。",
+    "Task-Agent依赖模型从完整行动包自行协调已验结果、合法target_ids和策略目标，缺少一个短小、明确的seer专用决策摘要。当前提示偏原则性，缺少“已验事实—本夜合法候选—禁止目标—推荐优先级”的结构。",
+    "当前节点的task.md已经提出避开已验位和记录结果，但没有明确要求系统把私有角色状态中的inspection map作为权威账本，也没有规定当模型无法选择合法目标时必须降级为合法pass而不是继续尝试非法目标。",
+    "较低胜率还可能受到其他好人角色的误判、警徽和票型决策影响，不能把game8的最终狼胜全部归因于预言家；本诊断优先处理证据最明确、可由Task-Agent自身修复的重复查验与fallback问题。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "扩展_seer_known_results的读取范围：将private_information本身、role_state、seer_state、state及其递归子映射纳入扫描；支持inspections、inspection_results、seer_inspections、checks、known_results等字段；对映射形式如{player_id: team}和记录形式如{target_id: player_id, team: wolf}都进行统一解析、去重和team归一化。保留较小上限，例如最多6条结果。",
+      "rationale": "game8的审计状态明确显示查验结果位于p11的role_state.inspections，而当前实现没有显式扫描该路径。让模型在每次新会话中稳定看到p6=wolf等权威事实，是避免重复查验的首要修复。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增seer专用的紧凑决策摘要，至少包含known_inspection_map、current legal target_ids、blocked_inspection_targets、self player_id和当前存活状态；在seer_inspect行动的turn instruction中明确要求只从当前target_ids选择，并逐项列出不可重复查验的目标。不要注入完整历史，只注入当前私有查验账本和必要的当前包信息。",
+      "rationale": "自然语言原则不足以替代结构化状态。显式列出已验目标和当前候选能降低模型从长行动包中遗漏约束的概率，同时符合不自动拼接完整历史的运行边界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在normalize_decision之后、decision_error之前增加仅针对seer_inspect的合法性保护：若模型选择的target_id不在当前target_ids中，或选择了已知重复目标，则从当前target_ids中过滤掉自己、已验目标和明确死亡目标，按稳定顺序选择剩余合法候选；若不存在可用候选且allowed_actions包含pass，则改为合法pass。所有替代目标必须来自引擎提供的target_ids，不能自行生成玩家ID。",
+      "rationale": "这不是修改引擎或绕过规则，而是在Task-Agent层防止一次模型失误直接丢失整夜行动。game8中第二夜本可通过该保护改验一个新目标，至少不会重复p6并触发fallback。稳定顺序也避免新增不可审计的隐藏决策状态。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把上述seer_inspect修复封装为小型私有方法，例如_extract_seer_known_results、_seer_legal_inspection_candidates和_repair_seer_action，避免重写TaskAgent主流程；同时确保repair只在role为seer且kind为seer_inspect时生效，其他角色和其他行动保持现有行为。",
+      "rationale": "当前节点代码已经是通用Task-Agent。局部封装可以降低回归风险，避免把预言家策略逻辑泄漏到guard、wolf或其他行动，并保持现有构造接口和行动schema不变。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充明确的查验执行协议：私有inspection map是唯一查验事实来源；每次夜验先核对已验目标，再从本次allowed_actions.target_ids中选择未验且存活的目标；若模型无法形成策略偏好，仍必须选择合法未验目标或合法pass。白天公开时把查验事实、公开事实、推断和唯一主票分开，若自己可能被放逐或夜杀，额外留下下一验顺序和查杀/金水两种结果下的处置。",
+      "rationale": "现有task.md已有原则，但没有把它们写成可执行的顺序和降级动作。补充后可减少模型在高压局面下重复验人、把推断说成事实或留下空泛警徽流的概率。"
+    },
+    {
+      "file": "task.md",
+      "change": "加入一条针对对跳和信息断档的简短发言要求：有查杀时优先锁定查杀票口，不因多个争议点而分散归票；有多个狼查验时按“已确认狼人—下一验计划—票型验证”顺序复述；没有新查验时不得编造结果，应明确使用已有查验和公开票型。",
+      "rationale": "game8中p11已经能公开p6查杀，但后续信息若不能连续、简洁地复述，其他好人容易被对跳和票型带偏。该修改强化信息压缩和一致归票，不要求引入大型记忆系统。"
+    }
+  ],
+  "risks": [
+    "如果private_information在某些行动包中使用了未覆盖的新字段名，递归扫描仍可能遗漏；应优先覆盖已知role_state、seer_state、state和inspection相关键，并避免无界遍历造成prompt膨胀。",
+    "自动替换非法或重复目标可能牺牲模型原本的策略意图；因此替换范围必须限定为seer_inspect，候选必须来自target_ids，并优先选未验、存活目标。",
+    "若行动包合法候选中没有未验目标，直接选择任意目标可能违反重复查验规则；实现应在无可用新目标时优先选择allowed_actions中的pass，而不是强行提交重复查验。",
+    "稳定候选排序只解决合法性和信息连续性，不保证选择到最有战略价值的玩家；不要把该修复描述为完整的目标评分器。",
+    "task.md增加的发言模板可能使模型表达变得机械或超出max_chars；必须保持短句优先，并让实际行动契约和max_chars继续高于文本建议。",
+    "修复查验动作后，整体胜率仍可能受其他角色节点、狼队策略和模型随机性影响；评测时应重点观察focus invalid_decision、seer_inspect重复率、fallback率以及查验后归票一致性，而不只看单次胜负。"
+  ],
+  "code_agent_brief": "请只修改当前工作区的task_agent.py和task.md，不修改引擎、规则、可见性、工具、行动schema或TaskAgent构造接口。目标是修复seer-n00015在新模型会话中丢失查验账本的问题，并防止重复查验导致fallback。具体实现：1）扩展_seer_known_results，递归读取private_information、role_state、seer_state、state及其中的inspections/inspection_results/seer_inspections/checks/known_results，兼容{target: team}和记录列表格式，输出小规模去重后的target_id/team列表；2）在seer_inspect提示中同时显示已验目标和本次request.allowed_actions中的合法target_ids；3）在模型结果normalize之后、decision_error之前增加seer_inspect专用修复：若target_id非法或已验，从target_ids中过滤自己、已验和明确死亡者，选择剩余合法候选；若没有新候选且允许pass，则提交pass；绝不生成不在target_ids中的ID；4）保持其他角色和行动路径不变，不新增文件、网络、文件系统、进程或隐藏状态访问；5）在task.md补充私有inspection map为权威事实、夜验先排除已验目标、无新候选时合法pass、查杀时单一归票和死亡前留下下一验计划等要求。完成后自行检查语法和现有接口兼容性。"
+}

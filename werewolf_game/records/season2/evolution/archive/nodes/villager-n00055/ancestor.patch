@@ -1,0 +1,333 @@
+--- villager-n00028/task_agent.py
++++ villager-n00055/task_agent.py
+@@ -400,6 +400,88 @@
+     return "\n".join(lines)
+ 
+ 
++def _trim_compact_text(text: str, *, limit: int = 120) -> str:
++    cleaned = " ".join(str(text).split())
++    if len(cleaned) <= limit:
++        return cleaned
++    if limit <= 1:
++        return cleaned[:limit]
++    return cleaned[: limit - 1] + "…"
++
++
++def _summarize_current_round_dialogue(dialogue: Any, *, limit: int = 5) -> str:
++    if not isinstance(dialogue, list) or not dialogue:
++        return ""
++    parts: list[str] = []
++    for item in dialogue[-10:]:
++        if len(parts) >= limit:
++            break
++        if not isinstance(item, Mapping):
++            continue
++        speaker = _player_label(
++            item.get("speaker")
++            or item.get("speaker_id")
++            or item.get("player_id")
++            or item.get("playerId")
++            or item.get("from")
++        )
++        target = _player_label(item.get("target_id") or item.get("targetId") or item.get("target"))
++        text = item.get("text") or item.get("message") or item.get("content") or item.get("speech")
++        if not isinstance(text, str):
++            text = _format_compact_value(text, limit=4)
++        text = _trim_compact_text(text, limit=72)
++        if not text:
++            continue
++        prefix = speaker or "发言"
++        if target:
++            prefix = f"{prefix}->{target}"
++        phase = str(item.get("phase") or item.get("channel") or "").strip()
++        if phase:
++            prefix = f"{phase}:{prefix}"
++        parts.append(f"{prefix}:{text}")
++    return "；".join(parts)
++
++
++def render_working_memory_brief(memory: Mapping[str, Any], request: Mapping[str, Any], public_state: Any | None = None) -> str:
++    lines = ["【局内工作记忆】"]
++
++    def add_line(label: str, key: str) -> None:
++        value = memory.get(key)
++        if isinstance(value, str) and value.strip():
++            lines.append(f"{label}：{value.strip()}。")
++
++    add_line("存活", "alive_text")
++    add_line("已死", "dead_text")
++    add_line("警徽/警长", "sheriff_text")
++    add_line("查验/自报", "claim_text")
++    add_line("近期票型", "vote_text")
++    add_line("遗言", "last_words_text")
++    add_line("当前轮对话", "dialogue_text")
++    add_line("嫌疑排序", "suspect_text")
++    add_line("残局Top2", "top_suspects_text")
++
++    events = memory.get("events")
++    if isinstance(events, list) and events:
++        recent_events = [str(item).strip() for item in events[-3:] if str(item).strip()]
++        if recent_events:
++            lines.append("最近变化：" + "；".join(recent_events) + "。")
++
++    alive_count = _extract_first_public_count(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living"))
++    sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=2) if public_state is not None else []
++    sheriff_now = _format_compact_value(sheriff_values[0], limit=4) if sheriff_values else ""
++    if not _is_meaningful_compact_text(sheriff_now):
++        sheriff_now = ""
++    if alive_count is not None and alive_count <= 6:
++        top2 = str(memory.get("top_suspects_text") or "").strip()
++        if top2:
++            lines.append(f"终局硬规则：当前存活 {alive_count} 人，先比较并排序两个嫌疑人：{top2}。")
++        else:
++            lines.append(f"终局硬规则：当前存活 {alive_count} 人，先比较并排序两个嫌疑人。")
++    if memory.get("sheriff_text") and not sheriff_now:
++        lines.append("警徽链提示：当前公开态势未见清晰警徽持有信息，需按最新存活证据重新排序。")
++    return "\n".join(lines[:12])
++
++
+ def render_action_contract(request: Mapping[str, Any]) -> str:
+     """把本次 ``allowed_actions`` 转成模型容易遵守的最终 JSON 契约。
+ 
+@@ -545,12 +627,23 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._working_memory: dict[str, Any] = {
++            "alive_text": "",
++            "dead_text": "",
++            "sheriff_text": "",
++            "claim_text": "",
++            "vote_text": "",
++            "last_words_text": "",
++            "dialogue_text": "",
++            "suspect_text": "",
++            "top_suspects_text": "",
++            "events": [],
++        }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步，并把可见证据压缩进有界工作记忆。"""
++
++        self._update_working_memory(sync_packet, source="sync")
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -558,6 +651,10 @@
+         private = turn_packet["private_information"]
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
++
++        self._update_working_memory(turn_packet, source="turn")
++        dialogue_brief = self._build_dialogue_brief(turn_packet)
++        memory_brief = render_working_memory_brief(self._working_memory, turn_packet["request"], turn_packet["public_state"])
+ 
+         system = self._system_prompt(private)
+         prompt = {
+@@ -567,10 +664,14 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "public_state_brief": render_public_state_brief(turn_packet["public_state"], turn_packet["request"]),
++            "working_memory_brief": memory_brief,
++            "current_round_dialogue_brief": dialogue_brief,
+             "request": turn_packet["request"],
+             "history_policy": {
+-                "default_context": "current_state_only",
++                "default_context": "current_state_only_with_bounded_memory",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
++                "current_round_dialogue_brief": dialogue_brief,
++                "working_memory_brief": memory_brief,
+                 "max_tool_calls": self.max_tool_calls_per_decision,
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+@@ -595,7 +696,13 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], turn_packet["public_state"], feedback),
++                "instruction": self._turn_instruction(
++                    turn_packet["request"],
++                    turn_packet["public_state"],
++                    feedback,
++                    memory_brief,
++                    dialogue_brief,
++                ),
+                 "packet": prompt,
+             }
+             try:
+@@ -636,6 +743,113 @@
+                 )
+             feedback = f"上一次行动未通过校验：{error}"
+ 
++    def _packet_marker(self, packet: Mapping[str, Any]) -> str:
++        pieces: list[str] = []
++        game = packet.get("game")
++        if isinstance(game, Mapping):
++            round_value = game.get("round")
++            if round_value is not None:
++                pieces.append(f"r{round_value}")
++            phase_value = game.get("public_phase") or game.get("phase")
++            if phase_value:
++                pieces.append(str(phase_value))
++        phase_value = packet.get("phase") or packet.get("channel")
++        if phase_value:
++            phase_text = str(phase_value)
++            if phase_text not in pieces:
++                pieces.append(phase_text)
++        if not pieces:
++            return "snapshot"
++        return "/".join(pieces[:3])
++
++    def _remember_text(self, field: str, label: str, text: str, marker: str) -> None:
++        cleaned = _trim_compact_text(text, limit=240)
++        if not cleaned:
++            return
++        current = str(self._working_memory.get(field) or "").strip()
++        if cleaned == current:
++            return
++        self._working_memory[field] = cleaned
++        event = f"{marker} {label}:{cleaned}" if marker else f"{label}:{cleaned}"
++        events = self._working_memory.setdefault("events", [])
++        if isinstance(events, list) and event not in events:
++            events.append(event)
++            if len(events) > 8:
++                del events[:-8]
++
++    def _rank_suspects(self, public_state: Any) -> list[tuple[str, int]]:
++        scores: dict[str, int] = {}
++
++        def add_from_keys(keys: tuple[str, ...], weight: int, *, max_results: int = 2) -> None:
++            for value in _search_public_values(public_state, keys, max_results=max_results):
++                labels = _collect_compact_labels(value, limit=8)
++                if not labels:
++                    fallback = _format_compact_value(value, limit=4)
++                    if fallback:
++                        labels = [fallback]
++                for label in labels:
++                    scores[label] = scores.get(label, 0) + weight
++
++        add_from_keys(("vote_history", "votes", "ballots", "vote_matrix", "voting"), 3)
++        add_from_keys(("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks", "accusations", "suspects"), 2)
++        add_from_keys(("last_words", "death_words", "final_words", "wills"), 1)
++        add_from_keys(("public_suspects", "suspect_order", "suspicion", "suspicious"), 2)
++
++        alive_values = _search_public_values(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living"), max_results=1)
++        alive_labels = _collect_compact_labels(alive_values[0], limit=8) if alive_values else []
++        for label in alive_labels:
++            scores.setdefault(label, 0)
++
++        ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
++        if alive_labels:
++            alive_set = set(alive_labels)
++            alive_ranked = [item for item in ranked if item[0] in alive_set]
++            if len(alive_ranked) >= 2:
++                rest = [item for item in ranked if item[0] not in alive_set]
++                ranked = alive_ranked + rest
++        return ranked
++
++    def _update_working_memory(self, packet: Mapping[str, Any], *, source: str) -> None:
++        public_state = packet.get("public_state")
++        if public_state is None:
++            public_state = packet
++        marker = self._packet_marker(packet)
++
++        alive_values = _search_public_values(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living"), max_results=1)
++        dead_values = _search_public_values(public_state, ("dead_players", "eliminated_players", "dead", "graveyard", "death_list"), max_results=1)
++        sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=1)
++        claim_values = _search_public_values(public_state, ("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks"), max_results=1)
++        vote_values = _search_public_values(public_state, ("vote_history", "votes", "ballots", "vote_matrix", "voting"), max_results=1)
++        last_words_values = _search_public_values(public_state, ("last_words", "death_words", "final_words", "wills"), max_results=1)
++        suspect_ranking = self._rank_suspects(public_state)
++
++        alive_text = _format_compact_value(alive_values[0], limit=8) if alive_values else ""
++        dead_text = _format_compact_value(dead_values[0], limit=8) if dead_values else ""
++        sheriff_text = _format_compact_value(sheriff_values[0], limit=6) if sheriff_values else ""
++        claim_text = _format_compact_value(claim_values[0], limit=8) if claim_values else ""
++        vote_text = _format_vote_snapshot(vote_values[0]) if vote_values else ""
++        last_words_text = _format_compact_value(last_words_values[0], limit=8) if last_words_values else ""
++        suspect_text = "、".join(f"{name}×{score}" for name, score in suspect_ranking[:3])
++        top_suspects_text = " > ".join(f"{name}×{score}" for name, score in suspect_ranking[:2])
++
++        self._remember_text("alive_text", "存活", alive_text, marker)
++        self._remember_text("dead_text", "已死", dead_text, marker)
++        self._remember_text("sheriff_text", "警徽/警长", sheriff_text, marker)
++        self._remember_text("claim_text", "查验/自报", claim_text, marker)
++        self._remember_text("vote_text", "近期票型", vote_text, marker)
++        self._remember_text("last_words_text", "遗言", last_words_text, marker)
++        self._remember_text("suspect_text", "嫌疑排序", suspect_text, marker)
++        self._remember_text("top_suspects_text", "残局Top2", top_suspects_text, marker)
++
++        if source == "turn":
++            dialogue_brief = self._build_dialogue_brief(packet)
++            self._remember_text("dialogue_text", "当前轮对话", dialogue_brief, marker)
++
++    def _build_dialogue_brief(self, turn_packet: Mapping[str, Any]) -> str:
++        tool_context = turn_packet.get("tool_context") or {}
++        dialogue = tool_context.get("current_round_dialogue") or []
++        return _summarize_current_round_dialogue(dialogue, limit=5)
++
+     def agent_manifest(self) -> dict[str, Any]:
+         return {
+             "agent_type": "task_agent",
+@@ -670,13 +884,44 @@
+             max_prompt_chars=self.max_prompt_chars,
+         )
+ 
+-    @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], public_state: Any, feedback: str) -> str:
++    def _turn_instruction(
++        self,
++        request: Mapping[str, Any],
++        public_state: Any,
++        feedback: str,
++        memory_brief: str,
++        dialogue_brief: str,
++    ) -> str:
+         checklist = render_villager_decision_checklist(request, public_state)
+         public_brief = render_public_state_brief(public_state, request)
+         feedback_text = f"上一次输出未通过校验：{feedback}" if feedback else ""
++        dialogue_text = f"【当前轮对话摘要】{dialogue_brief}" if dialogue_brief else ""
++        alive_count = _extract_first_public_count(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living"))
++        sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=1)
++        sheriff_text = _format_compact_value(sheriff_values[0], limit=4) if sheriff_values else ""
++        if not _is_meaningful_compact_text(sheriff_text):
++            sheriff_text = ""
++        endgame_hint = ""
++        if alive_count is not None and alive_count <= 6:
++            top2 = str(self._working_memory.get("top_suspects_text") or "").strip()
++            if top2:
++                endgame_hint = f"【终局硬规则】当前存活 {alive_count} 人，先点名并排序两个嫌疑人：{top2}。依据必须来自存活/死亡名单、投票轨迹、公开查验链、警徽转移/失徽状态、当前公开自报。"
++            else:
++                endgame_hint = f"【终局硬规则】当前存活 {alive_count} 人，先点名并排序两个嫌疑人；依据必须来自存活/死亡名单、投票轨迹、公开查验链、警徽转移/失徽状态、当前公开自报。"
++        elif sheriff_text and any(token in sheriff_text for token in ("断", "失", "无", "销毁")):
++            endgame_hint = "【警徽链修正】警徽链已出现中断或失徽迹象，重新按当前存活证据排序，不要默认沿用旧警徽权威。"
++
+         validation_feedback = "\n".join(
+-            part for part in (public_brief, feedback_text, checklist) if part
++            part
++            for part in (
++                public_brief,
++                memory_brief,
++                dialogue_text,
++                endgame_hint,
++                feedback_text,
++                checklist,
++            )
++            if part
+         )
+         return render_prompt(
+             "player_turn_instruction.txt",
+--- villager-n00028/task.md
++++ villager-n00055/task.md
+@@ -6,6 +6,7 @@
+ 
+ - 先把信息分成三栏：**系统事实/公开事件**、**玩家声明**、**自己的推测**；只有前两栏能直接当依据。
+ - 白天发言不要空转：至少点出**一个你关注的人**和**一个你暂不投的人**，并说明各自基于哪条公开信息。
++- 当前轮对话要当作**必读上下文**：白天发言和投票前，先用最新发言、站边变化和公开反驳来更新判断。
+ - 投票前必须先比较**至少两个候选**，再给出最终票；不要只凭模糊印象或跟票习惯决定。
+ - 保护可信公开链：对**持续报验且查杀被票型或发言支持的预言家**、**已公开金水**、**强神声明者**、**警徽传递链**，默认提高保护权重；除非出现**硬对跳、明显矛盾、查杀命中、事实错误**，否则不要优先投他们。
+ - 公开信息权重从高到低通常是：**系统死亡/存活/投票** > **清晰且持续的查验链** > **玩家遗言与自报** > **你的猜测**。

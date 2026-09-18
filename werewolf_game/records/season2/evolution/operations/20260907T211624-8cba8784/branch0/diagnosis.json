@@ -1,0 +1,1336 @@
+{
+  "node_id": "seer-n00025",
+  "role": "seer",
+  "attempt": 1,
+  "required_resources": [
+    "task",
+    "boundaries",
+    "current_agent",
+    "random_game_replay"
+  ],
+  "required_replay_game_index": 4,
+  "tool_trace": [
+    {
+      "tool": "list_resources",
+      "arguments": {},
+      "result": {
+        "required_resources": [
+          "task",
+          "boundaries",
+          "current_agent",
+          "random_game_replay"
+        ],
+        "external_knowledge": {
+          "description": "进化前冻结的狼人杀 Skill 卡片；通过 list_skills/read_skill 按需读取，不直接注入 Task-Agent",
+          "tool": "list_skills/read_skill"
+        },
+        "tools": [
+          {
+            "name": "list_resources",
+            "description": "列出本次诊断可用的只读资料及参数。"
+          },
+          {
+            "name": "read_current_agent",
+            "description": "读取当前节点的 task_agent.py 或 task.md。"
+          },
+          {
+            "name": "read_evolution_path",
+            "description": "读取 base 到当前节点的节点信息和祖先 patch。"
+          },
+          {
+            "name": "read_evolution_tree",
+            "description": "读取当前角色完整进化树索引。"
+          },
+          {
+            "name": "read_evolution_contract",
+            "description": "按需读取本次实验的进化状态机、预算和节点筛选规则。"
+          },
+          {
+            "name": "read_evaluation_summary",
+            "description": "读取当前节点最近一次评测汇总。"
+          },
+          {
+            "name": "read_game_replay",
+            "description": "分页读取当前节点评测中的一局完整审计回放。"
+          },
+          {
+            "name": "read_other_branch",
+            "description": "读取同角色另一节点的 patch、状态和胜负摘要。"
+          },
+          {
+            "name": "read_previous_diagnosis",
+            "description": "读取同角色某节点关联的历史诊断。"
+          },
+          {
+            "name": "list_skills",
+            "description": "列出所有可用 Skill 的名称和短描述，不返回完整攻略。"
+          },
+          {
+            "name": "read_skill",
+            "description": "读取指定 Skill 的完整内容，包括短描述和长描述。"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evaluation_summary",
+      "arguments": {},
+      "result": {
+        "node_id": "seer-n00025",
+        "role": "seer",
+        "team": "village",
+        "game_count": 20,
+        "complete_game_count": 20,
+        "failed_game_count": 0,
+        "win_count": 6,
+        "loss_count": 14,
+        "win_rate": 0.3,
+        "decision_count": 218,
+        "fallback_count": 1,
+        "fallback_rate": 0.0045871559633027525,
+        "invalid_decision_count": 1,
+        "quality_scope": "focus_role_only",
+        "total_decision_count": 3192,
+        "total_fallback_count": 14,
+        "total_invalid_decision_count": 14,
+        "recommended_status": "retained",
+        "status_reasons": [
+          "passed_broad_filter"
+        ],
+        "results": [
+          {
+            "game_index": 0,
+            "game_id": "s2-seer-n00025-game0",
+            "seed": "season2-evolution:81238f0b99243419:game0",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-n00025",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "e039ec19a3f11817f5b0e7037002a075f7dd05826eb27dd773f44268b22eaee0",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 111,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p4"
+            ],
+            "focus_decision_count": 5,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 113,
+              "api_attempt_count": 181,
+              "reported_usage_response_count": 113,
+              "input_tokens": 466995,
+              "output_tokens": 6158,
+              "total_tokens": 473153,
+              "unreported_api_attempt_count": 68
+            }
+          },
+          {
+            "game_index": 1,
+            "game_id": "s2-seer-n00025-game1",
+            "seed": "season2-evolution:caf01b214d44d092:game1",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-base",
+              "seer": "seer-n00025",
+              "witch": "witch-n00022",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "2167205bb2b0b5e246e5285d1f835de7911ec2e7c15c05680d088f919bd5eff5",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 189,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 190,
+              "api_attempt_count": 297,
+              "reported_usage_response_count": 190,
+              "input_tokens": 793780,
+              "output_tokens": 9005,
+              "total_tokens": 802785,
+              "unreported_api_attempt_count": 107
+            }
+          },
+          {
+            "game_index": 2,
+            "game_id": "s2-seer-n00025-game2",
+            "seed": "season2-evolution:1effab891edef1d4:game2",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "ec735ba7c7846ea53ef6d4e407c820c850f167036b500b2b34948a7e5ee9cd23",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 183,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 188,
+              "api_attempt_count": 302,
+              "reported_usage_response_count": 188,
+              "input_tokens": 822186,
+              "output_tokens": 10129,
+              "total_tokens": 832315,
+              "unreported_api_attempt_count": 114
+            }
+          },
+          {
+            "game_index": 3,
+            "game_id": "s2-seer-n00025-game3",
+            "seed": "season2-evolution:dcec92edb4303277:game3",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00001",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "60e75ca551be2923fb4e1cb6ae6a01889572775c85d3a4f957f0f06c445f1b70",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 146,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 150,
+              "api_attempt_count": 259,
+              "reported_usage_response_count": 150,
+              "input_tokens": 753253,
+              "output_tokens": 8051,
+              "total_tokens": 761304,
+              "unreported_api_attempt_count": 109
+            }
+          },
+          {
+            "game_index": 4,
+            "game_id": "s2-seer-n00025-game4",
+            "seed": "season2-evolution:fbb8820cb092b290:game4",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00020",
+              "villager": "villager-n00011",
+              "seer": "seer-n00025",
+              "witch": "witch-n00001",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "6131d0c022934d12d068a2d527f0e4e58412f572c49bacd7efa63d28d2e98468",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 173,
+            "fallback_count": 1,
+            "fallback_rate": 0.005780346820809248,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 176,
+              "api_attempt_count": 260,
+              "reported_usage_response_count": 176,
+              "input_tokens": 805039,
+              "output_tokens": 9403,
+              "total_tokens": 814442,
+              "unreported_api_attempt_count": 84
+            }
+          },
+          {
+            "game_index": 5,
+            "game_id": "s2-seer-n00025-game5",
+            "seed": "season2-evolution:96fe4b704c9eab5d:game5",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00020",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00022",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "a1fb0ebb649009f161cbf5d3e6840b2ce6f0252577c8292ee332ce1a33532408",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 158,
+            "fallback_count": 2,
+            "fallback_rate": 0.012658227848101266,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              },
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p5"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 160,
+              "api_attempt_count": 245,
+              "reported_usage_response_count": 160,
+              "input_tokens": 724694,
+              "output_tokens": 7518,
+              "total_tokens": 732212,
+              "unreported_api_attempt_count": 85
+            }
+          },
+          {
+            "game_index": 6,
+            "game_id": "s2-seer-n00025-game6",
+            "seed": "season2-evolution:91e2f8322c71337b:game6",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00020",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00022",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "eadcf2418646f426e91c07466e8d3522b02582db2125e335e2de51cd1d8a0342",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 157,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p1"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 159,
+              "api_attempt_count": 239,
+              "reported_usage_response_count": 159,
+              "input_tokens": 720142,
+              "output_tokens": 7775,
+              "total_tokens": 727917,
+              "unreported_api_attempt_count": 80
+            }
+          },
+          {
+            "game_index": 7,
+            "game_id": "s2-seer-n00025-game7",
+            "seed": "season2-evolution:981925bab675eca5:game7",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "42b900a3f24ea8510a8bf317e62b01dc94e94598a94eb609993d5d609697770d",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 172,
+            "fallback_count": 1,
+            "fallback_rate": 0.005813953488372093,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 174,
+              "api_attempt_count": 306,
+              "reported_usage_response_count": 174,
+              "input_tokens": 808223,
+              "output_tokens": 9188,
+              "total_tokens": 817411,
+              "unreported_api_attempt_count": 132
+            }
+          },
+          {
+            "game_index": 8,
+            "game_id": "s2-seer-n00025-game8",
+            "seed": "season2-evolution:e7f9c08fe9d97fe2:game8",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00020",
+              "villager": "villager-n00011",
+              "seer": "seer-n00025",
+              "witch": "witch-n00003",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "fcb99a2f569e824da698d1b87feaebdfe3fc83c92395ff53a31ba2b6aea0df7b",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 163,
+            "fallback_count": 1,
+            "fallback_rate": 0.006134969325153374,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 165,
+              "api_attempt_count": 221,
+              "reported_usage_response_count": 165,
+              "input_tokens": 687714,
+              "output_tokens": 7772,
+              "total_tokens": 695486,
+              "unreported_api_attempt_count": 56
+            }
+          },
+          {
+            "game_index": 9,
+            "game_id": "s2-seer-n00025-game9",
+            "seed": "season2-evolution:6c7b34c626e56009:game9",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00020",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "3375ad30cb194a22fa7c2b5860031690fbae7c0ec4644622d30f8b581354b4cc",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 183,
+            "fallback_count": 2,
+            "fallback_rate": 0.01092896174863388,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p4"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round0/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 189,
+              "api_attempt_count": 319,
+              "reported_usage_response_count": 189,
+              "input_tokens": 897292,
+              "output_tokens": 10158,
+              "total_tokens": 907450,
+              "unreported_api_attempt_count": 130
+            }
+          },
+          {
+            "game_index": 10,
+            "game_id": "s2-seer-n00025-game10",
+            "seed": "season2-evolution:f6adaef84f482f4b:game10",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00020",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "2428d13ddf02ddb5d53a71236c914f7a60872b00f860f54aa6f577986dcac3b9",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 180,
+            "fallback_count": 1,
+            "fallback_rate": 0.005555555555555556,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p10",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 183,
+              "api_attempt_count": 315,
+              "reported_usage_response_count": 183,
+              "input_tokens": 925404,
+              "output_tokens": 10495,
+              "total_tokens": 935899,
+              "unreported_api_attempt_count": 132
+            }
+          },
+          {
+            "game_index": 11,
+            "game_id": "s2-seer-n00025-game11",
+            "seed": "season2-evolution:446a2977cc69c8ec:game11",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00011",
+              "seer": "seer-n00025",
+              "witch": "witch-n00003",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "876a4356f65713ccaeee7024c0c6b0a4f9489ee8141a648f203f0b40a5520381",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 175,
+            "fallback_count": 1,
+            "fallback_rate": 0.005714285714285714,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p6",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p5"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 181,
+              "api_attempt_count": 271,
+              "reported_usage_response_count": 181,
+              "input_tokens": 808226,
+              "output_tokens": 9668,
+              "total_tokens": 817894,
+              "unreported_api_attempt_count": 90
+            }
+          },
+          {
+            "game_index": 12,
+            "game_id": "s2-seer-n00025-game12",
+            "seed": "season2-evolution:ad0ab1b16f5ca7e8:game12",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00022",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "7936cc3be03259aba7d083699765a57dc80224ddff9eef03f5050c55dd2ca6b6",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 150,
+            "fallback_count": 1,
+            "fallback_rate": 0.006666666666666667,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 10,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 149,
+              "api_attempt_count": 243,
+              "reported_usage_response_count": 149,
+              "input_tokens": 695024,
+              "output_tokens": 7740,
+              "total_tokens": 702764,
+              "unreported_api_attempt_count": 94
+            }
+          },
+          {
+            "game_index": 13,
+            "game_id": "s2-seer-n00025-game13",
+            "seed": "season2-evolution:225043b88b98d5db:game13",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00003",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "0922b3ef0baacdbbd9505959428c3b25002f073a7ff951ccaeb63b8231b3a1be",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 151,
+            "fallback_count": 2,
+            "fallback_rate": 0.013245033112582781,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              },
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 153,
+              "api_attempt_count": 229,
+              "reported_usage_response_count": 153,
+              "input_tokens": 643814,
+              "output_tokens": 7437,
+              "total_tokens": 651251,
+              "unreported_api_attempt_count": 76
+            }
+          },
+          {
+            "game_index": 14,
+            "game_id": "s2-seer-n00025-game14",
+            "seed": "season2-evolution:b35aabb97e770ea8:game14",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-n00025",
+              "witch": "witch-n00022",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "904c2e9ef69e0e88405494cf097c0d634ea05cf2518e570cac7ab40956868d46",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 149,
+            "fallback_count": 1,
+            "fallback_rate": 0.006711409395973154,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p6",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 17,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 153,
+              "api_attempt_count": 234,
+              "reported_usage_response_count": 153,
+              "input_tokens": 653489,
+              "output_tokens": 7503,
+              "total_tokens": 660992,
+              "unreported_api_attempt_count": 81
+            }
+          },
+          {
+            "game_index": 15,
+            "game_id": "s2-seer-n00025-game15",
+            "seed": "season2-evolution:31161890c97458fd:game15",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00003",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "0867240d689e3e273d4d197929114b122693c73d43b63f8aa9f5942c216c7034",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 124,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 124,
+              "api_attempt_count": 191,
+              "reported_usage_response_count": 124,
+              "input_tokens": 558788,
+              "output_tokens": 5780,
+              "total_tokens": 564568,
+              "unreported_api_attempt_count": 67
+            }
+          },
+          {
+            "game_index": 16,
+            "game_id": "s2-seer-n00025-game16",
+            "seed": "season2-evolution:fe5522dadf8d67ac:game16",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-n00025",
+              "witch": "witch-base",
+              "guard": "guard-n00017",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "f544e940e4a2ddbf4582e4f8b1b9d1e9543a5a73a90f4544927018fe7c902177",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 152,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p5"
+            ],
+            "focus_decision_count": 6,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 157,
+              "api_attempt_count": 243,
+              "reported_usage_response_count": 157,
+              "input_tokens": 692214,
+              "output_tokens": 9048,
+              "total_tokens": 701262,
+              "unreported_api_attempt_count": 86
+            }
+          },
+          {
+            "game_index": 17,
+            "game_id": "s2-seer-n00025-game17",
+            "seed": "season2-evolution:c5afa24f1c28ee03:game17",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00012",
+              "seer": "seer-n00025",
+              "witch": "witch-n00003",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "3379161ef98b3ac31d690cafa7c7685ca91acbccee60c447a20e491e93b735ce",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 128,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 129,
+              "api_attempt_count": 196,
+              "reported_usage_response_count": 129,
+              "input_tokens": 547663,
+              "output_tokens": 6316,
+              "total_tokens": 553979,
+              "unreported_api_attempt_count": 67
+            }
+          },
+          {
+            "game_index": 18,
+            "game_id": "s2-seer-n00025-game18",
+            "seed": "season2-evolution:497a17011d6cf0e0:game18",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-base",
+              "seer": "seer-n00025",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "61f8b3c5f9237ccbc6b6b5af9358ed022ae25acf2904c492b51b4fb078a4a45c",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 155,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 155,
+              "api_attempt_count": 244,
+              "reported_usage_response_count": 155,
+              "input_tokens": 637265,
+              "output_tokens": 7963,
+              "total_tokens": 645228,
+              "unreported_api_attempt_count": 89
+            }
+          },
+          {
+            "game_index": 19,
+            "game_id": "s2-seer-n00025-game19",
+            "seed": "season2-evolution:9d0e6cda149ab48a:game19",
+            "focus_node": "seer-n00025",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00011",
+              "seer": "seer-n00025",
+              "witch": "witch-n00003",
+              "guard": "guard-n00017",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "19fce802cd3fb6f182c7e36ddcaa5635507c100d5fbeb8b22d75ee69fc64e272",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 193,
+            "fallback_count": 1,
+            "fallback_rate": 0.0051813471502590676,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 1,
+            "focus_fallback_rate": 0.1111111111111111,
+            "focus_error_counts": {
+              "participant_error": 1
+            },
+            "focus_errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/games/round1/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 195,
+              "api_attempt_count": 277,
+              "reported_usage_response_count": 195,
+              "input_tokens": 791998,
+              "output_tokens": 9116,
+              "total_tokens": 801114,
+              "unreported_api_attempt_count": 82
+            }
+          }
+        ],
+        "model": {
+          "available": true,
+          "model": "qwen3.8-flash",
+          "protocol": "responses",
+          "reasoning_effort": "none",
+          "enable_thinking": false,
+          "max_output_tokens": 900
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_path",
+      "arguments": {},
+      "result": {
+        "lineage": [
+          {
+            "node": {
+              "node_id": "seer-base",
+              "role": "seer",
+              "status": "retained",
+              "parent_id": null,
+              "depth": 0,
+              "children": [
+                "seer-n00013",
+                "seer-n00014",
+                "seer-n00015"
+              ],
+              "created_at": "2026-09-04T05:02:49.870580+00:00",
+              "code_hash": "305d6c14cdd28a6d85de2166317963dacb33b7b502e1f637fc1226cacd543ded",
+              "patch_path": null,
+              "diagnosis_path": null,
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-base/summary.json",
+              "status_reason": "base"
+            },
+            "patch": ""
+          },
+          {
+            "node": {
+              "node_id": "seer-n00014",
+              "role": "seer",
+              "status": "retained",
+              "parent_id": "seer-base",
+              "depth": 1,
+              "children": [
+                "seer-n00025",
+                "seer-n00026",
+                "seer-n00027"
+              ],
+              "created_at": "2026-09-04T19:31:03.644273+00:00",
+              "code_hash": "1e07d5751d36b279b5b32c5e8a35b757198a693c03daeae8b67f385a70bb3a2b",
+              "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/seer-n00014/ancestor.patch",
+              "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T182939-1c7fb4f2/branch1/diagnosis.json",
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00014/summary.json",
+              "status_reason": "passed_broad_filter"
+            },
+            "patch": "--- seer-base/task_agent.py\n+++ seer-n00014/task_agent.py\n@@ -1,13 +1,14 @@\n-\"\"\"最小可运行的角色 Task-Agent。\n-\n-每次行动从一个新的模型会话开始。模型默认只收到当前状态；本轮对话只能通过唯一的\n-受限工具按需读取。这里不包含策略进化、长期记忆、外部检索或其他 Harness。\n+\"\"\"预言家 Task-Agent。\n+\n+每次行动从一个新的模型会话开始；但 Task-Agent 实例会维护轻量的 seer 记忆，\n+用于跨回合保存查验、候选人、对跳与票型摘要。\n \"\"\"\n \n from __future__ import annotations\n \n import asyncio\n-from collections.abc import Mapping\n+from collections.abc import Mapping, Sequence\n+from dataclasses import dataclass, field\n import hashlib\n import inspect\n import json\n@@ -20,6 +21,11 @@\n \n \n _CHINESE_CHARACTER = re.compile(r\"[\\u3400-\\u9fff]\")\n+_PLAYER_ID_PATTERN = re.compile(r\"\\bp\\d+\\b\", re.IGNORECASE)\n+_CURRENT_DIALOGUE_TEXT_LIMIT = 120\n+_CURRENT_DIALOGUE_ITEM_LIMIT = 6\n+_SUMMARY_TEXT_LIMIT = 160\n+_SUMMARY_LIST_LIMIT = 6\n \n CURRENT_ROUND_DIALOGUE_TOOL_NAME = \"read_current_round_dialogue\"\n DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5\n@@ -40,6 +46,38 @@\n         \"additionalProperties\": False,\n     },\n }\n+\n+\n+@dataclass\n+class SeerMemory:\n+    game_id: str = \"\"\n+    round_no: str = \"\"\n+    phase: str = \"\"\n+    alive: list[str] = field(default_factory=list)\n+    dead: list[str] = field(default_factory=list)\n+    sheriff_id: str = \"\"\n+    sheriff_candidates: list[str] = field(default_factory=list)\n+    inspected: list[dict[str, str]] = field(default_factory=list)\n+    declared_claims: list[dict[str, str]] = field(default_factory=list)\n+    challenged_players: list[str] = field(default_factory=list)\n+    recent_vote_summary: str = \"\"\n+    recent_vote_detail: dict[str, Any] = field(default_factory=dict)\n+    dialogue_digest: list[str] = field(default_factory=list)\n+\n+    def reset(self, game_id: str = \"\") -> None:\n+        self.game_id = game_id\n+        self.round_no = \"\"\n+        self.phase = \"\"\n+        self.alive.clear()\n+        self.dead.clear()\n+        self.sheriff_id = \"\"\n+        self.sheriff_candidates.clear()\n+        self.inspected.clear()\n+        self.declared_claims.clear()\n+        self.challenged_players.clear()\n+        self.recent_vote_summary = \"\"\n+        self.recent_vote_detail.clear()\n+        self.dialogue_digest.clear()\n \n \n def render_action_contract(request: Mapping[str, Any]) -> str:\n@@ -187,12 +225,12 @@\n             \"output_tokens\": 0,\n             \"total_tokens\": 0,\n         }\n+        self._seer_memory = SeerMemory()\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n-        \"\"\"接收公开同步；最小基线不把它跨行动保存为模型记忆。\"\"\"\n-\n-        # 保留 Participant 接口，但刻意不维护跨行动状态。\n-        del sync_packet\n+        \"\"\"接收公开同步并更新轻量 seer 记忆。\"\"\"\n+\n+        self._ingest_packet(sync_packet, source=\"observe\")\n \n     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:\n         if turn_packet[\"self\"][\"player_id\"] != self.player_id:\n@@ -201,16 +239,20 @@\n         if str(private.get(\"role\")) != self.profile.role:\n             raise ValueError(\"Task-Agent 的角色档案与行动包身份不一致\")\n \n+        self._ingest_packet(turn_packet, source=\"decide\")\n+        mode = self._decide_mode(turn_packet)\n+        seer_brief = self._build_seer_brief(turn_packet, mode)\n         system = self._system_prompt(private)\n         prompt = {\n-            \"game\": turn_packet[\"game\"],\n-            \"public_rules\": turn_packet[\"public_rules\"],\n-            \"self\": turn_packet[\"self\"],\n-            \"private_information\": private,\n-            \"public_state\": turn_packet[\"public_state\"],\n-            \"request\": turn_packet[\"request\"],\n+            \"game\": self._compact_value(turn_packet.get(\"game\"), max_depth=1),\n+            \"self\": self._compact_value(turn_packet.get(\"self\"), max_depth=1),\n+            \"request\": self._compact_request(turn_packet.get(\"request\") or {}),\n+            \"seer_memory\": self._compact_seer_memory(),\n+            \"seer_brief\": seer_brief,\n+            \"public_state\": self._compact_value(turn_packet.get(\"public_state\"), max_depth=2),\n+            \"private_information\": self._compact_private_information(private),\n             \"history_policy\": {\n-                \"default_context\": \"current_state_only\",\n+                \"default_context\": \"seer_memory_plus_current_round_summary\",\n                 \"current_round_dialogue_tool\": CURRENT_ROUND_DIALOGUE_TOOL_NAME,\n                 \"max_tool_calls\": self.max_tool_calls_per_decision,\n                 \"max_tool_result_tokens\": self.max_tool_result_tokens,\n@@ -219,16 +261,15 @@\n \n         tool_context = turn_packet.get(\"tool_context\") or {}\n         current_dialogue = tool_context.get(\"current_round_dialogue\") or []\n+        current_dialogue_excerpt = self._summarize_dialogue(current_dialogue)\n+        if current_dialogue_excerpt:\n+            prompt[\"current_round_dialogue_excerpt\"] = current_dialogue_excerpt\n \n         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:\n             del arguments\n             if name != CURRENT_ROUND_DIALOGUE_TOOL_NAME:\n                 return {\"error\": f\"不支持的工具：{name}\"}\n-            return {\n-                \"round\": turn_packet[\"game\"].get(\"round\"),\n-                \"phase\": turn_packet[\"game\"].get(\"public_phase\", turn_packet[\"game\"].get(\"phase\")),\n-                \"dialogue\": current_dialogue,\n-            }\n+            return self._current_round_dialogue_tool_result(turn_packet, current_dialogue)\n \n         feedback = \"\"\n         for _attempt in range(self.max_decision_retries + 1):\n@@ -236,7 +277,9 @@\n             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。\n             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0\n             user_content: dict[str, Any] = {\n-                \"instruction\": self._turn_instruction(turn_packet[\"request\"], feedback),\n+                \"instruction\": self._turn_instruction(\n+                    turn_packet[\"request\"], feedback, mode=mode, seer_brief=seer_brief\n+                ),\n                 \"packet\": prompt,\n             }\n             try:\n@@ -312,12 +355,48 @@\n         )\n \n     @staticmethod\n-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:\n-        return render_prompt(\n-            \"player_turn_instruction.txt\",\n-            action_contract=render_action_contract(request),\n-            validation_feedback=(f\"上一次输出未通过校验：{feedback}\" if feedback else \"\"),\n-        )\n+    def _turn_instruction(\n+        request: Mapping[str, Any],\n+        feedback: str,\n+        *,\n+        mode: str,\n+        seer_brief: dict[str, Any],\n+    ) -> str:\n+        pieces = [render_action_contract(request)]\n+        if mode == \"night_inspect\":\n+            pieces.append(\n+                \"夜间优先验信息增益最高的目标：优先 sheriff 候选、强对跳、发言强但立场模糊者、票型关键位；\"\n+                \"严格避开自己和已验过的人。\"\n+            )\n+            if seer_brief.get(\"preferred_targets\"):\n+                pieces.append(\"建议目标：\" + \"、\".join(seer_brief[\"preferred_targets\"]))\n+        elif mode == \"sheriff_election_speech\":\n+            pieces.append(\n+                \"竞选警长发言必须先讲已知查验事实，再讲可验证推断和带队计划；\"\n+                \"若有对跳，直接对比查验、时间线和动机，不要泛泛而谈。\"\n+            )\n+        elif mode == \"day_speech\":\n+            pieces.append(\n+                \"白天发言要先给查验事实，再给基于票型和发言的推断；先压最危险的矛盾点，再给出可执行投票方向。\"\n+            )\n+        elif mode == \"vote\":\n+            pieces.append(\n+                \"投票优先级：查验事实 > 明显对跳/矛盾 > 票型关键位 > 其他怀疑对象；若正在被集火，优先选择能自保且不背离事实的票。\"\n+            )\n+        else:\n+            pieces.append(\n+                \"保持 seer 视角：任何发言都要尽量围绕查验、对跳、票型和可验证推断，不要套通用狼人杀模板。\"\n+            )\n+        if seer_brief.get(\"facts\"):\n+            pieces.append(\"事实摘要：\" + \"；\".join(seer_brief[\"facts\"]))\n+        if seer_brief.get(\"pressure_points\"):\n+            pieces.append(\"当前压力点：\" + \"；\".join(seer_brief[\"pressure_points\"]))\n+        if seer_brief.get(\"self_risk\"):\n+            pieces.append(\"自保判断：\" + str(seer_brief[\"self_risk\"]))\n+        if feedback:\n+            pieces.append(f\"上一次输出未通过校验：{feedback}\")\n+        pieces.append(\"最终回答只能是符合契约的 JSON 对象。\")\n+        return \"\\n\".join(pieces)\n \n     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:\n         if self.request_coordinator is not None:\n@@ -356,3 +435,737 @@\n         except (TypeError, ValueError):\n             return fallback\n         return normalized if normalized >= 0 else fallback\n+\n+    def _ingest_packet(self, packet: Mapping[str, Any], *, source: str) -> None:\n+        del source\n+        if not isinstance(packet, Mapping):\n+            return\n+        game_id = self._extract_game_id(packet)\n+        if game_id and game_id != self._seer_memory.game_id:\n+            self._seer_memory.reset(game_id)\n+        elif game_id and not self._seer_memory.game_id:\n+            self._seer_memory.game_id = game_id\n+\n+        self._seer_memory.round_no = self._stringify(\n+            self._first_present(\n+                packet,\n+                (\n+                    (\"game\", \"round\"),\n+                    (\"game\", \"day\"),\n+                    (\"round\",),\n+                    (\"day\",),\n+                    (\"public_state\", \"round\"),\n+                    (\"public_state\", \"day\"),\n+                ),\n+            )\n+        )\n+        self._seer_memory.phase = self._stringify(self._extract_phase(packet))\n+\n+        alive = self._extract_player_ids(\n+            self._first_present(\n+                packet,\n+                (\n+                    (\"public_state\", \"alive\"),\n+                    (\"public_state\", \"alive_players\"),\n+                    (\"public_state\", \"survivors\"),\n+                    (\"game\", \"alive\"),\n+                    (\"alive\",),\n+                ),\n+            )\n+        )\n+        dead = self._extract_player_ids(\n+            self._first_present(\n+                packet,\n+                (\n+                    (\"public_state\", \"dead\"),\n+                    (\"public_state\", \"dead_players\"),\n+                    (\"public_state\", \"eliminated\"),\n+                    (\"game\", \"dead\"),\n+                    (\"dead\",),\n+                ),\n+            )\n+        )\n+        if alive:\n+            self._seer_memory.alive = alive\n+        if dead:\n+            self._seer_memory.dead = dead\n+\n+        sheriff = self._extract_single_player_id(\n+            self._first_present(\n+                packet,\n+                (\n+                    (\"public_state\", \"sheriff_id\"),\n+                    (\"public_state\", \"sheriff\"),\n+                    (\"public_state\", \"captain\"),\n+                    (\"game\", \"sheriff_id\"),\n+                    (\"game\", \"sheriff\"),\n+                    (\"sheriff_id\",),\n+                    (\"sheriff\",),\n+                    (\"captain\",),\n+                ),\n+            )\n+        )\n+        if sheriff:\n+            self._seer_memory.sheriff_id = sheriff\n+\n+        sheriff_candidates = self._extract_player_ids(\n+            self._first_present(\n+                packet,\n+                (\n+                    (\"public_state\", \"sheriff_candidates\"),\n+                    (\"public_state\", \"candidates\"),\n+                    (\"public_state\", \"election_candidates\"),\n+                    (\"game\", \"sheriff_candidates\"),\n+                    (\"sheriff_candidates\",),\n+                    (\"candidates\",),\n+                ),\n+            )\n+        )\n+        if sheriff_candidates:\n+            self._seer_memory.sheriff_candidates = sheriff_candidates\n+\n+        vote_summary, vote_detail = self._summarize_vote_info(packet)\n+        if vote_summary:\n+            self._seer_memory.recent_vote_summary = vote_summary\n+        if vote_detail:\n+            self._seer_memory.recent_vote_detail = vote_detail\n+\n+        dialogue_digest = self._extract_dialogue_digest(packet)\n+        if dialogue_digest:\n+            self._seer_memory.dialogue_digest = dialogue_digest\n+            self._update_claims_from_dialogue(dialogue_digest)\n+\n+        self._update_claims_and_challenges_from_packet(packet)\n+        self._update_inspection_records(packet)\n+\n+    def _extract_game_id(self, packet: Mapping[str, Any]) -> str:\n+        for path in ((\"game\", \"game_id\"), (\"game\", \"id\"), (\"game_id\",), (\"match_id\",), (\"session_id\",)):\n+            value = self._first_present(packet, (path,))\n+            game_id = self._stringify(value)\n+            if game_id:\n+                return game_id\n+        return \"\"\n+\n+    def _extract_phase(self, packet: Mapping[str, Any]) -> str:\n+        for path in (\n+            (\"game\", \"public_phase\"),\n+            (\"game\", \"phase\"),\n+            (\"public_state\", \"phase\"),\n+            (\"public_state\", \"public_phase\"),\n+            (\"request\", \"phase\"),\n+            (\"phase\",),\n+        ):\n+            value = self._first_present(packet, (path,))\n+            phase = self._stringify(value)\n+            if phase:\n+                return phase\n+        return \"\"\n+\n+    def _first_present(self, packet: Mapping[str, Any], paths: Sequence[Sequence[str]]) -> Any:\n+        for path in paths:\n+            current: Any = packet\n+            found = True\n+            for key in path:\n+                if not isinstance(current, Mapping) or key not in current:\n+                    found = False\n+                    break\n+                current = current[key]\n+            if found and current not in (None, \"\"):\n+                return current\n+        return None\n+\n+    def _extract_player_ids(self, value: Any) -> list[str]:\n+        result: list[str] = []\n+        if value is None:\n+            return result\n+        if isinstance(value, str):\n+            ids = _PLAYER_ID_PATTERN.findall(value)\n+            if ids:\n+                return self._unique_stable(ids)\n+            return [value] if value.strip() else []\n+        if isinstance(value, Mapping):\n+            for key in (\"player_id\", \"id\", \"target_id\", \"speaker\", \"name\"):\n+                nested = value.get(key)\n+                if isinstance(nested, str) and nested:\n+                    result.append(nested)\n+            for nested in value.values():\n+                result.extend(self._extract_player_ids(nested))\n+            return self._unique_stable(result)\n+        if isinstance(value, Sequence):\n+            for item in value:\n+                if isinstance(item, Mapping):\n+                    result.extend(self._extract_player_ids(item))\n+                elif isinstance(item, str):\n+                    ids = _PLAYER_ID_PATTERN.findall(item)\n+                    result.extend(ids or ([item] if item.strip() else []))\n+                else:\n+                    text = self._stringify(item)\n+                    if text:\n+                        ids = _PLAYER_ID_PATTERN.findall(text)\n+                        result.extend(ids or [text])\n+            return self._unique_stable(result)\n+        text = self._stringify(value)\n+        if text:\n+            ids = _PLAYER_ID_PATTERN.findall(text)\n+            return self._unique_stable(ids or [text])\n+        return result\n+\n+    def _extract_single_player_id(self, value: Any) -> str:\n+        ids = self._extract_player_ids(value)\n+        return ids[0] if ids else \"\"\n+\n+    def _summarize_vote_info(self, packet: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:\n+        vote_value = self._first_present(\n+            packet,\n+            (\n+                (\"public_state\", \"votes\"),\n+                (\"public_state\", \"vote\"),\n+                (\"public_state\", \"vote_result\"),\n+                (\"public_state\", \"day_vote\"),\n+                (\"public_state\", \"election_vote\"),\n+                (\"game\", \"votes\"),\n+                (\"votes\",),\n+                (\"vote_result\",),\n+            ),\n+        )\n+        if vote_value is None:\n+            return \"\", {}\n+        detail = self._compact_value(vote_value, max_depth=2)\n+        summary = self._vote_summary_text(vote_value)\n+        return summary, detail if isinstance(detail, dict) else {\"vote\": detail}\n+\n+    def _vote_summary_text(self, value: Any) -> str:\n+        if isinstance(value, Mapping):\n+            target = self._extract_single_player_id(\n+                value.get(\"target\") or value.get(\"target_id\") or value.get(\"lynch\") or value.get(\"eliminate\")\n+            )\n+            counts = value.get(\"counts\") or value.get(\"votes\") or value.get(\"detail\")\n+            counts_text = self._vote_summary_text(counts)\n+            if target and counts_text:\n+                return f\"{target} | {counts_text}\"\n+            if target:\n+                return target\n+            if counts_text:\n+                return counts_text\n+            items = []\n+            for key, nested in value.items():\n+                if key in {\"round\", \"day\", \"phase\"}:\n+                    continue\n+                ids = self._extract_player_ids(nested)\n+                if ids:\n+                    items.append(f\"{key}:{'、'.join(ids[:3])}\")\n+                else:\n+                    text = self._truncate_text(self._stringify(nested), 60)\n+                    if text:\n+                        items.append(f\"{key}:{text}\")\n+            return \"；\".join(items[:_SUMMARY_LIST_LIMIT])\n+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):\n+            items = []\n+            for item in list(value)[:_SUMMARY_LIST_LIMIT]:\n+                ids = self._extract_player_ids(item)\n+                if ids:\n+                    items.append(\"、\".join(ids[:3]))\n+                else:\n+                    items.append(self._truncate_text(self._stringify(item), 60))\n+            return \"；\".join(item for item in items if item)\n+        return self._truncate_text(self._stringify(value), 80)\n+\n+    def _extract_dialogue_digest(self, packet: Mapping[str, Any]) -> list[str]:\n+        dialogue = self._first_present(\n+            packet,\n+            (\n+                (\"tool_context\", \"current_round_dialogue\"),\n+                (\"public_state\", \"current_round_dialogue\"),\n+                (\"public_state\", \"dialogue\"),\n+                (\"dialogue\",),\n+                (\"current_round_dialogue\",),\n+            ),\n+        )\n+        return self._summarize_dialogue(dialogue)\n+\n+    def _summarize_dialogue(self, dialogue: Any) -> list[str]:\n+        if not dialogue:\n+            return []\n+        items: list[str] = []\n+        if isinstance(dialogue, Mapping):\n+            dialogue = [dialogue]\n+        if not isinstance(dialogue, Sequence) or isinstance(dialogue, (str, bytes, bytearray)):\n+            text = self._truncate_text(self._stringify(dialogue), _CURRENT_DIALOGUE_TEXT_LIMIT)\n+            return [text] if text else []\n+        for item in dialogue:\n+            if len(items) >= _CURRENT_DIALOGUE_ITEM_LIMIT:\n+                break\n+            if isinstance(item, Mapping):\n+                speaker = self._extract_single_player_id(\n+                    item.get(\"speaker\") or item.get(\"player_id\") or item.get(\"id\") or item.get(\"from\")\n+                )\n+                text = self._stringify(\n+                    item.get(\"text\")\n+                    or item.get(\"content\")\n+                    or item.get(\"message\")\n+                    or item.get(\"utterance\")\n+                    or item\n+                )\n+            else:\n+                speaker = \"\"\n+                text = self._stringify(item)\n+            text = self._truncate_text(text.strip(), _CURRENT_DIALOGUE_TEXT_LIMIT)\n+            if not text:\n+                continue\n+            if speaker:\n+                items.append(f\"{speaker}:{text}\")\n+            else:\n+                items.append(text)\n+        return items\n+\n+    def _current_round_dialogue_tool_result(\n+        self, turn_packet: Mapping[str, Any], current_dialogue: Any\n+    ) -> dict[str, Any]:\n+        return {\n+            \"round\": self._stringify(self._first_present(turn_packet, ((\"game\", \"round\"), (\"round\",)))) ,\n+            \"phase\": self._stringify(self._extract_phase(turn_packet)),\n+            \"count\": len(current_dialogue) if isinstance(current_dialogue, Sequence) and not isinstance(current_dialogue, (str, bytes, bytearray)) else (1 if current_dialogue else 0),\n+            \"summary\": self._summarize_dialogue(current_dialogue),\n+        }\n+\n+    def _update_claims_from_dialogue(self, dialogue_digest: list[str]) -> None:\n+        for line in dialogue_digest:\n+            if not line:\n+                continue\n+            speaker = \"\"\n+            text = line\n+            if \":\" in line:\n+                speaker, text = line.split(\":\", 1)\n+                speaker = speaker.strip()\n+                text = text.strip()\n+            claim_keywords = (\"我是\", \"我跳\", \"我真\", \"预言家\", \"对跳\", \"查验\", \"警长\", \"竞选\", \"验了\", \"验过\")\n+            if any(keyword in text for keyword in claim_keywords):\n+                entry = {\"speaker\": speaker or self._speaker_from_text(text), \"claim\": self._truncate_text(text, _SUMMARY_TEXT_LIMIT)}\n+                if entry[\"speaker\"] or entry[\"claim\"]:\n+                    self._seer_memory.declared_claims.append(entry)\n+            if any(keyword in text for keyword in (\"对跳\", \"质疑\", \"假\", \"狼\", \"冲票\", \"先出\", \"出他\", \"票他\")):\n+                ids = self._extract_player_ids(text)\n+                if speaker:\n+                    ids.append(speaker)\n+                self._seer_memory.challenged_players = self._unique_stable(\n+                    list(self._seer_memory.challenged_players) + ids\n+                )\n+        self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)\n+\n+    def _update_claims_and_challenges_from_packet(self, packet: Mapping[str, Any]) -> None:\n+        claims = self._first_present(\n+            packet,\n+            (\n+                (\"public_state\", \"claims\"),\n+                (\"public_state\", \"roles_claimed\"),\n+                (\"claims\",),\n+                (\"roles_claimed\",),\n+            ),\n+        )\n+        if isinstance(claims, Sequence) and not isinstance(claims, (str, bytes, bytearray)):\n+            for item in claims:\n+                if isinstance(item, Mapping):\n+                    speaker = self._extract_single_player_id(\n+                        item.get(\"speaker\") or item.get(\"player_id\") or item.get(\"id\")\n+                    )\n+                    claim = self._truncate_text(\n+                        self._stringify(\n+                            item.get(\"claim\")\n+                            or item.get(\"role\")\n+                            or item.get(\"text\")\n+                            or item.get(\"content\")\n+                            or item\n+                        ),\n+                        _SUMMARY_TEXT_LIMIT,\n+                    )\n+                    if speaker or claim:\n+                        self._seer_memory.declared_claims.append({\"speaker\": speaker, \"claim\": claim})\n+        challenged = self._first_present(\n+            packet,\n+            (\n+                (\"public_state\", \"challenged_players\"),\n+                (\"public_state\", \"suspects\"),\n+                (\"public_state\", \"challenge_targets\"),\n+                (\"challenged_players\",),\n+                (\"suspects\",),\n+            ),\n+        )\n+        if challenged is not None:\n+            ids = self._extract_player_ids(challenged)\n+            if ids:\n+                self._seer_memory.challenged_players = self._unique_stable(\n+                    list(self._seer_memory.challenged_players) + ids\n+                )\n+        self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)\n+        self._seer_memory.challenged_players = self._unique_stable(self._seer_memory.challenged_players)\n+\n+    def _update_inspection_records(self, packet: Mapping[str, Any]) -> None:\n+        private = self._first_present(\n+            packet,\n+            (\n+                (\"private_information\",),\n+                (\"private\",),\n+                (\"self\", \"private_information\"),\n+            ),\n+        )\n+        if not isinstance(private, Mapping):\n+            return\n+        target = self._extract_single_player_id(\n+            self._first_present(\n+                private,\n+                (\n+                    (\"inspect_target\",),\n+                    (\"target_id\",),\n+                    (\"target\",),\n+                    (\"checked_player\",),\n+                    (\"seer_target\",),\n+                ),\n+            )\n+        )\n+        result_value = self._first_present(\n+            private,\n+            (\n+                (\"inspect_result\",),\n+                (\"check_result\",),\n+                (\"seer_result\",),\n+                (\"night_result\",),\n+                (\"result\",),\n+            ),\n+        )\n+        if not target and not result_value:\n+            return\n+        result_text = self._inspection_result_text(result_value)\n+        if not result_text:\n+            return\n+        round_no = self._seer_memory.round_no\n+        if target:\n+            entry = {\"round\": round_no, \"target\": target, \"result\": result_text}\n+            if entry not in self._seer_memory.inspected:\n+                self._seer_memory.inspected.append(entry)\n+\n+    def _inspection_result_text(self, value: Any) -> str:\n+        text = self._truncate_text(self._stringify(value), _SUMMARY_TEXT_LIMIT)\n+        if not text:\n+            return \"\"\n+        normalized = text.lower()\n+        if any(token in normalized for token in (\"wolf\", \"werewolf\", \"evil\", \"狼\", \"bad\")):\n+            return \"wolf\"\n+        if any(token in normalized for token in (\"villager\", \"good\", \"human\", \"好人\", \"村民\", \"平民\")):\n+            return \"villager\"\n+        return text\n+\n+    def _build_seer_brief(self, turn_packet: Mapping[str, Any], mode: str) -> dict[str, Any]:\n+        request = turn_packet.get(\"request\") or {}\n+        allowed_actions = request.get(\"allowed_actions\") if isinstance(request, Mapping) else None\n+        allowed_kinds = [str(item.get(\"kind\")) for item in allowed_actions if isinstance(item, Mapping) and item.get(\"kind\")]\n+        target_candidates = self._allowed_target_ids(allowed_actions)\n+        preferred_targets, reasons = self._rank_inspect_targets(turn_packet, target_candidates)\n+        facts = self._seer_facts_summary()\n+        pressure_points = self._pressure_points_summary(turn_packet)\n+        self_risk = self._self_risk_summary(turn_packet)\n+        brief: dict[str, Any] = {\n+            \"mode\": mode,\n+            \"allowed_kinds\": allowed_kinds[:_SUMMARY_LIST_LIMIT],\n+            \"facts\": facts,\n+            \"pressure_points\": pressure_points,\n+            \"self_risk\": self_risk,\n+        }\n+        if preferred_targets:\n+            brief[\"preferred_targets\"] = preferred_targets[:_SUMMARY_LIST_LIMIT]\n+            brief[\"target_reasons\"] = reasons[:_SUMMARY_LIST_LIMIT]\n+        return brief\n+\n+    def _seer_facts_summary(self) -> list[str]:\n+        facts: list[str] = []\n+        for item in self._seer_memory.inspected[-_SUMMARY_LIST_LIMIT:]:\n+            if not isinstance(item, Mapping):\n+                continue\n+            round_no = self._stringify(item.get(\"round\"))\n+            target = self._stringify(item.get(\"target\"))\n+            result = self._stringify(item.get(\"result\"))\n+            if target and result:\n+                facts.append(f\"{round_no + '轮' if round_no else '查验'}{target}={result}\")\n+        if self._seer_memory.sheriff_id:\n+            facts.append(f\"警长/队长位：{self._seer_memory.sheriff_id}\")\n+        if self._seer_memory.recent_vote_summary:\n+            facts.append(f\"最近票型：{self._seer_memory.recent_vote_summary}\")\n+        if self._seer_memory.declared_claims:\n+            latest = self._seer_memory.declared_claims[-1]\n+            speaker = self._stringify(latest.get(\"speaker\"))\n+            claim = self._stringify(latest.get(\"claim\"))\n+            if speaker or claim:\n+                facts.append(f\"最新公开声明：{speaker + ' ' if speaker else ''}{claim}\".strip())\n+        return facts[:_SUMMARY_LIST_LIMIT]\n+\n+    def _pressure_points_summary(self, turn_packet: Mapping[str, Any]) -> list[str]:\n+        points: list[str] = []\n+        if self._seer_memory.sheriff_candidates:\n+            points.append(\"警长候选：\" + \"、\".join(self._seer_memory.sheriff_candidates[:_SUMMARY_LIST_LIMIT]))\n+        if self._seer_memory.challenged_players:\n+            points.append(\"已被质疑/对跳关注：\" + \"、\".join(self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT]))\n+        vote_detail = self._seer_memory.recent_vote_detail\n+        if isinstance(vote_detail, Mapping) and vote_detail:\n+            points.append(\"票型详情已更新\")\n+        request = turn_packet.get(\"request\") or {}\n+        allowed_targets = self._allowed_target_ids(request.get(\"allowed_actions\") if isinstance(request, Mapping) else None)\n+        ranked, _ = self._rank_inspect_targets(turn_packet, allowed_targets)\n+        if ranked:\n+            points.append(\"夜验优先：\" + \"、\".join(ranked[:_SUMMARY_LIST_LIMIT]))\n+        return points[:_SUMMARY_LIST_LIMIT]\n+\n+    def _self_risk_summary(self, turn_packet: Mapping[str, Any]) -> str:\n+        self_seen = self.player_id in self._seer_memory.challenged_players\n+        other_claims = len(self._seer_memory.declared_claims)\n+        phase = self._extract_phase(turn_packet).lower()\n+        if self_seen:\n+            return \"自保压力高：已在公开内容中被质疑，发言宜先简后实。\"\n+        if \"elect\" in phase or \"sheriff\" in phase or \"警长\" in phase or \"竞选\" in phase:\n+            return \"身份暴露风险中等：竞选期要先立可信事实，再给投票方向。\"\n+        if other_claims >= 3:\n+            return \"信息竞争激烈：要把查验事实尽快转成压票点。\"\n+        return \"常规风险：优先保留信息优势，不要过度展开。\"\n+\n+    def _decide_mode(self, turn_packet: Mapping[str, Any]) -> str:\n+        request = turn_packet.get(\"request\") or {}\n+        allowed_actions = request.get(\"allowed_actions\") if isinstance(request, Mapping) else None\n+        allowed_kinds = [str(item.get(\"kind\") or \"\").lower() for item in allowed_actions if isinstance(item, Mapping)]\n+        phase = (self._extract_phase(turn_packet) or \"\").lower()\n+        channel = str(request.get(\"channel\") or \"\").lower() if isinstance(request, Mapping) else \"\"\n+        if any(self._kind_looks_like_inspect(kind) for kind in allowed_kinds):\n+            return \"night_inspect\"\n+        if any(kind in _SPEECH_ACTION_KINDS for kind in allowed_kinds):\n+            if any(token in phase for token in (\"sheriff\", \"election\", \"竞选\", \"警长\")) or any(\n+                token in channel for token in (\"sheriff\", \"election\", \"竞选\", \"警长\")\n+            ):\n+                return \"sheriff_election_speech\"\n+            return \"day_speech\"\n+        if any(self._kind_looks_like_vote(kind) for kind in allowed_kinds):\n+            return \"vote\"\n+        return \"general\"\n+\n+    def _kind_looks_like_inspect(self, kind: str) -> bool:\n+        kind = kind.lower()\n+        return any(token in kind for token in (\"inspect\", \"check\", \"seer\", \"查验\", \"验\", \"探查\"))\n+\n+    def _kind_looks_like_vote(self, kind: str) -> bool:\n+        kind = kind.lower()\n+        return any(token in kind for token in (\"vote\", \"ballot\", \"lynch\", \"投票\", \"归票\"))\n+\n+    def _allowed_target_ids(self, allowed_actions: Any) -> list[str]:\n+        target_ids: list[str] = []\n+        if not isinstance(allowed_actions, Sequence) or isinstance(allowed_actions, (str, bytes, bytearray)):\n+            return target_ids\n+        for item in allowed_actions:\n+            if not isinstance(item, Mapping):\n+                continue\n+            ids = item.get(\"target_ids\")\n+            if isinstance(ids, Sequence) and not isinstance(ids, (str, bytes, bytearray)):\n+                for target_id in ids:\n+                    if isinstance(target_id, str) and target_id:\n+                        target_ids.append(target_id)\n+        return self._unique_stable(target_ids)\n+\n+    def _rank_inspect_targets(\n+        self, turn_packet: Mapping[str, Any], candidate_ids: Sequence[str]\n+    ) -> tuple[list[str], list[str]]:\n+        alive = self._seer_memory.alive or self._extract_player_ids(\n+            self._first_present(turn_packet, ((\"public_state\", \"alive\"), (\"public_state\", \"alive_players\")))\n+        )\n+        candidates = [\n+            target_id\n+            for target_id in self._unique_stable(candidate_ids)\n+            if target_id and target_id != self.player_id and target_id not in self._seen_inspection_targets()\n+        ]\n+        if not candidates:\n+            candidates = [\n+                target_id\n+                for target_id in alive\n+                if target_id and target_id != self.player_id and target_id not in self._seen_inspection_targets()\n+            ]\n+        scores: dict[str, int] = {target_id: 0 for target_id in candidates}\n+        reasons: dict[str, list[str]] = {target_id: [] for target_id in candidates}\n+\n+        sheriff_like = self._unique_stable(\n+            [self._seer_memory.sheriff_id] + self._seer_memory.sheriff_candidates\n+        )\n+        for target_id in candidates:\n+            if target_id in sheriff_like:\n+                scores[target_id] += 50\n+                reasons[target_id].append(\"警长/候选\")\n+            if target_id in self._seer_memory.challenged_players:\n+                scores[target_id] += 30\n+                reasons[target_id].append(\"对跳/质疑焦点\")\n+            if self._has_declared_claim(target_id):\n+                scores[target_id] += 20\n+                reasons[target_id].append(\"公开身份声明\")\n+            if self._appears_in_recent_vote(target_id):\n+                scores[target_id] += 18\n+                reasons[target_id].append(\"近期票型关键位\")\n+            if self._speaks_a_lot(target_id):\n+                scores[target_id] += 8\n+                reasons[target_id].append(\"发言密集\")\n+\n+        ranked = sorted(candidates, key=lambda item: (-scores[item], candidates.index(item)))\n+        ranked_reasons = [\n+            f\"{target_id}:{'、'.join(reasons[target_id]) or '默认信息增益'}\"\n+            for target_id in ranked\n+        ]\n+        return ranked, ranked_reasons\n+\n+    def _seen_inspection_targets(self) -> set[str]:\n+        seen: set[str] = set()\n+        for item in self._seer_memory.inspected:\n+            if isinstance(item, Mapping):\n+                target = self._stringify(item.get(\"target\"))\n+                if target:\n+                    seen.add(target)\n+        return seen\n+\n+    def _has_declared_claim(self, target_id: str) -> bool:\n+        for claim in self._seer_memory.declared_claims:\n+            if not isinstance(claim, Mapping):\n+                continue\n+            if self._stringify(claim.get(\"speaker\")) == target_id:\n+                return True\n+            if target_id and target_id in self._stringify(claim.get(\"claim\")):\n+                return True\n+        return False\n+\n+    def _appears_in_recent_vote(self, target_id: str) -> bool:\n+        vote_detail = self._seer_memory.recent_vote_detail\n+        if not vote_detail:\n+            return False\n+        text = json.dumps(vote_detail, ensure_ascii=False, separators=(\",\", \":\"))\n+        return target_id in text\n+\n+    def _speaks_a_lot(self, target_id: str) -> bool:\n+        count = 0\n+        for line in self._seer_memory.dialogue_digest:\n+            if target_id in line:\n+                count += 1\n+        return count >= 2\n+\n+    def _compact_request(self, request: Mapping[str, Any]) -> dict[str, Any]:\n+        allowed_actions = request.get(\"allowed_actions\")\n+        compact_actions: list[dict[str, Any]] = []\n+        if isinstance(allowed_actions, Sequence) and not isinstance(allowed_actions, (str, bytes, bytearray)):\n+            for allowed in allowed_actions[:_SUMMARY_LIST_LIMIT]:\n+                if not isinstance(allowed, Mapping):\n+                    continue\n+                item: dict[str, Any] = {\"kind\": self._stringify(allowed.get(\"kind\"))}\n+                target_ids = allowed.get(\"target_ids\")\n+                if isinstance(target_ids, Sequence) and not isinstance(target_ids, (str, bytes, bytearray)):\n+                    ids = [self._stringify(v) for v in list(target_ids)[:_SUMMARY_LIST_LIMIT] if self._stringify(v)]\n+                    if ids:\n+                        item[\"target_ids\"] = ids\n+                if allowed.get(\"max_chars\") is not None:\n+                    item[\"max_chars\"] = allowed.get(\"max_chars\")\n+                if allowed.get(\"require_chinese\") is not None:\n+                    item[\"require_chinese\"] = bool(allowed.get(\"require_chinese\"))\n+                compact_actions.append(item)\n+        return {\n+            \"request_id\": self._stringify(request.get(\"request_id\")),\n+            \"phase\": self._stringify(request.get(\"phase\")),\n+            \"channel\": self._stringify(request.get(\"channel\")),\n+            \"allowed_actions\": compact_actions,\n+        }\n+\n+    def _compact_private_information(self, private: Mapping[str, Any]) -> dict[str, Any]:\n+        compact = self._compact_value(private, max_depth=2)\n+        if isinstance(compact, dict):\n+            compact[\"seer_memory_hint\"] = self._compact_seer_memory()\n+        return compact\n+\n+    def _compact_seer_memory(self) -> dict[str, Any]:\n+        memory = {\n+            \"game_id\": self._seer_memory.game_id,\n+            \"round\": self._seer_memory.round_no,\n+            \"phase\": self._seer_memory.phase,\n+            \"alive\": self._seer_memory.alive[:_SUMMARY_LIST_LIMIT],\n+            \"dead\": self._seer_memory.dead[:_SUMMARY_LIST_LIMIT],\n+            \"sheriff_id\": self._seer_memory.sheriff_id,\n+            \"sheriff_candidates\": self._seer_memory.sheriff_candidates[:_SUMMARY_LIST_LIMIT],\n+            \"inspected\": self._seer_memory.inspected[-_SUMMARY_LIST_LIMIT:],\n+            \"declared_claims\": self._seer_memory.declared_claims[-_SUMMARY_LIST_LIMIT:],\n+            \"challenged_players\": self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT],\n+            \"recent_vote_summary\": self._seer_memory.recent_vote_summary,\n+            \"dialogue_digest\": self._seer_memory.dialogue_digest[-_SUMMARY_LIST_LIMIT:],\n+        }\n+        return memory\n+\n+    def _compact_value(self, value: Any, *, max_depth: int, _depth: int = 0) -> Any:\n+        if value is None or isinstance(value, (bool, int, float)):\n+            return value\n+        if isinstance(value, str):\n+            return self._truncate_text(value, _SUMMARY_TEXT_LIMIT)\n+        if _depth >= max_depth:\n+            return self._truncate_text(self._stringify(value), _SUMMARY_TEXT_LIMIT)\n+        if isinstance(value, Mapping):\n+            items: dict[str, Any] = {}\n+            for idx, (key, nested) in enumerate(value.items()):\n+                if idx >= _SUMMARY_LIST_LIMIT:\n+                    items[\"__truncated__\"] = len(value) - _SUMMARY_LIST_LIMIT\n+                    break\n+                items[self._stringify(key)] = self._compact_value(nested, max_depth=max_depth, _depth=_depth + 1)\n+            return items\n+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):\n+            items = [\n+                self._compact_value(item, max_depth=max_depth, _depth=_depth + 1)\n+                for item in list(value)[:_SUMMARY_LIST_LIMIT]\n+            ]\n+            if len(value) > _SUMMARY_LIST_LIMIT:\n+                items.append(f\"...(+{len(value) - _SUMMARY_LIST_LIMIT})\")\n+            return items\n+        return self._truncate_text(self._stringify(value), _SUMMARY_TEXT_LIMIT)\n+\n+    def _unique_stable(self, values: Sequence[str]) -> list[str]:\n+        seen: set[str] = set()\n+        ordered: list[str] = []\n+        for value in values:\n+            text = self._stringify(value)\n+            if not text or text in seen:\n+                continue\n+            seen.add(text)\n+            ordered.append(text)\n+        return ordered\n+\n+    def _dedupe_dict_list(self, values: list[dict[str, str]]) -> list[dict[str, str]]:\n+        seen: set[tuple[str, str]] = set()\n+        deduped: list[dict[str, str]] = []\n+        for item in values:\n+            if not isinstance(item, Mapping):\n+                continue\n+            speaker = self._stringify(item.get(\"speaker\"))\n+            claim = self._stringify(item.get(\"claim\"))\n+            key = (speaker, claim)\n+            if key in seen:\n+                continue\n+            seen.add(key)\n+            deduped.append({\"speaker\": speaker, \"claim\": claim})\n+        return deduped\n+\n+    def _speaker_from_text(self, text: str) -> str:\n+        ids = _PLAYER_ID_PATTERN.findall(text)\n+        return ids[0] if ids else \"\"\n+\n+    @staticmethod\n+    def _truncate_text(text: str, limit: int) -> str:\n+        text = text.strip()\n+        if len(text) <= limit:\n+            return text\n+        return text[: max(0, limit - 1)] + \"…\"\n+\n+    @staticmethod\n+    def _stringify(value: Any) -> str:\n+        if value is None:\n+            return \"\"\n+        if isinstance(value, str):\n+            return value\n+        if isinstance(value, (int, float)):\n+            return str(value)\n+        if isinstance(value, bool):\n+            return \"true\" if value else \"false\"\n+        try:\n+            return json.dumps(value, ensure_ascii=False, separators=(\",\", \":\"))\n+        except TypeError:\n+            return str(value)\n--- seer-base/task.md\n+++ seer-n00014/task.md\n@@ -1,8 +1,33 @@\n-# 预言家最小任务\n+# 预言家任务说明\n \n-你的任务是利用查验信息帮助好人获胜，并让公开发言符合真实预言家的节奏。\n+你的目标不是套用通用狼人杀话术，而是把查验信息稳定转成生存优势、发言优势和投票优势。\n \n-- 夜间优先选择能最大化信息价值且当前行动包允许的查验目标，并记录已知结果。\n-- 白天把查验结果、公开发言和票型结合起来；发言时清楚区分查验事实与推测。\n-- 是否立即跳身份、如何安排查验顺序，要结合存活情况和信息暴露风险决定。\n-- 不要编造没有收到的查验结果，也不要用同一套发言模板应对所有局面。\n+## 执行优先级\n+\n+1. **夜间先验高信息目标**\n+   - 优先考虑警长竞选者、强对跳者、发言强但立场模糊者、票型关键位。\n+   - 严格避开自己和已查验过的目标。\n+   - 没有明显高收益目标时，再使用退化规则。\n+\n+2. **白天先说事实，再说推断**\n+   - 发言必须先给出已知查验结果，再给出可验证推断。\n+   - 不要把“感觉”“像狼”放在事实前面。\n+   - 同一局里不要反复使用同一套模板。\n+\n+3. **遇到对跳要直接比对**\n+   - 重点比较查验结果、时间线、竞选顺序、公开动机和票型。\n+   - 不要只说“我是真的”，要给出能被回看验证的证据链。\n+\n+4. **归票优先事实驱动**\n+   - 投票优先级：查验事实 > 明显对跳/矛盾 > 票型关键位 > 其他怀疑对象。\n+   - 如果自己正被集火，先保证自保，再争取把票投到最有事实支撑的目标。\n+\n+5. **持续记录公开信息**\n+   - 记录已查验目标、公开身份声明、被质疑对象和最近票型。\n+   - 每轮都用这些记忆更新判断，不要当成新的一局。\n+\n+## 额外要求\n+\n+- 不要编造没有收到的查验结果。\n+- 不要忽视生存风险；必要时先短发言、后补证据。\n+- 预言家的价值在于把真信息变成公共压力，而不是单纯报身份。\n"
+          },
+          {
+            "node": {
+              "node_id": "seer-n00025",
+              "role": "seer",
+              "status": "retained",
+              "parent_id": "seer-n00014",
+              "depth": 2,
+              "children": [
+                "seer-n00066"
+              ],
+              "created_at": "2026-09-05T09:29:49.447621+00:00",
+              "code_hash": "6b765eb390c36d0de56f15c2af2b18f6ba3432450aa16775b9a0f856c82b1140",
+              "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/seer-n00025/ancestor.patch",
+              "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T092949-ca7cfb28/branch0/diagnosis.json",
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/seer/seer-n00025/summary.json",
+              "status_reason": "passed_broad_filter"
+            },
+            "patch": "--- seer-n00014/task_agent.py\n+++ seer-n00025/task_agent.py\n@@ -22,6 +22,7 @@\n \n _CHINESE_CHARACTER = re.compile(r\"[\\u3400-\\u9fff]\")\n _PLAYER_ID_PATTERN = re.compile(r\"\\bp\\d+\\b\", re.IGNORECASE)\n+_SEAT_REFERENCE_PATTERN = re.compile(r\"(?:第\\s*)?(\\d{1,2})(?:\\s*(?:号|位))\")\n _CURRENT_DIALOGUE_TEXT_LIMIT = 120\n _CURRENT_DIALOGUE_ITEM_LIMIT = 6\n _SUMMARY_TEXT_LIMIT = 160\n@@ -60,6 +61,8 @@\n     inspected: list[dict[str, str]] = field(default_factory=list)\n     declared_claims: list[dict[str, str]] = field(default_factory=list)\n     challenged_players: list[str] = field(default_factory=list)\n+    seat_to_player_id: dict[str, str] = field(default_factory=dict)\n+    player_to_seat: dict[str, str] = field(default_factory=dict)\n     recent_vote_summary: str = \"\"\n     recent_vote_detail: dict[str, Any] = field(default_factory=dict)\n     dialogue_digest: list[str] = field(default_factory=list)\n@@ -75,6 +78,8 @@\n         self.inspected.clear()\n         self.declared_claims.clear()\n         self.challenged_players.clear()\n+        self.seat_to_player_id.clear()\n+        self.player_to_seat.clear()\n         self.recent_vote_summary = \"\"\n         self.recent_vote_detail.clear()\n         self.dialogue_digest.clear()\n@@ -363,6 +368,8 @@\n         seer_brief: dict[str, Any],\n     ) -> str:\n         pieces = [render_action_contract(request)]\n+        risk_mode = seer_brief.get(\"risk_mode\") if isinstance(seer_brief, Mapping) else None\n+        risk_active = bool(isinstance(risk_mode, Mapping) and risk_mode.get(\"active\"))\n         if mode == \"night_inspect\":\n             pieces.append(\n                 \"夜间优先验信息增益最高的目标：优先 sheriff 候选、强对跳、发言强但立场模糊者、票型关键位；\"\n@@ -387,10 +394,17 @@\n             pieces.append(\n                 \"保持 seer 视角：任何发言都要尽量围绕查验、对跳、票型和可验证推断，不要套通用狼人杀模板。\"\n             )\n+        if risk_active and mode in {\"sheriff_election_speech\", \"day_speech\", \"general\"}:\n+            pieces.append(\n+                \"风险发言模式：只输出 1 个已知事实 + 1 个可验证投票方向；不要一次性摊开全部查验、全部名单或完整推理链。\"\n+            )\n         if seer_brief.get(\"facts\"):\n-            pieces.append(\"事实摘要：\" + \"；\".join(seer_brief[\"facts\"]))\n+            facts = seer_brief[\"facts\"]\n+            if risk_active and mode in {\"sheriff_election_speech\", \"day_speech\", \"general\"}:\n+                facts = facts[:1]\n+            pieces.append(\"事实摘要：\" + \";\".join(facts))\n         if seer_brief.get(\"pressure_points\"):\n-            pieces.append(\"当前压力点：\" + \"；\".join(seer_brief[\"pressure_points\"]))\n+            pieces.append(\"当前压力点：\" + \";\".join(seer_brief[\"pressure_points\"]))\n         if seer_brief.get(\"self_risk\"):\n             pieces.append(\"自保判断：\" + str(seer_brief[\"self_risk\"]))\n         if feedback:\n@@ -460,6 +474,7 @@\n             )\n         )\n         self._seer_memory.phase = self._stringify(self._extract_phase(packet))\n+        self._refresh_player_aliases(packet)\n \n         alive = self._extract_player_ids(\n             self._first_present(\n@@ -579,15 +594,13 @@\n         if value is None:\n             return result\n         if isinstance(value, str):\n-            ids = _PLAYER_ID_PATTERN.findall(value)\n-            if ids:\n-                return self._unique_stable(ids)\n-            return [value] if value.strip() else []\n+            result.extend(self._extract_player_ids_from_text(value))\n+            return self._unique_stable(result)\n         if isinstance(value, Mapping):\n             for key in (\"player_id\", \"id\", \"target_id\", \"speaker\", \"name\"):\n                 nested = value.get(key)\n                 if isinstance(nested, str) and nested:\n-                    result.append(nested)\n+                    result.extend(self._extract_player_ids_from_text(nested))\n             for nested in value.values():\n                 result.extend(self._extract_player_ids(nested))\n             return self._unique_stable(result)\n@@ -596,23 +609,133 @@\n                 if isinstance(item, Mapping):\n                     result.extend(self._extract_player_ids(item))\n                 elif isinstance(item, str):\n-                    ids = _PLAYER_ID_PATTERN.findall(item)\n-                    result.extend(ids or ([item] if item.strip() else []))\n+                    result.extend(self._extract_player_ids_from_text(item))\n                 else:\n                     text = self._stringify(item)\n                     if text:\n-                        ids = _PLAYER_ID_PATTERN.findall(text)\n-                        result.extend(ids or [text])\n+                        result.extend(self._extract_player_ids_from_text(text))\n             return self._unique_stable(result)\n         text = self._stringify(value)\n         if text:\n-            ids = _PLAYER_ID_PATTERN.findall(text)\n-            return self._unique_stable(ids or [text])\n-        return result\n+            result.extend(self._extract_player_ids_from_text(text))\n+        return self._unique_stable(result)\n \n     def _extract_single_player_id(self, value: Any) -> str:\n         ids = self._extract_player_ids(value)\n         return ids[0] if ids else \"\"\n+\n+    def _refresh_player_aliases(self, packet: Mapping[str, Any]) -> None:\n+        public_state = self._first_present(packet, ((\"public_state\",),))\n+        if not isinstance(public_state, Mapping):\n+            return\n+        players = public_state.get(\"players\")\n+        if players is None:\n+            return\n+        seat_to_player_id: dict[str, str] = {}\n+        player_to_seat: dict[str, str] = {}\n+        alias_to_player_id: dict[str, str] = {}\n+\n+        def register_alias(alias: str, player_id: str) -> None:\n+            alias = self._stringify(alias).strip()\n+            if not alias or not player_id:\n+                return\n+            alias_to_player_id[alias.lower()] = player_id\n+            if alias.startswith(\"p\"):\n+                alias_to_player_id[alias] = player_id\n+\n+        entries: list[tuple[Any, Any]]\n+        if isinstance(players, Mapping):\n+            entries = list(players.items())\n+        elif isinstance(players, Sequence) and not isinstance(players, (str, bytes, bytearray)):\n+            entries = [(index, item) for index, item in enumerate(list(players), start=1)]\n+        else:\n+            return\n+\n+        for seat_hint, item in entries:\n+            player_id = \"\"\n+            seat_value: Any = seat_hint\n+            if isinstance(item, Mapping):\n+                player_id = self._extract_single_player_id(\n+                    item.get(\"player_id\")\n+                    or item.get(\"playerId\")\n+                    or item.get(\"id\")\n+                    or item.get(\"player\")\n+                    or item.get(\"name\")\n+                )\n+                seat_value = item.get(\"seat\") or item.get(\"seat_id\") or item.get(\"seatId\") or item.get(\"position\") or item.get(\"index\") or seat_hint\n+            else:\n+                player_id = self._extract_single_player_id(item)\n+            if not player_id:\n+                continue\n+            seat_text = self._normalize_seat_text(seat_value)\n+            if seat_text:\n+                seat_to_player_id[seat_text] = player_id\n+                player_to_seat[player_id] = seat_text\n+                for alias in self._seat_alias_variants(seat_text):\n+                    register_alias(alias, player_id)\n+            register_alias(player_id, player_id)\n+            register_alias(player_id.lower(), player_id)\n+\n+        if seat_to_player_id:\n+            self._seer_memory.seat_to_player_id = seat_to_player_id\n+        if player_to_seat:\n+            self._seer_memory.player_to_seat = player_to_seat\n+        if alias_to_player_id:\n+            self._seer_memory.seat_to_player_id.update(alias_to_player_id)\n+\n+    def _extract_player_ids_from_text(self, text: str) -> list[str]:\n+        text = self._stringify(text)\n+        if not text:\n+            return []\n+        result = list(_PLAYER_ID_PATTERN.findall(text))\n+        alias_map = self._seer_memory.seat_to_player_id\n+        if alias_map:\n+            lowered = text.lower()\n+            matches: list[tuple[int, str]] = []\n+            for alias, player_id in alias_map.items():\n+                if not alias or not player_id:\n+                    continue\n+                pattern = self._alias_pattern(alias)\n+                for match in pattern.finditer(lowered):\n+                    matches.append((match.start(), player_id))\n+            if matches:\n+                matches.sort(key=lambda item: item[0])\n+                result.extend(player_id for _, player_id in matches)\n+        return self._unique_stable(result)\n+\n+    def _alias_pattern(self, alias: str) -> re.Pattern[str]:\n+        escaped = re.escape(alias.lower())\n+        if re.fullmatch(r\"p\\d+\", alias.lower()) or re.fullmatch(r\"\\d+\", alias):\n+            return re.compile(rf\"(?<!\\d){escaped}(?!\\d)\", re.IGNORECASE)\n+        return re.compile(rf\"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])\", re.IGNORECASE)\n+\n+    def _seat_alias_variants(self, seat_text: str) -> list[str]:\n+        normalized = self._normalize_seat_text(seat_text)\n+        if not normalized:\n+            return []\n+        aliases: list[str] = []\n+        if normalized.isdigit():\n+            aliases.extend([f\"{normalized}号\", f\"{normalized}位\", f\"第{normalized}位\", f\"第{normalized}号\"])\n+        else:\n+            aliases.append(normalized)\n+        return self._unique_stable(aliases)\n+\n+    def _normalize_seat_text(self, seat_value: Any) -> str:\n+        text = self._stringify(seat_value).strip()\n+        if not text:\n+            return \"\"\n+        lowered = text.lower()\n+        if lowered.startswith(\"第\"):\n+            lowered = lowered[1:]\n+        lowered = lowered.replace(\" \", \"\")\n+        if lowered.endswith(\"号\") or lowered.endswith(\"位\"):\n+            lowered = lowered[:-1]\n+        if lowered.isdigit():\n+            return lowered\n+        match = _SEAT_REFERENCE_PATTERN.search(text)\n+        if match:\n+            return match.group(1)\n+        return text\n \n     def _summarize_vote_info(self, packet: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:\n         vote_value = self._first_present(\n@@ -736,21 +859,50 @@\n             text = line\n             if \":\" in line:\n                 speaker, text = line.split(\":\", 1)\n-                speaker = speaker.strip()\n+                speaker = self._extract_single_player_id(speaker.strip()) or speaker.strip()\n                 text = text.strip()\n-            claim_keywords = (\"我是\", \"我跳\", \"我真\", \"预言家\", \"对跳\", \"查验\", \"警长\", \"竞选\", \"验了\", \"验过\")\n-            if any(keyword in text for keyword in claim_keywords):\n-                entry = {\"speaker\": speaker or self._speaker_from_text(text), \"claim\": self._truncate_text(text, _SUMMARY_TEXT_LIMIT)}\n+            claim_text = self._extract_explicit_claim_text(text)\n+            if claim_text:\n+                entry = {\n+                    \"speaker\": speaker or self._speaker_from_text(text),\n+                    \"claim\": self._truncate_text(claim_text, _SUMMARY_TEXT_LIMIT),\n+                }\n                 if entry[\"speaker\"] or entry[\"claim\"]:\n                     self._seer_memory.declared_claims.append(entry)\n-            if any(keyword in text for keyword in (\"对跳\", \"质疑\", \"假\", \"狼\", \"冲票\", \"先出\", \"出他\", \"票他\")):\n-                ids = self._extract_player_ids(text)\n+            challenge_targets = self._extract_explicit_challenge_targets(text)\n+            if challenge_targets:\n                 if speaker:\n-                    ids.append(speaker)\n+                    challenge_targets.append(self._extract_single_player_id(speaker) or speaker)\n                 self._seer_memory.challenged_players = self._unique_stable(\n-                    list(self._seer_memory.challenged_players) + ids\n+                    list(self._seer_memory.challenged_players) + challenge_targets\n                 )\n         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)\n+\n+    def _extract_explicit_claim_text(self, text: str) -> str:\n+        text = self._stringify(text).strip()\n+        if not text:\n+            return \"\"\n+        claim_markers = (\"我是\", \"我跳\", \"我自称\", \"自报\", \"我认\", \"报身份\", \"亮身份\")\n+        role_markers = (\"预言家\", \"女巫\", \"猎人\", \"守卫\", \"警长\", \"村民\", \"平民\", \"狼人\", \"好人\", \"坏人\")\n+        if any(marker in text for marker in claim_markers) and any(role in text for role in role_markers):\n+            return text\n+        if any(phrase in text for phrase in (\"我验\", \"我查\", \"验了\", \"验过\", \"查验\")) and any(\n+            role in text for role in (\"查杀\", \"金水\", \"银水\", \"狼\", \"好人\", \"坏人\")\n+        ):\n+            return text\n+        return \"\"\n+\n+    def _extract_explicit_challenge_targets(self, text: str) -> list[str]:\n+        text = self._stringify(text).strip()\n+        if not text:\n+            return []\n+        challenge_markers = (\"对跳\", \"质疑\", \"查杀\", \"抗推\", \"冲票\", \"归票\", \"出票\", \"先出\", \"先票\", \"出他\", \"票他\")\n+        if not any(marker in text for marker in challenge_markers):\n+            return []\n+        targets = self._extract_player_ids(text)\n+        if targets:\n+            return targets\n+        return []\n \n     def _update_claims_and_challenges_from_packet(self, packet: Mapping[str, Any]) -> None:\n         claims = self._first_present(\n@@ -863,12 +1015,14 @@\n         facts = self._seer_facts_summary()\n         pressure_points = self._pressure_points_summary(turn_packet)\n         self_risk = self._self_risk_summary(turn_packet)\n+        risk_mode = self._risk_mode_summary(turn_packet, mode, self_risk)\n         brief: dict[str, Any] = {\n             \"mode\": mode,\n             \"allowed_kinds\": allowed_kinds[:_SUMMARY_LIST_LIMIT],\n             \"facts\": facts,\n             \"pressure_points\": pressure_points,\n             \"self_risk\": self_risk,\n+            \"risk_mode\": risk_mode,\n         }\n         if preferred_targets:\n             brief[\"preferred_targets\"] = preferred_targets[:_SUMMARY_LIST_LIMIT]\n@@ -911,19 +1065,55 @@\n         ranked, _ = self._rank_inspect_targets(turn_packet, allowed_targets)\n         if ranked:\n             points.append(\"夜验优先：\" + \"、\".join(ranked[:_SUMMARY_LIST_LIMIT]))\n+        if self._self_is_under_pressure(turn_packet):\n+            points.append(\"当前处于高暴露/高集火风险\")\n         return points[:_SUMMARY_LIST_LIMIT]\n \n     def _self_risk_summary(self, turn_packet: Mapping[str, Any]) -> str:\n-        self_seen = self.player_id in self._seer_memory.challenged_players\n-        other_claims = len(self._seer_memory.declared_claims)\n+        if self._self_is_under_pressure(turn_packet):\n+            return \"自保压力高：已被公开质疑/集火或处于高暴露阶段，发言宜先简后实。\"\n         phase = self._extract_phase(turn_packet).lower()\n-        if self_seen:\n-            return \"自保压力高：已在公开内容中被质疑，发言宜先简后实。\"\n         if \"elect\" in phase or \"sheriff\" in phase or \"警长\" in phase or \"竞选\" in phase:\n             return \"身份暴露风险中等：竞选期要先立可信事实，再给投票方向。\"\n-        if other_claims >= 3:\n+        if len(self._seer_memory.declared_claims) >= 3:\n             return \"信息竞争激烈：要把查验事实尽快转成压票点。\"\n         return \"常规风险：优先保留信息优势，不要过度展开。\"\n+\n+    def _self_is_under_pressure(self, turn_packet: Mapping[str, Any]) -> bool:\n+        phase = self._extract_phase(turn_packet).lower()\n+        channel = str((turn_packet.get(\"request\") or {}).get(\"channel\") or \"\").lower()\n+        pressure_tokens = (\"elect\", \"sheriff\", \"竞选\", \"警长\")\n+        election_context = any(token in phase for token in pressure_tokens) or any(token in channel for token in pressure_tokens)\n+        self_seen = self.player_id in self._seer_memory.challenged_players\n+        exposed_claims = len(self._seer_memory.declared_claims) >= 4\n+        return self_seen or election_context or exposed_claims\n+\n+    def _risk_mode_summary(\n+        self, turn_packet: Mapping[str, Any], mode: str, self_risk: str\n+    ) -> dict[str, Any]:\n+        under_pressure = self._self_is_under_pressure(turn_packet)\n+        if not under_pressure:\n+            return {\n+                \"active\": False,\n+                \"level\": \"normal\",\n+                \"mode\": mode,\n+                \"rule\": \"可正常展开事实链，但仍优先使用可回看验证的证据。\",\n+            }\n+        if mode in {\"sheriff_election_speech\", \"day_speech\", \"general\"}:\n+            return {\n+                \"active\": True,\n+                \"level\": \"high\",\n+                \"mode\": mode,\n+                \"rule\": \"只说 1 个已知事实 + 1 个可验证投票方向；不要一次性公开全部查验。\",\n+                \"self_risk\": self_risk,\n+            }\n+        return {\n+            \"active\": True,\n+            \"level\": \"medium\",\n+            \"mode\": mode,\n+            \"rule\": \"保持发言克制，优先用最小事实集推动投票。\",\n+            \"self_risk\": self_risk,\n+        }\n \n     def _decide_mode(self, turn_packet: Mapping[str, Any]) -> str:\n         request = turn_packet.get(\"request\") or {}\n@@ -1041,7 +1231,7 @@\n     def _speaks_a_lot(self, target_id: str) -> bool:\n         count = 0\n         for line in self._seer_memory.dialogue_digest:\n-            if target_id in line:\n+            if target_id in self._extract_player_ids(line):\n                 count += 1\n         return count >= 2\n \n@@ -1145,7 +1335,7 @@\n         return deduped\n \n     def _speaker_from_text(self, text: str) -> str:\n-        ids = _PLAYER_ID_PATTERN.findall(text)\n+        ids = self._extract_player_ids(text)\n         return ids[0] if ids else \"\"\n \n     @staticmethod\n--- seer-n00014/task.md\n+++ seer-n00025/task.md\n@@ -30,4 +30,5 @@\n \n - 不要编造没有收到的查验结果。\n - 不要忽视生存风险；必要时先短发言、后补证据。\n+- 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先短发言并只释放足够推动投票的最小事实集，而不是一次性展开全部查验。\n - 预言家的价值在于把真信息变成公共压力，而不是单纯报身份。\n"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evolution_contract",
+      "arguments": {},
+      "result": {
+        "purpose": "Meta-Agent 为当前角色设计下一代 Task-Agent；外部状态机负责评测、建树和预算执行。",
+        "current_node": {
+          "node_id": "seer-n00025",
+          "role": "seer",
+          "status": "retained",
+          "depth": 2,
+          "parent_id": "seer-n00014",
+          "children": [
+            "seer-n00066"
+          ],
+          "generated_candidate_count": 10,
+          "successful_evolution_count": 5,
+          "pending_candidate_count": 1
+        },
+        "node_states": {
+          "pending": "待评估；先运行配置数量的对局，再决定 retained 或 discarded",
+          "retained": "保留在候选池中；在预算允许时可以生成子节点",
+          "discarded": "舍弃；不进入候选池，也不再生成子节点"
+        },
+        "evaluation": {
+          "games_per_pending_node": 20,
+          "player_count": 12,
+          "game_concurrency": 2,
+          "model_max_in_flight": 4,
+          "max_failed_games": 18,
+          "max_fallback_rate": 0.2,
+          "max_invalid_decisions": 10,
+          "discard_all_losses": true,
+          "focus_role_uses_current_node": true,
+          "other_roles_use_random_retained_candidates": true,
+          "quality_error_metrics_scope": "focus_role_only; aggregate game metrics are retained for diagnostics",
+          "parent_child_comparison_required": false
+        },
+        "evolution_budget": {
+          "children_per_expansion": 3,
+          "max_children_per_node": 3,
+          "max_tree_depth": 6,
+          "max_generated_candidates_per_role": 60,
+          "max_successful_evolutions_per_role": 20,
+          "role_scheduler": "least_evolved_random",
+          "candidate_pool_extra_limit": null
+        },
+        "process": [
+          "一个 step 以产生新的 retained 子节点为成功终止条件；不是生成 pending 就结束。",
+          "一个 step 可以连续处理多个节点，直到产生 retained 子节点或所有机会耗尽。",
+          "pending 节点只做评测并决定保留或舍弃。",
+          "retained 节点扩展时固定创建 children_per_expansion 个子节点。",
+          "每个子节点单独调用一次 Meta-Agent 和 Pi；一次扩展抽取不同的游戏回放。",
+          "子节点从父节点快照继承全部祖先修改；其他分支需要通过工具主动读取。",
+          "不要求子节点胜过父节点，也不保证每次修改都是真实改进。"
+        ],
+        "not_evolvable": [
+          "Game Engine",
+          "游戏规则与胜负裁决",
+          "信息可见性与行动 JSON schema",
+          "工具实现、模型网关、审计记录和所有外部预算"
+        ]
+      }
+    }
+  ],
+  "diagnosis": {
+    "summary": "seer-n00025 的主要问题不是 schema 稳定性，而是把真实查验转化为公共压力的链路不稳定。随机回放中预言家 p12 首夜验出 p3 好人并成功拿警徽、白天放逐 p4 狼；第二夜又验出 p5 狼，但第二天公开发言只重复 p3 金水，并把票压 p5 的理由说成“警上话最模糊”，没有公开关键查杀事实，导致全场票型转向 p1 守卫，后续预言家死亡后好人信息链断裂并最终狼胜。代码层面存在两个高概率根因：一是查验结果记忆解析可能漏掉引擎实际的 SEER_RESULT/private_information 字段，二是 risk_mode 在已暴露或竞选语境下强制只释放 1 个事实，可能把最新查杀事实截断。另一个放大因素是当前轮发言摘要只取前 6 条，后置位预言家经常丢失最近发言和矛盾焦点。",
+    "evidence": [
+      "评测汇总：seer-n00025 最近 20 局 win_count=6, loss_count=14, win_rate=0.3；focus_fallback_count=0，说明失败主要不是预言家自身非法行动或 fallback，而是策略/信息转化问题。",
+      "随机回放 game4：p12 是 seer；实际查验记录为 p3=village、p5=wolf、p2=village，最终 winner=wolf。",
+      "game4 seq35-36：p12 首夜查验 p3，结果 village；seq65 警上发言公开“我是预言家，昨晚验了3号，金水”，并成功在 seq93 当选警长。",
+      "game4 seq164-165：p12 第二夜查验 p5，结果 wolf；但 seq190 第二天发言为“事实：我验过3号，金水。方向：今天票先压p5，他警上话最模糊。”没有说出 p5 查杀/狼结果。",
+      "game4 seq202-214：p12 自己投 p5，但全场多数票投 p1，p1 守卫被放逐；如果 p5 查杀被明确公开，p12 的警长身份和前一日带队成功可能更容易把票集中到 p5。",
+      "game4 seq243-249：p12 第三夜死亡后把警徽给 p3 金水，这是合理兜底，但由于 p5 查杀未形成公共事实链，后续场上开始围绕警徽转移产生大量错误推断。",
+      "当前代码 _update_inspection_records 只从 private_information/private/self.private_information 中寻找 inspect_target/target_id 与 inspect_result/check_result 等字段；回放私有事件 payload 是 target_id/team，实际 turn_packet 的 private_information 是否包含这些字段不确定。若只包含 role_state.inspections 或 latest seer result，则当前解析会漏记。",
+      "当前代码 _turn_instruction 在 risk_active 且 speech mode 时将 facts=facts[:1]；_risk_mode_summary 又把竞选/警长阶段、公开声明多等情况判为高风险。预言家一旦已有多个查验，最新查杀可能被硬截断，只剩较早金水。",
+      "当前代码 _summarize_dialogue 对当前轮发言只保留前 6 条；game4 中 p12 多次作为后置位发言，前 6 条不能覆盖 p7-p11 的近期质疑和传话错误，容易造成发言只回应过时焦点。",
+      "game4 seq180-190：多人要求 p12 报完整 R1/R2 查验链；p12 却只报 R1 p3 金水并给出弱理由压 p5，说明提示没有强制“有最新查杀时必须优先公开查杀事实”。"
+    ],
+    "root_causes": [
+      "查验结果摄取不够兼容实际数据结构：只解析少数字段名，可能漏掉 private_information 中的 role_state.inspections、inspections 映射、last_result 或 target_id/team 组合，导致 seer_memory.facts 没有最新 p5=wolf。",
+      "风险发言模式过度保守且截断顺序错误：在预言家已跳身份/拿警徽/被要求交代时仍只允许 1 个事实，且 _seer_facts_summary 按历史顺序输出，facts[:1] 会优先保留旧金水而隐藏最新查杀。",
+      "缺少“查杀优先公开”的强约束：投票和发言提示虽有事实优先，但没有将 wolf 查验结果提升为最高优先级公开事实，导致模型用发言模糊、警上行为等弱理由替代真实查验。",
+      "当前轮发言摘要偏向开头而非最近/关键发言：后置位预言家在 day_speech 时拿不到尾部玩家的最新要求和矛盾，容易给出不完整回应。",
+      "票型/声明记忆缺少结构化可信度区分：声明提取会记录公开“跳身份/传话”，但没有标记被金水、被查杀、已放逐狼、已死亡等硬事实优先级，后续公共链容易被警徽交接、传话误差等软信息污染。"
+    ],
+    "modification_plan": [
+      {
+        "file": "task_agent.py",
+        "change": "增强 _update_inspection_records：除现有字段外，兼容 private_information.inspections / private_information.role_state.inspections / private_information.seer.inspections 这类 target->team 映射；兼容 latest_result、last_inspection、seer_result 为 dict 且含 target_id/target/team/result 的结构；当找到 team='wolf' 或 'village' 时写入 inspected，并去重时按 target 更新最新结果。",
+        "rationale": "确保模型提示里的 seer_memory.facts 一定包含全部真实查验，尤其是最新查杀，避免像 game4 R2 那样明明验出 p5 狼却公共发言只剩旧金水。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "新增 _critical_inspection_facts 或在 _seer_facts_summary 中重排事实：未公开/最新的 wolf 查验排在第一，其次最新查验，再其次旧金水、警长和票型。可在 SeerMemory 中增加 announced_inspections 集合，依据自己公开发言 text 粗略标记已报过的 target=result。",
+        "rationale": "即使 risk_mode 仍限制事实数量，也应优先释放最能改变票型的查杀，而不是历史最早的金水。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "修改 _turn_instruction 的 risk_active 逻辑：当 facts 中存在 '=wolf' 或 '查杀' 时，不执行 facts[:1] 的盲截断；改为保留所有 wolf 查验事实加最多 1 个最新金水。并加入明确指令：若有未公开的 wolf 查验，白天发言必须先报该查验，再给投票方向，不得用“发言模糊”等弱理由替代查验理由。",
+        "rationale": "预言家已暴露或作为警长被要求报验人时，隐藏查杀的生存收益低于公共票型收益；需要把风险模式从“少说事实”改成“少说推理但必须说关键查验”。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "调整 _risk_mode_summary：竞选期可以精简，但已当选警长、已公开跳预言家、或当天发言中多人要求报查验时，risk_mode.rule 改为“公开完整查验链中的查杀和最新结果，压缩其他推理”，而不是“只说 1 个已知事实”。",
+        "rationale": "game4 中 p12 已公开预言家并拿警徽，继续隐藏第二夜查杀只会让好人失去信息优势。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "修改 _summarize_dialogue：在长度限制内同时保留前 2 条和后 4 条，或优先保留包含 self、预言家、查验、查杀、金水、对跳、归票、票、质疑等关键词的发言，再补最近发言；工具返回 summary 也使用同一策略。",
+        "rationale": "后置位发言需要看到最新质疑和归票焦点。只取前 6 条会丢失尾部玩家要求“报完整查验链”的上下文。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 _build_seer_brief 中加入 public_plan 字段：包含 inspect_chain、must_announce、vote_target_from_inspection。若存在 wolf 查验且目标在 allowed vote targets 中，vote_target_from_inspection 直接设为该目标；若是发言阶段，must_announce 写明“先报 X=wolf，再归票 X”。",
+        "rationale": "把关键策略从自然语言泛化指令变成结构化提示，降低模型忽略查杀事实的概率。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 vote mode 的提示中增加硬优先级：若有 alive 且 allowed 的 wolf 查验目标，必须投该目标；只有目标不合法/已死时才退回对跳、票型或自保规则。",
+        "rationale": "当前 p12 虽投了 p5，但其他局可能仍被软逻辑带偏；预言家投票应最大化真实查验的票型压力。"
+      },
+      {
+        "file": "task.md",
+        "change": "补充一段角色专用执行规则：‘已公开跳预言家或持警徽后，查到狼时白天必须公开查杀和轮次；风险控制只压缩推理，不隐藏查杀。发言格式优先：查验链 -> 今日归票 -> 反驳当前误传。’",
+        "rationale": "让系统 prompt 与代码侧 brief 一致，防止模型继续把“最小事实集”理解为只报旧金水。"
+      }
+    ],
+    "risks": [
+      "更积极公开查杀会提高夜间被刀概率；但在已经跳预言家或持警徽的场景下，身份基本暴露，隐藏查杀的边际生存收益很低。",
+      "兼容更多 private_information 字段时要严格只读取 turn_packet 中已给当前玩家的私有信息，不能使用审计状态或隐藏角色信息；实现时不得引用 replay/audit roles。",
+      "如果 announced_inspections 通过自己公开发言文本粗略识别，可能因措辞差异漏标或误标；应只用于排序，不用于删除真实查验事实。",
+      "关键词优先摘要可能挤掉一些普通发言的细节；但比固定前 6 条更适合后置位预言家处理归票和对跳。",
+      "强制 wolf 查验优先可能在极少数自保临界票型下显得单线条；可保留例外：目标不在 allowed_targets、已死亡、或引擎允许弃票且查杀目标无法被投。"
+    ],
+    "code_agent_brief": "请只修改 seer 节点候选工作区的 task_agent.py 和必要的 task.md，不改 Game Engine、规则、schema、工具实现或可见性。目标是修复 seer-n00025 把查验信息转公共压力不稳定的问题。具体实现：1) 扩展 _update_inspection_records，兼容 private_information 中 inspections 映射、role_state.inspections、seer.inspections、latest_result/last_inspection/seer_result dict 等结构，将 target->team/result 正确写入 self._seer_memory.inspected；只使用 turn_packet/observe packet 中当前玩家可见字段。2) 重排 _seer_facts_summary 或新增 critical facts，使 alive/最新的 wolf 查验永远排在旧金水前。3) 修改 risk_mode 下的发言截断：不要盲目 facts[:1]；若存在 wolf 查验，保留所有 wolf 查验和最多一个最新金水，并在发言指令中明确‘先报 X=wolf/查杀，再归票 X，压缩其他推理’。4) 已跳预言家、持警徽、或当前发言多人要求报验人时，风险模式应公开关键查验链而不是隐藏查杀。5) 改 _summarize_dialogue，从固定前 6 条改为关键词优先 + 最近发言，至少保留尾部若干条，关键词包括预言家、查验、查杀、金水、对跳、归票、投票、质疑和自身 player_id。6) 在 seer_brief 中加入 public_plan/must_announce/vote_target_from_inspection，vote mode 若有合法存活 wolf 查验目标则必须投该目标。7) 在 task.md 增加简短规则：已公开跳预言家或持警徽后，查到狼必须公开轮次和目标，风险控制只压缩推理不隐藏查杀。保持现有 JSON 合约校验与预算不变。"
+  },
+  "model": {
+    "available": true,
+    "model": "gpt-5.5",
+    "protocol": "responses",
+    "reasoning_effort": null,
+    "enable_thinking": true,
+    "max_output_tokens": 900
+  },
+  "token_usage": {
+    "input_tokens": 147846,
+    "output_tokens": 3668,
+    "total_tokens": 151514
+  }
+}

@@ -1,0 +1,663 @@
+--- hunter-n00007/task_agent.py
++++ hunter-n00031/task_agent.py
+@@ -222,14 +222,14 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
+-        self._recent_public_events: deque[str] = deque(maxlen=10)
++        self._recent_public_events: deque[dict[str, Any]] = deque(maxlen=24)
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步，并压缩保存为短记忆。"""
+-
+-        for line in self._extract_memory_lines(sync_packet):
+-            if line:
+-                self._recent_public_events.append(line)
++        """接收公开同步，并压缩保存为短期证据账本。"""
++
++        for record in self._extract_memory_records(sync_packet):
++            if record:
++                self._recent_public_events.append(record)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -237,6 +237,11 @@
+         private = turn_packet["private_information"]
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
++
++        if self.profile.role == "hunter":
++            hunter_action = self._decide_hunter_reaction_action(turn_packet)
++            if hunter_action is not None:
++                return hunter_action
+ 
+         decision_brief = self._build_decision_brief(turn_packet)
+         system = self._system_prompt(private, decision_brief=decision_brief)
+@@ -401,51 +406,149 @@
+                 turn_packet.get("game", {}).get("phase", request.get("phase", "unknown")),
+             )
+         )
+-        lines = [f"阶段：{phase}"]
++        lines = [f"当前阶段：{phase}"]
+         legal_targets = ranking.get("legal_targets") or []
+-        if legal_targets:
+-            lines.append("合法目标：" + "、".join(legal_targets[:8]))
++        lines.append("合法目标：" + ("、".join(legal_targets[:8]) if legal_targets else "无"))
+         recent = ranking.get("recent_memory") or []
+         if recent:
+-            lines.append("最近公开记忆：" + " | ".join(recent[-3:]))
++            lines.append("近期证据：" + " | ".join(recent[-4:]))
+         ordered = ranking.get("target_ranking") or []
+         if ordered:
+             top_bits = []
+             for item in ordered[:3]:
+-                reason = str(item.get("reason") or "")[:32]
++                reason = str(item.get("reason") or "")[:28]
+                 top_bits.append(f"{item.get('target_id')}({item.get('score')}:{reason})")
+             lines.append("目标排序：" + " > ".join(top_bits))
++        strong_evidence = ranking.get("strong_evidence") or []
++        weak_evidence = ranking.get("weak_evidence") or []
++        lines.append("强证据：" + ("；".join(strong_evidence[:3]) if strong_evidence else "无"))
++        lines.append("弱证据：" + ("；".join(weak_evidence[:2]) if weak_evidence else "无"))
++        if ranking.get("best_target"):
++            lines.append(f"行动建议：优先开枪 {ranking['best_target']}")
++        else:
++            lines.append("行动建议：仅在确认所有候选都偏弱时跳过")
++        return self._truncate_text("\n".join(lines), 900)
++
++    def _decide_hunter_reaction_action(self, turn_packet: Mapping[str, Any]) -> dict[str, Any] | None:
++        if self.profile.role != "hunter":
++            return None
++        request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
++        if not self._is_hunter_reaction_request(turn_packet, request):
++            return None
++        public_state = turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {}
++        ranking = self._rank_hunter_targets(request, public_state, list(self._recent_public_events))
++        if ranking.get("best_target"):
++            action = self._find_target_action(request, str(ranking["best_target"]))
++            if action is not None:
++                return action
++            pass_action = self._find_pass_action(request)
++            if pass_action is not None:
++                return pass_action
+         if ranking.get("pass_recommended"):
+-            lines.append("倾向：证据不足或连锁风险高时可跳过")
+-        elif ranking.get("best_target"):
+-            lines.append(f"倾向：优先开枪 {ranking['best_target']}")
+-        return self._truncate_text("\n".join(lines), 900)
++            pass_action = self._find_pass_action(request)
++            if pass_action is not None:
++                return pass_action
++        return None
++
++    def _is_hunter_reaction_request(
++        self,
++        turn_packet: Mapping[str, Any],
++        request: Mapping[str, Any] | None = None,
++    ) -> bool:
++        request = request if isinstance(request, Mapping) else {}
++        game = turn_packet.get("game") if isinstance(turn_packet.get("game"), Mapping) else {}
++        haystack = " ".join(
++            str(part)
++            for part in (
++                request.get("phase"),
++                request.get("kind"),
++                request.get("action"),
++                request.get("channel"),
++                game.get("phase"),
++                game.get("public_phase"),
++            )
++            if part is not None
++        ).lower()
++        return "hunter_reaction" in haystack or "hunter reaction" in haystack or "猎人反应" in haystack
++
++    def _find_target_action(self, request: Mapping[str, Any], target_id: str) -> dict[str, Any] | None:
++        raw_actions = request.get("allowed_actions")
++        if not isinstance(raw_actions, list):
++            return None
++        for allowed in raw_actions:
++            if not isinstance(allowed, Mapping):
++                continue
++            raw_target_ids = allowed.get("target_ids")
++            if not isinstance(raw_target_ids, list):
++                continue
++            normalized_targets = {str(item) for item in raw_target_ids if item is not None}
++            if target_id not in normalized_targets:
++                continue
++            kind = str(allowed.get("kind") or "")
++            if not kind:
++                continue
++            action: dict[str, Any] = {
++                "request_id": request["request_id"],
++                "player_id": request["player_id"],
++                "kind": kind,
++                "target_id": target_id,
++            }
++            return action
++        return None
++
++    def _find_pass_action(self, request: Mapping[str, Any]) -> dict[str, Any] | None:
++        raw_actions = request.get("allowed_actions")
++        if not isinstance(raw_actions, list):
++            return None
++        for allowed in raw_actions:
++            if not isinstance(allowed, Mapping):
++                continue
++            kind = str(allowed.get("kind") or "")
++            if self._is_pass_kind(kind):
++                return {
++                    "request_id": request["request_id"],
++                    "player_id": request["player_id"],
++                    "kind": kind,
++                }
++        return None
++
++    @staticmethod
++    def _is_pass_kind(kind: str) -> bool:
++        return kind.lower() in {"pass", "skip"}
+ 
+     def _rank_hunter_targets(
+         self,
+         request: Mapping[str, Any],
+         public_state: Mapping[str, Any],
+-        memory_lines: list[str],
++        memory_records: list[dict[str, Any]],
+     ) -> dict[str, Any]:
+         legal_targets = self._collect_target_ids(request)
++        recent_memory = [
++            self._format_memory_record(record)
++            for record in memory_records[-10:]
++            if isinstance(record, Mapping)
++        ]
++        recent_memory = [line for line in recent_memory if line]
+         if not legal_targets:
+             return {
+                 "legal_targets": [],
+-                "recent_memory": memory_lines[-6:],
++                "recent_memory": recent_memory[-6:],
+                 "target_ranking": [],
+                 "pass_recommended": True,
+                 "best_target": None,
++                "strong_target": None,
++                "strong_evidence": [],
++                "weak_evidence": [],
+             }
+ 
+-        memory_blob = "\n".join(memory_lines[-8:])
+         try:
+             public_blob_raw = json.dumps(public_state, ensure_ascii=False, separators=(",", ":"))
+         except TypeError:
+             public_blob_raw = repr(public_state)
+-        public_blob = self._truncate_text(public_blob_raw, 1200)
++        public_blob = self._truncate_text(public_blob_raw, 1600)
+         target_ranking: list[dict[str, Any]] = []
+         for target_id in legal_targets:
+-            score, reasons = self._score_hunter_target(target_id, memory_blob, public_blob)
++            score, reasons = self._score_hunter_target(target_id, memory_records, public_blob)
+             target_ranking.append(
+                 {
+                     "target_id": target_id,
+@@ -455,117 +558,363 @@
+             )
+         target_ranking.sort(key=lambda item: (-int(item["score"]), str(item["target_id"])))
+         best = target_ranking[0] if target_ranking else None
+-        pass_recommended = best is None or int(best["score"]) < 3
+-        if len(target_ranking) > 1:
+-            second = target_ranking[1]
+-            if int(best["score"]) - int(second["score"]) < 2 and int(best["score"]) < 5:
+-                pass_recommended = True
+-        if best is not None and int(best["score"]) >= 5:
+-            pass_recommended = False
++        second_score = int(target_ranking[1]["score"]) if len(target_ranking) > 1 else 0
++        best_score = int(best["score"]) if best is not None else 0
++        gap = best_score - second_score
++        strong_target = None
++        strong_evidence: list[str] = []
++        weak_evidence: list[str] = []
++        if best is not None:
++            best_reasons = self._split_reason_text(str(best.get("reason") or ""))
++            if self._is_strong_hunter_score(best_score, gap, best_reasons):
++                strong_target = str(best["target_id"])
++                strong_evidence = best_reasons[:4]
++            else:
++                weak_evidence = best_reasons[:3]
++        pass_recommended = strong_target is None
+         return {
+             "legal_targets": legal_targets,
+-            "recent_memory": memory_lines[-6:],
++            "recent_memory": recent_memory[-6:],
+             "target_ranking": target_ranking,
+             "pass_recommended": pass_recommended,
+-            "best_target": best["target_id"] if best and not pass_recommended else None,
++            "best_target": strong_target,
++            "strong_target": strong_target,
++            "strong_evidence": strong_evidence,
++            "weak_evidence": weak_evidence,
+         }
+ 
+-    def _score_hunter_target(self, target_id: str, memory_blob: str, public_blob: str) -> tuple[int, list[str]]:
++    def _is_strong_hunter_score(self, best_score: int, gap: int, reasons: list[str]) -> bool:
++        reason_text = "；".join(reasons)
++        if best_score >= 7:
++            return True
++        if best_score >= 6 and gap >= 1:
++            return True
++        if best_score >= 5 and gap >= 2:
++            return True
++        if best_score >= 4 and gap >= 3 and any(token in reason_text for token in ("矛盾", "冲票", "带票", "查杀", "对跳", "不一致", "口误")):
++            return True
++        return False
++
++    def _score_hunter_target(
++        self,
++        target_id: str,
++        memory_records: list[dict[str, Any]],
++        public_blob: str,
++    ) -> tuple[int, list[str]]:
+         score = 0
+         reasons: list[str] = []
+         target_token = str(target_id)
+-        token_lower = target_token.lower()
+-        search_space = f"{memory_blob}\n{public_blob}"
+-        lines = [line for line in search_space.splitlines() if target_token in line or token_lower in line.lower()]
+-        if not lines and target_token in search_space:
+-            lines = [search_space]
+-        for line in lines[:6]:
+-            line_lower = line.lower()
+-            line_score = 0
+-            if any(word in line_lower for word in ("狼", "wolf", "查杀", "对跳", "假", "伪", "冲票", "带票", "带节奏", "矛盾")):
+-                line_score += 3
+-                reasons.append(self._truncate_text(line, 40))
+-            elif any(word in line_lower for word in ("怀疑", "票", "vote", "claim", "身份", "死亡", "night", "夜", "发言")):
+-                line_score += 1
+-                reasons.append(self._truncate_text(line, 40))
+-            if any(word in line_lower for word in ("好人", "金水", "可信", "站边", "支持")):
+-                line_score -= 1
+-            score += line_score
+-
+-        target_mentions = search_space.count(target_token)
+-        if target_mentions:
+-            score += min(2, target_mentions)
+-        if target_token in public_blob:
++        token_regex = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_token)}(?![A-Za-z0-9])", re.IGNORECASE)
++        strong_tokens = ("狼", "wolf", "查杀", "对跳", "假", "伪", "冲票", "带票", "带节奏", "矛盾", "冲突", "不一致")
++        vote_tokens = ("高票", "最高票", "票王", "带票", "冲票", "带节奏", "冲锋", "连票", "集票", "站边")
++        contradiction_tokens = ("矛盾", "冲突", "不一致", "前后", "口误", "说错", "人数不对", "存活人数", "自相矛盾", "打脸")
++        claim_tokens = ("查杀", "对跳", "金水", "claim", "身份", "跳身份", "跳警", "跳民")
++        death_tokens = ("死亡", "死", "dead", "kill", "被刀", "出局")
++        target_hits = 0
++        distinct_sources: set[str] = set()
++        seen_reasons: set[str] = set()
++
++        for record in memory_records[-12:]:
++            if not isinstance(record, Mapping):
++                continue
++            text = self._format_memory_record(record)
++            if not text:
++                continue
++            text_lower = text.lower()
++            ids_in_record = self._record_player_ids(record, ("speaker_id", "speaker", "voter_id", "voter", "player_id", "player", "actor_id", "actor"))
++            target_ids_in_record = self._record_player_ids(record, ("target_id", "target", "accused_id", "accused", "vote_target_id", "vote_target"))
++            if not (token_regex.search(text) or target_token in ids_in_record or target_token in target_ids_in_record):
++                continue
++            target_hits += 1
++            distinct_sources.update(ids_in_record)
++            base = 1
++            if any(token in text_lower for token in strong_tokens):
++                base += 3
++                snippet = self._truncate_text(text, 70)
++                if snippet not in seen_reasons:
++                    reasons.append(snippet)
++                    seen_reasons.add(snippet)
++            if any(token in text_lower for token in vote_tokens):
++                base += 1
++            if any(token in text_lower for token in claim_tokens):
++                base += 1
++            if any(token in text_lower for token in death_tokens):
++                base += 1
++            if any(token in text_lower for token in contradiction_tokens):
++                base += 2
++                snippet = self._truncate_text(text, 70)
++                if snippet not in seen_reasons:
++                    reasons.append(snippet)
++                    seen_reasons.add(snippet)
++            if target_token in target_ids_in_record:
++                base += 1
++            if any(token in text_lower for token in ("好人", "金水", "可信", "站边", "支持")):
++                base -= 1
++            score += max(base, 0)
++
++        contexts = self._target_context_snippets(public_blob, target_token)
++        for snippet in contexts:
++            snippet_lower = snippet.lower()
++            snippet_score = 1
++            if any(token in snippet_lower for token in strong_tokens):
++                snippet_score += 2
++            if any(token in snippet_lower for token in vote_tokens):
++                snippet_score += 1
++            if any(token in snippet_lower for token in contradiction_tokens):
++                snippet_score += 2
++            if any(token in snippet_lower for token in death_tokens):
++                snippet_score += 1
++            if "alive" in snippet_lower and any(token in snippet_lower for token in ("dead", "死亡", "died", "kill")):
++                snippet_score += 2
++            if snippet not in seen_reasons:
++                reasons.append(self._truncate_text(snippet, 70))
++                seen_reasons.add(snippet)
++            score += snippet_score
++
++        if target_hits >= 2:
+             score += 1
+-
+-        if any(word in search_space for word in ("高票", "最高票", "票王", "带票", "冲票", "对跳", "查杀", "狼链", "连锁", "连带")) and target_token in search_space:
+-            score += 2
+-        if any(word in search_space for word in ("已死好人", "好人链", "公认好人", "公开好人", "金水", "可信")) and target_token in search_space:
+-            score -= 1
++        if len(distinct_sources) >= 2:
++            score += 1
++        if len(distinct_sources) >= 3:
++            score += 1
++
++        if token_regex.search(public_blob):
++            score += 1
++        if any(token_regex.search(snippet) and any(word in snippet.lower() for word in contradiction_tokens) for snippet in contexts):
++            score += 1
+ 
+         score = max(score, 0)
+         if not reasons:
+             reasons.append("公开记忆里缺少强关联")
+-        return score, reasons[:3]
+-
+-    def _collect_target_ids(self, request: Mapping[str, Any]) -> list[str]:
+-        target_ids: list[str] = []
++        return score, reasons[:4]
++
++    def _split_reason_text(self, reason_text: str) -> list[str]:
++        parts = [self._compact_text(part, 80) for part in re.split(r"[；;]\s*", reason_text) if part.strip()]
++        return [part for part in parts if part]
++
++    def _target_context_snippets(self, text: str, target_token: str, *, window: int = 60) -> list[str]:
++        if not text:
++            return []
++        token_regex = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_token)}(?![A-Za-z0-9])", re.IGNORECASE)
++        snippets: list[str] = []
++        for match in token_regex.finditer(text):
++            start = max(0, match.start() - window)
++            end = min(len(text), match.end() + window)
++            snippet = self._compact_text(text[start:end], 140)
++            if snippet and snippet not in snippets:
++                snippets.append(snippet)
++            if len(snippets) >= 4:
++                break
++        return snippets
++
++    def _format_memory_record(self, record: Mapping[str, Any]) -> str:
++        if not isinstance(record, Mapping):
++            return ""
++        bits: list[str] = []
++        for key in (
++            "round",
++            "day",
++            "night",
++            "phase",
++            "kind",
++            "speaker_id",
++            "speaker",
++            "voter_id",
++            "voter",
++            "player_id",
++            "player",
++            "target_id",
++            "target",
++            "role",
++            "claim",
++            "result",
++            "status",
++            "event",
++        ):
++            value = record.get(key)
++            if value is None:
++                continue
++            compact = self._compact_value(value)
++            if compact:
++                bits.append(f"{key}={compact}")
++        text = record.get("text")
++        if isinstance(text, str) and text:
++            bits.append(self._compact_text(text, 120))
++        return self._compact_text(" ".join(bits), 220)
++
++    def _record_player_ids(self, record: Mapping[str, Any], keys: tuple[str, ...]) -> list[str]:
++        ids: list[str] = []
+         seen: set[str] = set()
+-        raw_actions = request.get("allowed_actions")
+-        if not isinstance(raw_actions, list):
+-            return target_ids
+-        for allowed in raw_actions:
+-            if not isinstance(allowed, Mapping):
+-                continue
+-            raw_target_ids = allowed.get("target_ids")
+-            if not isinstance(raw_target_ids, list):
+-                continue
+-            for target_id in raw_target_ids:
+-                if target_id is None:
+-                    continue
+-                text = str(target_id)
+-                if text not in seen:
+-                    seen.add(text)
+-                    target_ids.append(text)
+-        return target_ids
+-
+-    def _extract_memory_lines(self, value: Any, *, depth: int = 0) -> list[str]:
+-        lines: list[str] = []
+-        self._extract_memory_lines_into(value, lines, depth=depth)
+-        return lines[:10]
+-
+-    def _extract_memory_lines_into(self, value: Any, lines: list[str], *, depth: int) -> None:
+-        if len(lines) >= 10 or depth > 2:
++        for key in keys:
++            for candidate in self._extract_player_ids(record.get(key)):
++                if candidate not in seen:
++                    seen.add(candidate)
++                    ids.append(candidate)
++        return ids
++
++    def _extract_player_ids(self, value: Any) -> list[str]:
++        ids: list[str] = []
++        seen: set[str] = set()
++        for candidate in self._extract_player_ids_into(value):
++            if candidate not in seen:
++                seen.add(candidate)
++                ids.append(candidate)
++        return ids
++
++    def _extract_player_ids_into(self, value: Any) -> list[str]:
++        found: list[str] = []
++        if value is None:
++            return found
++        if isinstance(value, str):
++            for match in _PLAYER_ID_TEXT.findall(value):
++                if match not in found:
++                    found.append(match)
++            return found
++        if isinstance(value, Mapping):
++            for item in value.values():
++                found.extend(self._extract_player_ids_into(item))
++            return found
++        if isinstance(value, (list, tuple, set)):
++            for item in value:
++                found.extend(self._extract_player_ids_into(item))
++            return found
++        compact = self._compact_value(value)
++        if compact:
++            found.extend(self._extract_player_ids_into(compact))
++        return found
++
++    def _extract_memory_records(self, value: Any, *, depth: int = 0) -> list[dict[str, Any]]:
++        records: list[dict[str, Any]] = []
++        self._extract_memory_records_into(value, records, depth=depth)
++        return records[:18]
++
++    def _extract_memory_records_into(self, value: Any, records: list[dict[str, Any]], *, depth: int) -> None:
++        if len(records) >= 18 or depth > 3:
+             return
+         if isinstance(value, Mapping):
+-            parts: list[str] = []
++            flat: dict[str, str] = {}
+             for key, item in value.items():
+                 key_text = str(key)
+                 if key_text in _MEMORY_KEYS or key_text.endswith("_id"):
+                     compact = self._compact_value(item)
+                     if compact:
+-                        parts.append(f"{key_text}={compact}")
++                        flat[key_text] = compact
++                if isinstance(item, str) and self._is_signal_text(item):
++                    compact = self._compact_text(item, 120)
++                    if compact:
++                        flat.setdefault("text", compact)
+                 if isinstance(item, (Mapping, list, tuple)):
+-                    self._extract_memory_lines_into(item, lines, depth=depth + 1)
+-                elif isinstance(item, str) and self._is_signal_text(item):
+-                    compact = self._compact_text(item)
+-                    if compact:
+-                        parts.append(compact)
+-            if parts:
+-                line = self._compact_text(" ".join(parts))
+-                if line:
+-                    lines.append(line)
++                    self._extract_memory_records_into(item, records, depth=depth + 1)
++                    if len(records) >= 18:
++                        break
++            record = self._build_memory_record(flat)
++            if record:
++                records.append(record)
+             return
+         if isinstance(value, (list, tuple)):
+-            for item in value[:5]:
+-                self._extract_memory_lines_into(item, lines, depth=depth + 1)
+-                if len(lines) >= 10:
++            for item in value[:6]:
++                self._extract_memory_records_into(item, records, depth=depth + 1)
++                if len(records) >= 18:
+                     return
+             return
+         if isinstance(value, str):
+             text = self._compact_text(value)
+             if text and self._is_signal_text(text):
+-                lines.append(text)
++                records.append({"kind": "speech", "text": text})
++
++    def _build_memory_record(self, flat: Mapping[str, str]) -> dict[str, Any] | None:
++        if not flat:
++            return None
++        bits: list[str] = []
++        for key in (
++            "round",
++            "day",
++            "night",
++            "phase",
++            "kind",
++            "speaker_id",
++            "speaker",
++            "voter_id",
++            "voter",
++            "player_id",
++            "player",
++            "target_id",
++            "target",
++            "role",
++            "claim",
++            "result",
++            "status",
++            "event",
++            "reason",
++        ):
++            value = flat.get(key)
++            if value:
++                bits.append(f"{key}={value}")
++        if flat.get("text"):
++            bits.append(flat["text"])
++        text = self._compact_text(" ".join(bits), 260)
++        if not text:
++            return None
++        record: dict[str, Any] = {
++            "kind": self._infer_memory_kind(flat, text),
++            "text": text,
++            "tags": sorted(self._infer_memory_tags(flat, text)),
++        }
++        for key in (
++            "round",
++            "day",
++            "night",
++            "phase",
++            "speaker_id",
++            "speaker",
++            "voter_id",
++            "voter",
++            "player_id",
++            "player",
++            "target_id",
++            "target",
++            "role",
++            "claim",
++            "result",
++            "status",
++            "event",
++            "reason",
++        ):
++            if key in flat:
++                record[key] = flat[key]
++        actor_ids = self._record_player_ids(record, ("speaker_id", "speaker", "voter_id", "voter", "player_id", "player"))
++        target_ids = self._record_player_ids(record, ("target_id", "target"))
++        if actor_ids:
++            record["actor_ids"] = actor_ids
++        if target_ids:
++            record["target_ids"] = target_ids
++        return record
++
++    def _infer_memory_kind(self, flat: Mapping[str, str], text: str) -> str:
++        kind = str(flat.get("kind") or flat.get("event") or "").lower()
++        text_lower = text.lower()
++        if any(token in text_lower for token in ("vote", "投票", "冲票", "带票", "票型", "高票")):
++            return "vote"
++        if any(token in text_lower for token in ("死亡", "dead", "died", "被刀", "出局", "倒下", "kill")):
++            return "death"
++        if any(token in text_lower for token in ("查杀", "对跳", "claim", "身份", "金水", "跳身份", "跳警", "跳民")):
++            return "claim"
++        if any(token in text_lower for token in ("发言", "speak", "说", "text", "message", "讨论")):
++            return "speech"
++        if kind:
++            return kind
++        return "event"
++
++    def _infer_memory_tags(self, flat: Mapping[str, str], text: str) -> set[str]:
++        tags = {self._infer_memory_kind(flat, text)}
++        for key in flat:
++            if key.endswith("_id"):
++                tags.add("player_ref")
++            if key in {"speaker", "speaker_id", "voter", "voter_id", "player", "player_id", "target", "target_id"}:
++                tags.add(key)
++        if any(token in text.lower() for token in ("矛盾", "冲突", "不一致", "口误", "说错", "打脸")):
++            tags.add("conflict")
++        return tags
+ 
+     def _is_signal_text(self, text: str) -> bool:
+         return bool(_SIGNAL_TEXT.search(text) or _PLAYER_ID_TEXT.search(text) or _CHINESE_CHARACTER.search(text))
+--- hunter-n00007/task.md
++++ hunter-n00031/task.md
+@@ -3,11 +3,11 @@
+ 你的目标是帮助好人找狼，并在被击杀触发猎人行动时做出稳定、合法、可解释的选择。
+ 
+ ## 决策 checklist
+-1. 先确认当前阶段是否真的到了猎人反应；只在行动包明确允许时开枪或跳过。
+-2. 列出当前合法目标，绝不使用行动包外的目标，也不要把尚未发生的猎人反应当作事实。
+-3. 结合最近 1~2 轮公开发言、票型、死亡链和公开身份跳点，优先找：高票、带节奏、与已公开好人链冲突、前后说法不一致的玩家。
+-4. 对每个合法目标按顺序比较：身份可信度、票型一致性、连锁风险。
+-5. 证据足够且目标明显可疑时，选择开枪；证据不足、风险偏高或无法分辨时，允许并优先跳过。
++1. 先确认当前阶段是否真的到了猎人反应；只在行动包明确允许时开枪或跳过，不要把其他阶段误当成猎人反应。
++2. 列出当前合法目标，并把最近几轮的发言摘要、票型摘要、死亡链、身份跳点、与公开状态冲突的断言一起看。
++3. 对每个合法目标做结构化比较：是否被多人连续点名、是否和票型集中趋势一致、是否和公开状态/已知死亡信息冲突、是否存在前后说法不一致。
++4. 当某个目标的强证据明显领先其他候选时，优先开枪；只有所有候选都偏弱、证据不足时才跳过。
++5. 发言和提示中不要默认强调“可以跳过”，除非当前确实没有足够强的开枪依据。
+ 
+ ## 公开发言规则
+ - 活着时保持自然的好人视角，回应当下争议，尽量引用最近一条或两条公开证据。

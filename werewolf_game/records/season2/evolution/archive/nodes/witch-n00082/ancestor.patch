@@ -1,0 +1,530 @@
+--- witch-n00023/task_agent.py
++++ witch-n00082/task_agent.py
+@@ -192,6 +192,9 @@
+         self._current_game_id: str | None = None
+         self._known_private_state: dict[str, Any] = {}
+         self._last_witch_action: dict[str, Any] = {}
++        # 仅保存行动包中明确给出的当前/上一夜狼刀目标；不从公开信息反推。
++        self._current_night_attack_target: str | None = None
++        self._last_night_attack_target: str | None = None
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+         """接收公开同步，并保留极简跨回合摘要。"""
+@@ -246,7 +249,7 @@
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+-        system = system + "\n\n【女巫专用决策规约】\n先复盘最近票型与死亡，再看自己药水状态。救药优先保留给能明显改变轮次的高价值夜死；毒药只在强对跳、稳定票型压缩、公开身份链冲突或终局倒计时等高置信情形下优先使用。证据不足时默认保留资源。公开发言只谈公开事实，不得泄露药水余量、夜间目标或自己未公开的用药结果。"
++        system = system + "\n\n【女巫专用决策规约】\n决策顺序固定为：先读取本夜私有狼刀目标，再核对当前合法行动与药水状态，再判断公开高价值目标和残局压力，最后才考虑 pass。若本夜狼刀目标是公开警长、公开有连续查验链的预言家或其他有独立公开支持的关键好人，且 witch_heal 合法，必须先比较救援收益，不能仅因保留资源直接 pass。poison 目标若等于本夜狼刀目标，视为重复击杀；除非规则明确提供额外收益，否则不得推荐，且有合法 pass 时应 pass。残局压力只降低救援评估的 pass 门槛，不降低毒药所需的强对跳、双重独立公开证据或稳定公开冲突门槛。公开发言只谈公开事实，不得泄露药水余量、夜刀目标或自己未公开的用药结果。"
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -291,6 +294,8 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            witch_summary = prompt["witch_decision_summary"]
++            action = self._apply_witch_safety_fallback(action, turn_packet, witch_summary)
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 self._remember_witch_action(turn_packet, action)
+@@ -381,6 +386,21 @@
+         for key, value in extracted.items():
+             self._known_private_state[key] = value
+ 
++        # 字段名可能随行动包版本变化，但只接受这组明确的直接别名。不要扫描
++        # 任意文本或递归对象，以免把别的私有信息误当成狼刀目标。
++        attack_aliases = (
++            "wolf_target",
++            "wolf_attack_target",
++            "night_attack_target",
++            "attack_target",
++            "attacked_player_id",
++            "kill_target",
++            "night_kill_target",
++        )
++        raw_attack_target = self._pick_first_mapping_value(private, *attack_aliases)
++        self._current_night_attack_target = self._normalize_player_id(raw_attack_target)
++        self._known_private_state["current_night_attack_target"] = self._current_night_attack_target
++
+     def _extract_game_id(self, packet: Mapping[str, Any]) -> str | None:
+         sources: list[tuple[Mapping[str, Any], tuple[str, ...]]] = [(packet, ("game_id", "gameId", "match_id", "matchId"))]
+         game = packet.get("game")
+@@ -402,6 +422,8 @@
+         self._last_observe_signature = ""
+         self._known_private_state.clear()
+         self._last_witch_action.clear()
++        self._current_night_attack_target = None
++        self._last_night_attack_target = None
+ 
+     @staticmethod
+     def _coerce_bool(value: Any) -> bool | None:
+@@ -424,6 +446,26 @@
+         for name in names:
+             if name in source:
+                 return source[name]
++        return None
++
++    @staticmethod
++    def _normalize_player_id(value: Any) -> str | None:
++        """只接受简单编号或目标字段中的明确 id，不扫描任意嵌套内容。"""
++        if isinstance(value, Mapping):
++            source = value
++            value = None
++            for key in ("target_id", "player_id", "id"):
++                candidate = source.get(key)
++                if candidate not in (None, ""):
++                    value = candidate
++                    break
++            if value is None:
++                return None
++        if value is None or isinstance(value, (bool, Mapping, list, tuple, set)):
++            return None
++        if isinstance(value, (str, int)):
++            normalized = str(value).strip()
++            return normalized or None
+         return None
+ 
+     def _render_compact_memory(self) -> str:
+@@ -495,6 +537,9 @@
+                 "alive",
+                 "reason",
+                 "count",
++                "text",
++                "message",
++                "content",
+             ):
+                 if key in value:
+                     compact[key] = value[key]
+@@ -511,12 +556,142 @@
+         phase = str(turn_packet.get("game", {}).get("public_phase", turn_packet.get("game", {}).get("phase", "")))
+         if "witch" not in phase and "witch" not in str(request.get("kind") or ""):
+             return
++        current_target = self._current_night_attack_target
++        target_id = self._normalize_player_id(action.get("target_id"))
++        resource_before = {
++            key: self._known_private_state[key]
++            for key in ("can_heal", "can_poison", "heal_used", "poison_used")
++            if key in self._known_private_state
++        }
++        resource_after = dict(resource_before)
++        if "heal" in str(action.get("kind") or ""):
++            if "can_heal" in resource_after:
++                resource_after["can_heal"] = False
++            if "heal_used" in resource_after:
++                resource_after["heal_used"] = True
++        if "poison" in str(action.get("kind") or ""):
++            if "can_poison" in resource_after:
++                resource_after["can_poison"] = False
++            if "poison_used" in resource_after:
++                resource_after["poison_used"] = True
++        self._last_night_attack_target = current_target
+         self._last_witch_action = {
+             "phase": phase,
+             "kind": action.get("kind"),
+-            "target_id": action.get("target_id"),
+-        }
++            "target_id": target_id,
++            "was_current_attack_target": bool(target_id and target_id == current_target),
++            "resource_before": resource_before,
++            "resource_after": resource_after,
++        }
++        self._known_private_state["last_night_attack_target"] = current_target
++        self._known_private_state["last_night_action_kind"] = action.get("kind")
++        self._known_private_state["last_night_action_target"] = target_id
+         self._known_private_state["last_witch_action"] = dict(self._last_witch_action)
++
++    def _public_high_value_targets(
++        self,
++        turn_packet: Mapping[str, Any],
++        public_state: Mapping[str, Any],
++        game: Mapping[str, Any],
++    ) -> list[dict[str, Any]]:
++        """从公开资料提取救援价值，不把身份推测升级为系统确认。"""
++        sources = [public_state, game, turn_packet]
++        target_keys = ("player_id", "id", "target_id", "speaker_id", "author_id")
++
++        def first_value(names: tuple[str, ...]) -> Any:
++            for source in sources:
++                for name in names:
++                    if isinstance(source, Mapping) and source.get(name) not in (None, ""):
++                        return source[name]
++            return None
++
++        def get_id(value: Any) -> str | None:
++            if isinstance(value, Mapping):
++                for key in target_keys:
++                    candidate = self._normalize_player_id(value.get(key))
++                    if candidate:
++                        return candidate
++                return None
++            return self._normalize_player_id(value)
++
++        values: dict[str, dict[str, Any]] = {}
++        def add(player_id: str | None, reason: str) -> None:
++            if not player_id:
++                return
++            entry = values.setdefault(player_id, {"target_id": player_id, "reasons": []})
++            if reason not in entry["reasons"]:
++                entry["reasons"].append(reason)
++
++        sheriff = first_value(("sheriff", "police", "captain", "警长"))
++        sheriff_id = get_id(sheriff)
++        if sheriff_id:
++            add(sheriff_id, "公开警长")
++
++        record_lists: list[list[Any]] = []
++        tool_context = turn_packet.get("tool_context")
++        if isinstance(tool_context, Mapping) and isinstance(tool_context.get("current_round_dialogue"), list):
++            record_lists.append(tool_context["current_round_dialogue"])
++        for source in sources:
++            if not isinstance(source, Mapping):
++                continue
++            for key in ("claims", "reveals", "public_claims", "role_claims", "counterclaims", "dialogue", "speeches", "messages", "public_dialogue"):
++                value = source.get(key)
++                if isinstance(value, list):
++                    record_lists.append(value)
++        # compact_memory 只保留公开同步摘要；它不含私有夜刀字段。
++        for snapshot in self._compact_history[-4:]:
++            if isinstance(snapshot, Mapping):
++                for key in ("claims", "dialogue", "speeches", "messages"):
++                    value = snapshot.get(key)
++                    if isinstance(value, list):
++                        record_lists.append(value)
++
++        seer_counts: dict[str, int] = {}
++        seen_records: set[str] = set()
++        for records in record_lists:
++            for record in records[:12]:
++                if not isinstance(record, Mapping):
++                    continue
++                record_signature = json.dumps(record, ensure_ascii=False, sort_keys=True, default=str)
++                if record_signature in seen_records:
++                    continue
++                seen_records.add(record_signature)
++                player_id = get_id(record)
++                if not player_id:
++                    continue
++                blob = json.dumps(record, ensure_ascii=False, separators=(",", ":")).lower()
++                seer_claim = any(token in blob for token in ("seer", "fortune_teller", "oracle", "预言家", "占卜师"))
++                check_count = sum(blob.count(token) for token in ("查验", "验人", "checked", "check_result", "seer_result"))
++                result_value = record.get("results", record.get("checks", record.get("check_results")))
++                if isinstance(result_value, list):
++                    check_count += len(result_value)
++                if seer_claim:
++                    seer_counts[player_id] = seer_counts.get(player_id, 0) + max(1, check_count)
++                if any(token in blob for token in ("confirmed", "verified", "revealed", "trusted", "锁定", "确认")) and any(
++                    token in blob for token in ("seer", "guard", "医生", "预言家", "守卫", "女巫")
++                ):
++                    add(player_id, "公开确认的关键神职声明")
++
++        for player_id, count in seer_counts.items():
++            if count >= 2:
++                add(player_id, "公开预言家且有连续查验链")
++        result = list(values.values())
++        for entry in result:
++            entry["high_value_for_heal"] = True
++        return result[:6]
++
++    def _endgame_pressure(self, alive_count: Any, recent_deaths: list[Any], confirmed: list[dict[str, Any]]) -> str:
++        alive = self._nonnegative_int(alive_count, fallback=None)
++        wolf_count = 0
++        for record in confirmed:
++            blob = json.dumps(record, ensure_ascii=False).lower()
++            if any(token in blob for token in ("wolf", "werewolf", "狼人", "狼")):
++                wolf_count += 1
++        if alive is not None and (alive <= 5 or (wolf_count >= 2 and alive <= 7)):
++            return "high"
++        if alive is not None and (alive <= 8 or len(recent_deaths) >= 3):
++            return "medium"
++        return "low"
+ 
+     def _witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+@@ -605,6 +780,12 @@
+         recent_deaths = as_list(first_value([public_state, game, turn_packet], "deaths", "dead_players", "night_deaths", "death_events"))
+         vote_records = as_list(first_value([public_state, game, turn_packet], "votes", "voting", "vote_results", "vote_events"))
+         claim_records = as_list(first_value([public_state, game, turn_packet], "claims", "reveals", "public_claims", "role_claims", "counterclaims"))
++        current_round = first_value([public_state, game, turn_packet], "round", "game_round", "day_round")
++        normalized_round = self._nonnegative_int(current_round, fallback=None)
++        if normalized_round is not None:
++            current_round = normalized_round
++        high_value_targets = self._public_high_value_targets(turn_packet, public_state, game)
++        high_value_ids = {item["target_id"] for item in high_value_targets}
+ 
+         vote_totals: dict[str, int] = {}
+         for record in vote_records:
+@@ -635,6 +816,25 @@
+             if is_confirmed and (record.get("role") is not None or record.get("team") is not None):
+                 confirmed_identities.append(compact)
+ 
++        resource_state = {
++            key: self._known_private_state[key]
++            for key in (
++                "role",
++                "team",
++                "status",
++                "can_heal",
++                "can_poison",
++                "antidote_available",
++                "poison_available",
++                "heal_used",
++                "poison_used",
++                "antidote_used",
++                "used_heal",
++                "used_poison",
++            )
++            if key in self._known_private_state
++        }
++        endgame_pressure = self._endgame_pressure(alive_count, recent_deaths, confirmed_identities)
+         board_snapshot = {
+             "alive_count": alive_count,
+             "recent_deaths": [self._compact_value(item) for item in recent_deaths[:3]],
+@@ -642,24 +842,9 @@
+             "public_counterclaims": public_counterclaims[:3],
+             "vote_clusters": vote_clusters,
+             "confirmed_identities": confirmed_identities[:3],
+-            "resource_state": {
+-                key: self._known_private_state[key]
+-                for key in (
+-                    "role",
+-                    "team",
+-                    "status",
+-                    "can_heal",
+-                    "can_poison",
+-                    "antidote_available",
+-                    "poison_available",
+-                    "heal_used",
+-                    "poison_used",
+-                    "antidote_used",
+-                    "used_heal",
+-                    "used_poison",
+-                )
+-                if key in self._known_private_state
+-            },
++            "resource_state": resource_state,
++            "public_high_value_targets": high_value_targets,
++            "endgame_pressure": endgame_pressure,
+         }
+ 
+         def add_poison_candidate(store: dict[str, dict[str, Any]], candidate_target: str | None, score: int, reason: str) -> None:
+@@ -679,6 +864,16 @@
+ 
+         heal_candidates: list[dict[str, Any]] = []
+         heal_targets = allowed_targets_by_kind.get(heal_kind or "", set())
++        current_target = self._current_night_attack_target
++        if current_target and current_target in high_value_ids and (not heal_targets or current_target in heal_targets):
++            heal_candidates.append({
++                "kind": heal_kind,
++                "candidate_type": "heal_current_target",
++                "target_id": current_target,
++                "score": 150,
++                "high_value_for_heal": True,
++                "reason": "本夜私有狼刀目标；公开警长/可信预言家或连续查验链，优先比较救药收益",
++            })
+         for index, record in enumerate(recent_deaths[:3]):
+             if not isinstance(record, Mapping):
+                 continue
+@@ -693,7 +888,16 @@
+             if any(token in blob for token in ("night", "night_kill", "kill", "killed", "刀", "狼刀")):
+                 score += 5
+                 reason += "；疑似夜刀"
+-            heal_candidates.append({"kind": heal_kind, "target_id": candidate, "score": score, "reason": reason})
++            if candidate == current_target:
++                continue
++            heal_candidates.append({
++                "kind": heal_kind,
++                "candidate_type": "heal_recent_death",
++                "target_id": candidate,
++                "score": score,
++                "high_value_for_heal": candidate in high_value_ids,
++                "reason": reason + ("；公开高价值目标" if candidate in high_value_ids else ""),
++            })
+ 
+         poison_store: dict[str, dict[str, Any]] = {}
+         for item in vote_clusters:
+@@ -706,16 +910,47 @@
+             add_poison_candidate(poison_store, item.get("target_id"), 85, "公开对跳/身份冲突")
+         poison_candidates = []
+         for entry in sorted(poison_store.values(), key=lambda item: (-int(item["score"]), str(item["target_id"]))):
++            candidate = entry.get("target_id")
++            redundant = bool(candidate and candidate == current_target)
++            reasons = entry.get("reasons", [])
++            strong_conflict = any("对跳" in str(reason) or "身份冲突" in str(reason) for reason in reasons)
++            independently_supported = len(reasons) >= 2 or strong_conflict
++            recommended = not redundant and independently_supported
+             poison_candidates.append(
+                 {
+                     "kind": entry.get("kind"),
+-                    "target_id": entry.get("target_id"),
+-                    "score": entry.get("score"),
+-                    "reason": "；".join(entry.get("reasons", [])),
++                    "candidate_type": "poison_candidate",
++                    "target_id": candidate,
++                    "score": entry.get("score") if recommended else 0,
++                    "evidence_classes": len(reasons),
++                    "poison_redundant": redundant,
++                    "recommended": recommended,
++                    "reason": "；".join(reasons) + (
++                        "；与本夜狼刀目标重复，不推荐" if redundant else
++                        "；证据类别不足，不推荐" if not independently_supported else ""
++                    ),
+                 }
+             )
+ 
+-        pass_reason = "证据不足时默认保留资源"
++        available_actions = [
++            {"kind": str(item.get("kind")), "target_ids": [str(value) for value in item.get("target_ids", [])]}
++            for item in allowed_actions or []
++            if isinstance(item, Mapping) and item.get("kind")
++        ]
++        summary.update({
++            "current_night_attack_target": current_target,
++            "last_night_attack_target": self._last_night_attack_target,
++            "current_round": current_round,
++            "alive_count": alive_count,
++            "available_actions": available_actions,
++            "resource_state": resource_state,
++            "public_high_value_targets": high_value_targets,
++            "public_counterclaims": public_counterclaims[:3],
++            "recent_vote_pressure": vote_clusters,
++            "endgame_pressure": endgame_pressure,
++        })
++
++        pass_reason = "证据不足时默认保留资源；先评估本夜狼刀目标的救援收益"
+         if heal_candidates or poison_candidates:
+             pass_reason = "作为保守备选，证据不足或收益不高时再 pass"
+ 
+@@ -725,11 +960,80 @@
+             "poison": poison_candidates[:3],
+             "pass": {
+                 "kind": pass_kind or "pass",
+-                "score": 40 if not (heal_candidates or poison_candidates) else 10,
++                "score": 40 if not (heal_candidates or any(item.get("recommended") for item in poison_candidates)) else 10,
+                 "reason": pass_reason,
+             },
+         }
+         return summary
++
++    def _apply_witch_safety_fallback(
++        self,
++        action: dict[str, Any],
++        turn_packet: Mapping[str, Any],
++        summary: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        """仅修正两种明确的女巫收益/安全错误，仍交由原有校验确认合法性。"""
++        request = turn_packet.get("request") or {}
++        allowed = request.get("allowed_actions") if isinstance(request, Mapping) else []
++        if not isinstance(allowed, list):
++            return action
++
++        def kind_named(fragment: str) -> str | None:
++            for item in allowed:
++                if isinstance(item, Mapping):
++                    kind = str(item.get("kind") or "")
++                    if fragment in kind:
++                        return kind
++            return None
++
++        pass_kind = next(
++            (str(item.get("kind")) for item in allowed if isinstance(item, Mapping)
++             and ("pass" in str(item.get("kind") or "") or str(item.get("kind") or "") == "wait")),
++            None,
++        )
++        poison_kind = kind_named("poison")
++        heal_kind = next(
++            (str(item.get("kind")) for item in allowed if isinstance(item, Mapping)
++             and ("heal" in str(item.get("kind") or "") or "antidote" in str(item.get("kind") or ""))),
++            None,
++        )
++        current_target = self._normalize_player_id(summary.get("current_night_attack_target"))
++
++        def targets(kind: str | None) -> set[str]:
++            if not kind:
++                return set()
++            item = next((item for item in allowed if isinstance(item, Mapping) and str(item.get("kind")) == kind), None)
++            values = item.get("target_ids") if isinstance(item, Mapping) else None
++            return {str(value) for value in values if value not in (None, "")} if isinstance(values, list) else set()
++
++        # 狼刀与毒目标重合时，毒药没有额外击杀收益。只有引擎明确允许 pass
++        # 才做替换；否则保持模型答案，交给现有 schema/重试流程处理。
++        if poison_kind and action.get("kind") == poison_kind and action.get("target_id") == current_target and pass_kind:
++            safe = dict(action)
++            safe["kind"] = pass_kind
++            safe.pop("target_id", None)
++            safe.pop("text", None)
++            return safe
++
++        high_value_ids = {
++            str(item.get("target_id"))
++            for item in summary.get("public_high_value_targets", [])
++            if isinstance(item, Mapping) and item.get("high_value_for_heal") and item.get("target_id")
++        }
++        if (
++            pass_kind
++            and action.get("kind") == pass_kind
++            and heal_kind
++            and current_target
++            and current_target in high_value_ids
++            and current_target in targets(heal_kind)
++        ):
++            safe = dict(action)
++            safe["kind"] = heal_kind
++            safe["target_id"] = current_target
++            safe.pop("text", None)
++            return safe
++        return action
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+         if self.request_coordinator is not None:
+--- witch-n00023/task.md
++++ witch-n00082/task.md
+@@ -1,25 +1,29 @@
+ # 女巫任务规约
+ 
+-你的任务是帮助好人获胜，并且严格保密不应公开的药水和夜间信息。
++你的任务是帮助好人获胜，并严格保密不应公开的药水、夜刀和未公开身份信息。
+ 
+-## 行动优先级
+-1. 先确认当夜狼刀、自己药水余量、以及当前阶段允许的行动。
+-2. 救药只用于高价值目标，或确实能明显改变当前轮次的局面时。
+-3. 毒药只打高置信狼人、悍跳核心，或已经形成稳定负面链条的目标。
+-4. 证据不足、信息冲突或收益不明显时，默认保留资源，优先选择合法的放弃行动。
+-5. 不要固定套用首夜或模板化用药；每次决策都要结合前几天的票型、死亡信息和公开对跳。
++## 女巫决策流程（优先级不可颠倒）
++1. **先读私有夜刀目标**：只使用当前行动包中明确提供的 `wolf_target`、`wolf_attack_target`、`night_attack_target`、`attack_target`、`attacked_player_id`、`kill_target` 或 `night_kill_target` 等字段；空值或无法识别的值视为未知。不要从公开死亡记录反推本夜狼刀。
++2. **再核对合法行动和资源**：以当前 `allowed_actions` 及其 `target_ids` 为唯一行动边界，并核对救药、毒药是否可用。合法的 `target_id` 必须来自对应行动的候选列表。
++3. **再判断公开价值**：仅依据 `public_state`、压缩的公开记忆和当前轮公开发言识别目标。公开警长、公开且有连续公开查验链的预言家、以及有独立公开支持的关键好人，标记为高价值救援对象；声明、推测和系统确认必须区分。
++4. **最后才考虑 pass**：如果本夜狼刀目标是公开高价值目标且救药合法，必须先比较救药对轮次的收益，不能被笼统的“保留资源”提示直接压过。残局人数减少或狼人压力升高时，可以更积极评估救药。
+ 
+-## 发言保密要求
+-- 白天发言只能基于公开事实。
+-- 不得把药水余量、夜刀目标、自己未公开的用药结果，或未公开身份链说成既成事实。
+-- 可以自然表达怀疑和推理，但不能泄露只属于你的夜间信息。
++## 救药
++- 救药首先评估**当前夜刀目标**，而不是只等待它出现在公开死亡记录中。
++- 高价值判断必须有公开支持链，单一自称或单一怀疑不足以确认身份；女巫不能知道守卫的私有保护目标。
++- 不要固定套用首夜模板；救药、pass 都必须结合本夜目标、资源、公开价值和残局压力。
+ 
+-## 女巫专属高置信毒杀规约
+-- 毒药优先只在公开证据同时指向强对跳、稳定票型压缩、公开身份链冲突，或终局倒计时等高置信情形时使用。
+-- 若只有单一怀疑点或局势仍不明朗，优先保留毒药；救药也只在高价值夜死、且能明显改变轮次时出手。
+-- 白天发言只能基于公开事实，不得暗示自己的药水余量、夜间目标或未公开用药结果。
++## 毒药
++- 毒药只用于高置信狼人、悍跳核心，或有强对跳、两类独立公开证据、稳定公开冲突/票型链支持的目标。
++- **毒药目标不得等于本夜已经被狼刀的目标**：这通常是重复击杀，不能消耗唯一毒药；除非行动规则明确提供额外收益。若无其他高置信目标，选择合法 pass。
++- 残局压力可以降低等待的门槛，但不能取消毒药的高置信要求；人数少不是盲毒理由。仅有票型聚集不等于立即适合毒杀。
+ 
+-## 决策风格
+-- 保持像正常玩家或自然的神职玩家。
+-- 先看公开票型与死亡，再决定救、毒或 pass。
+-- 宁可保留关键资源，也不要因为短期直觉过早消耗唯一药水。
++## 输出前自检
++1. `kind` 是否是当前 `allowed_actions` 中的合法行动？
++2. 目标类行动的 `target_id` 是否在该行动的 `target_ids` 中？
++3. poison 目标是否等于当前私有狼刀目标？若相等，改选合法 pass（除非规则明确说明有额外收益）。
++4. 当前是否存在公开支持的高价值救援目标？若当前狼刀目标是该目标且救药合法，重新比较 heal 与 pass。
++5. 白天发言是否只引用公开事实？不得暗示药水余量、夜刀目标、自己未公开的用药结果或未公开身份链。
++
++## 发言保密
++白天可以自然表达怀疑和推理，但只能谈公开事实；不得把私有夜刀、药水状态、用药结果或未公开身份说成既成事实。

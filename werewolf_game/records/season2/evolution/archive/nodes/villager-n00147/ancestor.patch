@@ -1,0 +1,494 @@
+--- villager-n00121/task_agent.py
++++ villager-n00147/task_agent.py
+@@ -197,6 +197,10 @@
+             "stance_timeline": [],
+             "raw_public_events": [],
+             "alive_ids": [],
++            "dead_ids": [],
++            "sheriff_chain": [],
++            "vote_edges": [],
++            "received_votes": {},
+             "last_public_round": None,
+             "late_mode": False,
+         }
+@@ -339,7 +343,6 @@
+             }
+         )
+         action_hint = "、".join(action_kinds) if action_kinds else "未知"
+-        memory_text = json.dumps(decision_aid, ensure_ascii=False, separators=(",", ":"))
+         base = render_prompt(
+             "player_turn_instruction.txt",
+             action_contract=render_action_contract(request),
+@@ -353,8 +356,9 @@
+             + "3. 查验对象已死亡时，只评估时间线与收益，不把死后查验自动当作可落地查杀。\n"
+             + "4. 不要求守卫公开证明未公开的夜间行动；对跳要比较完整验人链、警徽、票型和时间线。\n"
+             + "5. 目标行动前必须比较两个合法候选，分别列证据和不确定性，再作决定。\n"
+-            + "6. 发言点名具体票型/时间线/声明冲突；信息不足也要给排序和备选解释。\n"
+-            + f"【本次可见工作记忆】{memory_text}\n"
++            + "6. day_vote 有至少两个合法活人目标时，不能只因没有铁证而 pass；必须给主票、备选票和验证点。仅在明确平票、规则或信息收益理由成立时 pass。\n"
++            + "7. 发言点名具体票型/时间线/声明冲突；信息不足也要给排序和备选解释。\n"
++            + "7. 详见 packet.decision_aid；不要假设 packet 之外还有隐藏历史。\n"
+             + f"【本次允许行动】{action_hint}"
+         )
+ 
+@@ -379,11 +383,13 @@
+             }
+             for row in candidate_table[:5]
+         ]
++        comparison_frame = [self._comparison_row(row) for row in candidate_table[:4]]
+         return {
+             "state": {
+                 "round": public_summary.get("round"),
+                 "phase": public_summary.get("phase"),
+                 "alive_count": public_summary.get("alive_count"),
++                "alive_ids": list(public_summary.get("alive_ids") or self._working_memory.get("alive_ids", [])),
+                 "late_mode": self._working_memory.get("late_mode", False),
+             },
+             "verified_info": verified_info,
+@@ -391,11 +397,9 @@
+             "candidate_table": candidate_table,
+             "working_memory": working_memory,
+             "current_dialogue": dialogue_summary,
+-            "comparison_frame": [
+-                "先确认事实，再分辨声明与推测",
+-                "比较至少两个候选",
+-                "优先使用票型、死亡、公开翻牌和改口冲突",
+-            ],
++            "sheriff_chain": list(self._working_memory.get("sheriff_chain", []))[-8:],
++            "current_sheriff": self._current_sheriff(),
++            "comparison_frame": comparison_frame,
+         }
+ 
+     def _working_memory_snapshot(self, legal_ids: set[str] | None = None) -> dict[str, Any]:
+@@ -415,8 +419,11 @@
+             "suspicion_order": [name for name, _score in ranked[:5]],
+             "player_cards": player_cards,
+             "vote_matrix": dict(list(self._working_memory.get("vote_matrix", {}).items())[-6:]),
++            "vote_edges": list(self._working_memory.get("vote_edges", []))[-12:],
++            "received_votes": dict(list(self._working_memory.get("received_votes", {}).items())[-8:]),
++            "sheriff_chain": list(self._working_memory.get("sheriff_chain", []))[-8:],
+             "stance_timeline": list(self._working_memory.get("stance_timeline", []))[-8:],
+-            "evidence_note": "score 是每类证据封顶后的压缩索引；必须以 evidence_reasons 和原始时间线核对。",
++            "evidence_note": "score 是每类证据封顶后的压缩索引；被投票只表示争议度，不是目标的狼证据。",
+         }
+ 
+     def _update_working_memory(self, sync_packet: Mapping[str, Any]) -> None:
+@@ -429,8 +436,9 @@
+         if round_value is not None:
+             self._working_memory["last_public_round"] = round_value
+         alive_ids = summary.get("alive_ids")
+-        if alive_ids:
+-            self._working_memory["alive_ids"] = list(alive_ids)
++        if summary.get("alive_state_complete"):
++            self._working_memory["alive_ids"] = list(alive_ids or [])
++            self._working_memory["dead_ids"] = list(summary.get("dead_ids") or [])
+         self._ingest_summary(summary)
+         event_line = self._format_summary_line(summary)
+         if event_line:
+@@ -463,10 +471,11 @@
+                 ingest(event, event_round, event_phase)
+ 
+     def _event_key(self, event_type: str, event: Mapping[str, Any], round_value: Any, phase_value: Any) -> str:
+-        subject = event.get("player_id") or event.get("voter_id") or event.get("holder") or ""
+-        target = event.get("target_id") or ""
++        subject = event.get("player_id") or event.get("voter_id") or event.get("holder") or event.get("from_player_id") or ""
++        target = event.get("target_id") or event.get("to_player_id") or ""
+         text = self._normalize_event_text(event.get("text") or event.get("claim_text"))
+-        return "|".join((event_type, self._compact_text(round_value, 16), self._compact_text(phase_value, 20), self._compact_text(subject, 24), self._compact_text(target, 24), text))
++        action = self._normalize_event_text(event.get("action") or event.get("event_type"))
++        return "|".join((event_type, self._compact_text(round_value, 16), self._compact_text(phase_value, 20), self._compact_text(subject, 24), self._compact_text(target, 24), action, text))
+ 
+     def _recompute_suspicion_scores(self) -> None:
+         """从有界、分类型账本生成压缩排序；score 只是索引，不是事实。"""
+@@ -487,7 +496,7 @@
+                     value = int(entry.get("weight", 0))
+                     by_round[round_key] = max(by_round.get(round_key, -99), value)
+                 category_cap = {
+-                    "vote_evidence": 6, "claim_evidence": 3,
++                    "vote_evidence": 0, "claim_evidence": 3,
+                     "contradiction_evidence": 8, "revealed_alignment": -8,
+                     "death_order_evidence": 5,
+                 }.get(category, 4)
+@@ -535,9 +544,9 @@
+                 ids.extend(str(item) for item in targets if item)
+         ids = self._dedupe_preserve_order(ids)
+         alive = {str(item) for item in public_summary.get("alive_ids", []) if item}
+-        if not alive:
++        if not public_summary.get("alive_state_complete") and not alive:
+             alive = {str(item) for item in self._working_memory.get("alive_ids", []) if item}
+-        if alive:
++        if alive or public_summary.get("alive_state_complete"):
+             ids = [item for item in ids if item in alive]
+         return [item for item in ids if item != self.player_id]
+ 
+@@ -588,6 +597,37 @@
+             "contradictions": self._tail_texts(record.get("contradictions", []), "text"),
+             "verified_alignment": self._tail_texts(record.get("verified_alignment", []), "text"),
+             "last_seen_round": record.get("last_seen_round"),
++        }
++
++    def _current_sheriff(self) -> str:
++        for item in reversed(self._working_memory.get("sheriff_chain", [])):
++            if isinstance(item, Mapping):
++                if item.get("action") == "destroy":
++                    return "unknown"
++                holder = self._compact_text(item.get("to"), 24)
++                if holder:
++                    return holder
++        return "unknown"
++
++    def _comparison_row(self, row: Mapping[str, Any]) -> dict[str, Any]:
++        player_id = str(row.get("player_id") or "")
++        record = self._working_memory.get("players", {}).get(player_id, {})
++        outgoing = [
++            {"round": edge.get("round"), "target": edge.get("target") or "pass", "phase": edge.get("phase")}
++            for edge in self._working_memory.get("vote_edges", [])
++            if edge.get("voter") == player_id
++        ][-3:]
++        incoming = self._working_memory.get("received_votes", {}).get(player_id, [])[-3:]
++        return {
++            "player_id": player_id,
++            "official_facts": row.get("verified_alignment", []) + row.get("public_reveals", []),
++            "public_claims": row.get("recent_claims", []),
++            "vote_edges": {"outgoing": outgoing, "incoming": incoming},
++            "contradictions": row.get("contradictions", []),
++            "alternative_explanation": "票型可表示争议或跟随，不单独证明阵营；需结合声明和官方事件。",
++            "next_discriminating_observation": f"观察 {player_id} 下一次公开站边、改票或投票是否与声明一致。",
++            "score_index": row.get("score", 0),
++            "record_round": record.get("last_seen_round"),
+         }
+ 
+     def _candidate_reason(
+@@ -751,24 +791,49 @@
+         self._maybe_register_verified_alignment(speaker, record)
+ 
+     def _ingest_vote_event(self, vote: Mapping[str, Any], round_value: Any, phase_value: Any) -> None:
+-        voter = self._compact_text(vote.get("player_id"), 24)
++        voter = self._compact_text(vote.get("player_id") or vote.get("voter_id"), 24)
+         target_id = self._compact_text(vote.get("target_id"), 24)
+-        if not voter or not target_id:
+-            return
++        abstain = not target_id or target_id.casefold() in {"pass", "abstain", "弃票"}
++        if not voter:
++            return
++        target = "" if abstain else target_id
++        phase = self._compact_text(phase_value, 16)
++        round_key = self._compact_text(round_value, 12) or "?"
++        source_key = str(vote.get("source_key") or "")
++        edge = {
++            "round": round_key,
++            "phase": phase,
++            "voter": voter,
++            "target": target,
++            "abstain": abstain,
++            "weight": vote.get("weight", 1),
++            "source_key": self._compact_text(source_key, 40),
++        }
++        edges = self._working_memory.setdefault("vote_edges", [])
++        edge_key = json.dumps(edge, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++        if not any(json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) == edge_key for item in edges if isinstance(item, Mapping)):
++            edges.append(edge)
++        del edges[:-48]
+         record = self._update_player_record(voter, round_value, phase_value)
+         entry = {
+-            "round": self._compact_text(round_value, 12),
+-            "phase": self._compact_text(phase_value, 16),
+-            "target_id": target_id,
+-            "text": f"{voter}->{target_id}",
++            "round": round_key,
++            "phase": phase,
++            "target_id": target or "pass",
++            "abstain": abstain,
++            "text": f"{voter}->{target or 'pass'}",
+         }
+         record["votes"].append(entry)
+         del record["votes"][:-4]
+-        record["last_vote_target"] = target_id
+-        self._add_evidence(target_id, "vote_evidence", f"{voter} 显式投票给 {target_id}", round_value, self._vote_pressure_weight(), source_key=str(vote.get("source_key") or ""))
++        record["last_vote_target"] = target
++        if target:
++            received = self._working_memory.setdefault("received_votes", {})
++            targets = received.setdefault(target, [])
++            incoming = {"round": round_key, "phase": phase, "voter": voter, "source_key": self._compact_text(source_key, 40)}
++            if incoming not in targets:
++                targets.append(incoming)
++            del targets[:-8]
+         matrix = self._working_memory.setdefault("vote_matrix", {})
+-        round_key = self._compact_text(round_value, 12) or "?"
+-        matrix.setdefault(round_key, []).append({"voter": voter, "target": target_id, "phase": entry["phase"]})
++        matrix.setdefault(round_key, []).append({"voter": voter, "target": target or "pass", "phase": phase, "abstain": abstain})
+         del matrix[round_key][:-32]
+         while len(matrix) > 12:
+             matrix.pop(next(iter(matrix)))
+@@ -776,15 +841,17 @@
+         vote_log.append(entry["text"])
+         del vote_log[:-8]
+         last_claim_target = self._last_claim_target(record)
+-        if last_claim_target and last_claim_target != target_id:
++        if last_claim_target and last_claim_target != target:
+             mismatch = {
+                 "round": entry["round"],
+                 "phase": entry["phase"],
+-                "text": f"投票{target_id}与先前指向{last_claim_target}不一致",
++                "text": f"投票{target or 'pass'}与先前指向{last_claim_target}不一致",
+             }
+             record["vote_mismatches"].append(mismatch)
+             del record["vote_mismatches"][:-4]
+-            self._add_evidence(voter, "contradiction_evidence", mismatch["text"], round_value, 2)
++            self._add_evidence(voter, "contradiction_evidence", mismatch["text"], round_value, 2, source_key=source_key)
++        if abstain:
++            self._add_evidence(voter, "vote_behavior_evidence", "有公开投票记录但选择弃票/无目标", round_value, 1, source_key=source_key)
+ 
+     def _ingest_public_reveal_event(
+         self, reveal: Mapping[str, Any], round_value: Any, phase_value: Any
+@@ -838,18 +905,22 @@
+         self._append_verified_fact(entry["text"])
+ 
+     def _ingest_sheriff_event(self, sheriff: Mapping[str, Any], round_value: Any, phase_value: Any) -> None:
+-        holder = self._compact_text(sheriff.get("player_id"), 24)
+-        if not holder:
+-            return
+-        record = self._update_player_record(holder, round_value, phase_value)
+-        text = self._compact_text(sheriff.get("text"), 80) or f"{holder}(警长)"
+-        entry = {
+-            "round": self._compact_text(round_value, 12),
+-            "phase": self._compact_text(phase_value, 16),
+-            "text": text,
+-        }
+-        record["public_reveals"].append(entry)
+-        del record["public_reveals"][:-4]
++        holder = self._compact_text(sheriff.get("to_player_id") or sheriff.get("holder_id") or sheriff.get("player_id") or sheriff.get("sheriff_id"), 24)
++        from_player = self._compact_text(sheriff.get("from_player_id"), 24)
++        action = self._compact_text(sheriff.get("action") or sheriff.get("event_action") or sheriff.get("transfer_type"), 20).lower()
++        destroyed = bool(sheriff.get("destroyed")) or action in {"destroy", "destroyed", "销毁"}
++        if not holder and not from_player and not destroyed:
++            return
++        text = self._compact_text(sheriff.get("text"), 80) or (f"{from_player}->{holder}(警徽)" if from_player and holder else f"{holder or from_player}(警长)")
++        chain = self._working_memory.setdefault("sheriff_chain", [])
++        item = {"round": self._compact_text(round_value, 12), "phase": self._compact_text(phase_value, 16), "from": from_player, "to": holder, "action": "destroy" if destroyed else (action or "holder"), "source_key": self._compact_text(sheriff.get("source_key"), 40), "text": text}
++        if item not in chain:
++            chain.append(item)
++        del chain[:-16]
++        if holder:
++            record = self._update_player_record(holder, round_value, phase_value)
++            record["public_reveals"].append({"round": item["round"], "phase": item["phase"], "text": text})
++            del record["public_reveals"][:-4]
+         self._append_verified_fact(text)
+ 
+     def _maybe_register_verified_alignment(self, player_id: str, record: Mapping[str, Any]) -> None:
+@@ -968,6 +1039,11 @@
+             for item in self._working_memory.get(bucket_key, []):
+                 known.update(self._extract_player_ids(item))
+         known.update(self._working_memory.get("target_pressure", {}).keys())
++        known.update(self._working_memory.get("alive_ids", []))
++        known.update(self._working_memory.get("dead_ids", []))
++        for edge in self._working_memory.get("vote_edges", []):
++            if isinstance(edge, Mapping):
++                known.update({str(edge.get("voter") or ""), str(edge.get("target") or "")})
+         known.discard("")
+         return known
+ 
+@@ -1025,8 +1101,8 @@
+         summary: dict[str, Any] = {
+             "round": self._first_matching_value(packet, root_lower, ("round", "day", "turn")),
+             "phase": self._first_matching_value(packet, root_lower, ("phase", "public_phase", "stage")),
+-            "alive_count": None, "alive_ids": [], "deaths": [], "sheriff": [],
+-            "claims": [], "votes": [], "public_reveals": [],
++            "alive_count": None, "alive_ids": [], "dead_ids": [], "alive_state_complete": False,
++            "deaths": [], "sheriff": [], "claims": [], "votes": [], "public_reveals": [],
+         }
+         # game/public_state 是受信任的状态包装层；其余未知字段不下钻。
+         for wrapper in ("game", "public_state"):
+@@ -1047,8 +1123,11 @@
+                     event.setdefault("round", summary["round"])
+                     event.setdefault("phase", summary["phase"])
+             summary[key] = self._dedupe_events(summary[key])[:12]
+-        summary["alive_count"] = self._extract_alive_count(packet)
+-        summary["alive_ids"] = self._extract_alive_ids(packet)
++        alive_ids, dead_ids, complete = self._extract_player_state(packet)
++        summary["alive_ids"] = alive_ids
++        summary["dead_ids"] = dead_ids
++        summary["alive_state_complete"] = complete
++        summary["alive_count"] = len(alive_ids) if complete else self._extract_alive_count(packet)
+         return summary
+ 
+     def _walk_public_packet(self, node: object, summary: dict[str, Any], source: str = "root") -> None:
+@@ -1135,10 +1214,13 @@
+         """只接受带 holder/player 字段的警徽事件，不从文本猜 holder。"""
+         events: list[dict[str, Any]] = []
+         if isinstance(value, Mapping):
+-            holder = self._first_key_text(value, ("sheriff_id", "badge_holder", "holder_id", "player_id"))
++            holder = self._first_key_text(value, ("to_player_id", "badge_holder", "holder_id", "sheriff_id", "player_id"))
++            from_player = self._first_key_text(value, ("from_player_id", "previous_holder_id", "old_holder_id"))
++            action = self._first_key_text(value, ("action", "event_action", "transfer_type"))
++            destroyed = value.get("destroyed") is True or action in {"destroy", "destroyed", "销毁"}
+             text = self._first_key_text(value, ("text", "content"))
+-            if holder:
+-                events.append({"player_id": holder, "text": text or f"{holder}(警长)"})
++            if holder or from_player or destroyed:
++                events.append({"player_id": holder, "holder_id": holder, "from_player_id": from_player, "to_player_id": holder, "action": action, "destroyed": destroyed, "text": text or f"{from_player}->{holder}(警长)"})
+         elif isinstance(value, list):
+             for item in value:
+                 events.extend(self._extract_sheriff_events(item))
+@@ -1174,11 +1256,12 @@
+             voter = self._first_key_text(value, ("voter_id", "voter", "player_id"))
+             target = self._first_key_text(value, ("target_id", "vote_target", "candidate", "choice_id"))
+             abstain = value.get("abstain", value.get("pass", value.get("skipped")))
++            has_target_field = any(str(key).lower() in {"target_id", "vote_target", "candidate", "choice_id"} for key in value)
+             text = self._first_key_text(value, ("text", "content", "vote_text"))
+             if voter and target:
+-                events.append({"player_id": voter, "target_id": target, "text": text or f"{voter}->{target}"})
+-            elif voter and abstain is True:
+-                events.append({"player_id": voter, "target_id": "pass", "text": text or f"{voter}->pass"})
++                events.append({"player_id": voter, "target_id": target, "abstain": False, "text": text or f"{voter}->{target}"})
++            elif voter and (abstain is True or has_target_field):
++                events.append({"player_id": voter, "target_id": "", "abstain": True, "text": text or f"{voter}->pass"})
+         elif isinstance(value, list):
+             for item in value:
+                 events.extend(self._extract_vote_events(item))
+@@ -1209,7 +1292,8 @@
+             subject = self._compact_text(item.get("player_id"), 24)
+             target = self._compact_text(item.get("target_id"), 24)
+             text = self._normalize_event_text(item.get("text") or item.get("claim_text"))
+-            key = "|".join((event_type, self._compact_text(item.get("round"), 12), self._compact_text(item.get("phase"), 16), subject, target, text))
++            action = self._normalize_event_text(item.get("action") or item.get("event_type"))
++            key = "|".join((event_type, self._compact_text(item.get("round"), 12), self._compact_text(item.get("phase"), 16), subject, target, action, text))
+             if not text and not subject:
+                 continue
+             if key in seen:
+@@ -1354,54 +1438,73 @@
+             return []
+         return self._dedupe_preserve_order(_PLAYER_TOKEN.findall(text))
+ 
+-    def _extract_alive_ids(self, packet: object) -> list[str]:
++    def _extract_player_state(self, packet: object) -> tuple[list[str], list[str], bool]:
++        """仅解析受信任包装中的完整 players[{id, alive}] 列表。"""
++        if not isinstance(packet, Mapping):
++            return [], [], False
++        candidates: list[object] = [packet]
++        for wrapper in ("public_state", "game"):
++            value = packet.get(wrapper)
++            if isinstance(value, Mapping):
++                candidates.append(value)
++        for node in candidates:
++            players = node.get("players") if isinstance(node, Mapping) else None
++            if not isinstance(players, list) or not players:
++                continue
++            parsed: list[tuple[str, bool]] = []
++            for item in players:
++                if not isinstance(item, Mapping):
++                    parsed = []
++                    break
++                player_id = self._first_key_text(item, ("id", "player_id"))
++                alive = item.get("alive")
++                if not self._looks_like_player_id(player_id) or not isinstance(alive, bool):
++                    parsed = []
++                    break
++                parsed.append((player_id, alive))
++            if parsed:
++                return ([pid for pid, alive in parsed if alive], [pid for pid, alive in parsed if not alive], True)
++        return [], [], False
++
++    def _trusted_state_nodes(self, packet: object) -> list[Mapping[str, Any]]:
+         if not isinstance(packet, Mapping):
+             return []
+-        for key in ("alive_ids", "living_ids", "alive_players", "living_players"):
+-            value = self._find_value_by_key(packet, key)
+-            if isinstance(value, list):
+-                return self._dedupe_preserve_order([str(item) for item in value if self._looks_like_player_id(str(item))])
++        nodes: list[Mapping[str, Any]] = [packet]
++        for wrapper in ("public_state", "game"):
++            value = packet.get(wrapper)
+             if isinstance(value, Mapping):
+-                return self._dedupe_preserve_order([str(item) for item in value.keys() if self._looks_like_player_id(str(item))])
++                nodes.append(value)
++        return nodes
++
++    def _extract_alive_ids(self, packet: object) -> list[str]:
++        alive_ids, _dead_ids, complete = self._extract_player_state(packet)
++        if complete:
++            return alive_ids
++        for node in self._trusted_state_nodes(packet):
++            for key in ("alive_ids", "living_ids", "alive_players", "living_players"):
++                value = node.get(key)
++                if isinstance(value, list):
++                    return self._dedupe_preserve_order([str(item) for item in value if self._looks_like_player_id(str(item))])
++                if isinstance(value, Mapping):
++                    return self._dedupe_preserve_order([str(item) for item in value.keys() if self._looks_like_player_id(str(item))])
+         return []
+ 
+     def _extract_alive_count(self, packet: object) -> int | None:
+-        if not isinstance(packet, Mapping):
+-            return None
+-        for key in (
+-            "alive_count",
+-            "living_count",
+-            "alive_ids",
+-            "living_ids",
+-            "survivor_count",
+-            "remaining_count",
+-            "players_alive",
+-            "alive_players_count",
+-        ):
+-            value = self._find_value_by_key(packet, key)
+-            if isinstance(value, int) and value >= 0:
+-                return value
+-            if isinstance(value, str) and value.isdigit():
+-                return int(value)
+-            if isinstance(value, list):
+-                ids = self._extract_player_ids(value)
+-                if ids:
+-                    return len(ids)
+-        return None
+-
+-    def _find_value_by_key(self, node: object, wanted_key: str) -> object | None:
+-        if isinstance(node, Mapping):
+-            for key, value in node.items():
+-                if str(key).lower() == wanted_key.lower():
++        for node in self._trusted_state_nodes(packet):
++            for key in (
++                "alive_count", "living_count", "survivor_count", "remaining_count", "players_alive", "alive_players_count",
++            ):
++                value = node.get(key)
++                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                     return value
+-                nested = self._find_value_by_key(value, wanted_key)
+-                if nested is not None:
+-                    return nested
+-        elif isinstance(node, list):
+-            for item in node:
+-                nested = self._find_value_by_key(item, wanted_key)
+-                if nested is not None:
+-                    return nested
++                if isinstance(value, str) and value.isdigit():
++                    return int(value)
++            for key in ("alive_ids", "living_ids"):
++                value = node.get(key)
++                if isinstance(value, list):
++                    ids = [str(item) for item in value if self._looks_like_player_id(str(item))]
++                    if ids:
++                        return len(self._dedupe_preserve_order(ids))
+         return None
+ 
+     def _normalize_role_hint(self, text: str) -> str:
+@@ -1526,7 +1629,8 @@
+             "- score 只是有界索引，必须回看 evidence_reasons；事实、声明、推测分开。\n"
+             "- 只在当前合法存活目标中排序；死亡玩家只能作为历史时间线证据。\n"
+             "- 死后查验不自动等于铁狼；不要求守卫证明未公开的夜间行动。\n"
+-            "- 对跳比较验人链、警徽、票型、死亡顺序，并保留至少一个备选解释。"
++            "- 对跳比较验人链、警徽、票型、死亡顺序，并保留至少一个备选解释。\n"
++            "- day_vote 有多个合法活人目标时，‘没铁证/先听’不是单独 pass 理由；给主票、备选和验证点，除非有明确平票、规则或信息收益理由。"
+         )
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+--- villager-n00121/task.md
++++ villager-n00147/task.md
+@@ -9,7 +9,7 @@
+ 3. **按可核对证据排序**：显式事件最高，其次使用有时间线的声明冲突，再其次才是话术风格。内部 score 只是按类别封顶后的压缩索引，不能替代带来源的 evidence_reasons 和原始时间线；保留不确定性和至少一个备选解释。
+ 4. **合法目标边界**：目标行动只能从当前 `allowed_actions.target_ids` 的存活玩家中选择；死亡玩家可以用于回顾票型和死亡顺序，但不能作为当前候选。
+ 5. **特殊检查**：查验对象已死亡时，不把死后查验自动视为可落地查杀；不能要求守卫公开证明未公开的夜间行动；对跳要比较完整验人链、警徽、票型和时间线。
+-6. **行动前比较**：有两个以上合法候选时，先比较 A/B 的证据与不确定性，再作当前决定。信息不足时仍给出排序和下一步观察点，不只说“没信息”。
++6. **行动前比较**：有两个以上合法候选时，先比较 A/B 的证据与不确定性，再作当前决定。信息不足时仍给出排序和下一步观察点，不只说“没信息”。`day_vote` 有两个以上存活合法目标时，除非明确写出平票、规则或信息收益理由，不得仅因“没铁证/先听”而 `pass`；必须给出主票、备选票和下一轮验证点。
+ 7. 后期人数减少时，提高票型残差、公开翻牌、死亡顺序和警徽流向的权重，降低纯发言风格的影响；无证据时不要为了分数硬下结论。
+ 
+ 如需输出行动描述，优先使用“事实 → 候选对比 → 当前决定”的顺序；最终行动仍必须严格符合引擎 JSON 契约。

@@ -1,0 +1,80 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00088 结构化合法性很好（focus 无非法/无 fallback），但评测胜率仅 2/20，主要短板不是 schema，而是“预言家信息没有被转化为可持续公共资产”。当前代码已能提取查验账本、限制发言格式、夜验排序和活查杀/金水安全覆盖；下一代应最小增量地补强：在不注入完整历史的前提下，对当前轮可见发言/公开票型做有界结构化摘要；在高风险首夜死亡/警徽局中输出更强的遗产包；夜验和投票纠偏使用公开对跳、投票、压力链，而不只依赖 public_state 顶层字段和模型自由判断。",
+  "evidence": [
+    "评测汇总：seer-n00088 共 20 局，complete_game_count=20，failed_game_count=0，focus_fallback_count=0，focus_error_counts={}，但 win_count=2、loss_count=18、win_rate=0.1，说明动作合法性不是主要瓶颈。",
+    "随机回放 game4 中，预言家 p5 第 1 夜查验 p1=village（seq35-36），随后在警长竞选发言公开“昨晚验了p1，金水；下一验p2”（seq64），并当选警长（seq93）。",
+    "同局 p5 首夜被狼人击杀（seq28-33 选择 p5，seq42 死亡），因警长竞选延迟黎明仍能发言并拿警徽；p5 死后把警徽交给 p1 金水（seq99-100），这符合现有安全覆盖逻辑。",
+    "但 p5 的警上发言行动段仍偏抽象：“主投想拿警徽带节奏，备选看谁对跳或乱踩；下一验准备查p2”（seq64），没有形成强遗言式公共指令，例如明确要求 p1 作为金水接警徽后复述查验链、不要把警徽再传给未验位、优先审对跳候选。",
+    "p1 后续作为金水警长没有承接 p5 的公共查验链，甚至在遗言中说“目前场上没有任何被系统验证的查验链”（seq151-152）。这不是 seer 代码可直接控制的行为，但说明预言家早死时留下的信息包不够可执行、可复制。",
+    "当前 _seer_context 能构造 inspection_map、known_live_wolves、known_live_villagers、dead/alive ids；_apply_seer_safety_overrides 能把投票改向活查杀、警徽移交改向活金水，说明基础事实账本已较完整。",
+    "当前 _rank_seer_inspect_targets 只从 request.allowed_actions.target_ids 出发，并主要通过 public_state 字段名中的 claim/vote/sheriff/badge 给分；它不会解析 current_round_dialogue 中的实际对跳、强保、强踩、归票语义，除非模型主动调用工具并自行推理。",
+    "当前 observe 直接丢弃 sync_packet，_seer_ledger 只保留 inspection_map、alive/dead、declared_inspection_targets、declared_main_vote、last_public_speech，不保存有界的公开 claim/vote/pressure 摘要；这使跨行动的公开矛盾链很弱。",
+    "同父分支 seer-n00086 的 patch 方向是加入最近三轮结构化公开摘要，seer-n00087 方向是加入 public_claims/vote_history/public_signals；这些分支说明进化树中已多次指向“有界公开摘要”而非继续扩大通用 prompt。n00086 已 retained，但不能直接假定其优于 n00088。",
+    "回放 game4 最终村民胜利（seq370），但预言家只实际作出 5 次 focus 决策并早死；胜利更多来自后续其他好人/狼队失误，不能证明 n00088 的预言家发言已经充分带队。"
+  ],
+  "root_causes": [
+    "早死场景的遗产包不够强：当前提示要求“若可能夜死公开金水、下一验和警徽去向”，但没有把它固化成可执行的接力指令，导致金水/警徽继承者未必能在后续发言中复述和维护预言家链。",
+    "公开状态建模不足：代码没有维护有界的 public claim timeline、vote timeline、pressure map；夜验排序和发言生成主要依赖当前 packet、少量 ledger 和模型临场读工具，无法稳定跟踪对跳顺序、谁强保/强踩查杀链、谁在票型上持续同向。",
+    "夜验排序的信号来源偏窄：_rank_seer_inspect_targets 只遍历 public_state 的结构化字段和值，未利用 current_round_dialogue 的语义摘要；当公开矛盾主要存在于发言文本里时，代码层排序给不了模型明确候选。",
+    "发言模板过于“合规”而不够“带队”：四段式保证不编造信息，但行动段允许抽象语句，缺少阶段化强模板，例如警上预言家应给“验人链/警徽流/若死执行方案/唯一主线”。",
+    "安全覆盖只处理强事实，不处理负事实：投票只会在有活查杀时强制投已验狼；当模型准备投已验活金水、死人或与自身公开主线冲突时，没有同等强度的本地纠偏。",
+    "当前 ledger 的 last_public_speech 只是文本截断，不能被程序用来检查后续 vote 是否与公开主投一致，也不能帮助模型看到“上一轮我已经承诺主投/下一验”。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增有界公开信号摘要函数，例如 _summarize_current_dialogue(dialogue, known_ids) 和 _extract_public_vote_claim_signals(public_state)。只解析当前轮 tool_context.current_round_dialogue 与 public_state 中已公开字段，提取 seer_claimants、claimed_inspections、pressure_by_player、vote_targets、protect/attack links、recent_snippets；每项限制数量和文本长度，不保存完整历史。",
+      "rationale": "在不绕过工具预算和不注入完整历史的前提下，把模型本来可见的当前轮发言转成结构化信号，供夜验排序、发言提示和投票纠偏使用。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展 self._seer_ledger，新增 public_claimants、public_claimed_inspections、recent_pressure、recent_vote_targets、last_next_inspect、last_badge_plan、last_main_vote_target 等字段；在 decide 开始时用当前 public_state 和 current_dialogue 更新，保留最近 2-3 轮或固定上限，不记录隐藏阵营、不保存完整对话。",
+      "rationale": "让预言家的公开承诺和公共矛盾链能跨行动延续，避免每次新模型会话都重新从零理解对跳和票型。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _rank_seer_inspect_targets，增加可选 public_signals 参数。对公开对跳预言家、直接质疑/归票预言家的人、强保已验狼或强踩已验金水的人、上一轮主要票仓/分票核心增加分数；对已验、死亡、活金水、自身继续降分。保持最终候选只能来自 allowed_actions.target_ids。",
+      "rationale": "让夜验更贴近任务中“查杀链强保/强踩者、公开对跳、关键票仓”的要求，而不是只靠 public_state 顶层字段名。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _seer_instruction_text 中加入高风险/遗产模式：当 speech_allowed 且处于 sheriff_election_speech、last_words、自己是警长、或 ledger/上下文显示可能夜死时，强制行动段包含：唯一金水/查杀事实、若我死警徽交给谁、接警徽者必须复述哪条查验链、下一验/下一审目标、唯一主票或当前阶段唯一主线。禁止“想拿警徽带节奏”这类无 target 的抽象主线。",
+      "rationale": "提升预言家早死后的信息可复制性，减少金水继承者和场上好人把公开预言家链当作普通噪音处理。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 _apply_seer_safety_overrides 的 vote 分支：若存在 known_live_wolves 继续强制投活查杀；若模型投向 known_live_villagers 且 allowed_actions 中有非金水合法替代，则优先改为 ledger.declared_main_vote_target、public_signals 的最高压力非金水目标，或合法非金水候选；仍不得产生候选集外 target。",
+      "rationale": "防止预言家在无查杀混乱局中误投自己的已验金水，同时保持没有硬事实时只做有限纠偏。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "记录并使用发言中的下一验承诺：从自身 speech action 的 text 中用简单正则提取“下一验/验/查 pX”，写入 ledger.last_next_inspect；夜间 seer_inspect 若该目标仍合法、存活、未验且未降级，则给排序加分或直接作为 preferred。",
+      "rationale": "提高公开警徽流/下一验与实际夜验的一致性，增强预言家信誉。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _run_seer_self_checks 中增加覆盖：解析一段含“我是预言家、p3查杀、归票p4、下一验p6”的 current_dialogue 摘要；验证夜验排序不选死人/已验/金水；验证 vote 不会投 known_live_villagers；验证高风险 speech 指令包含“警徽/下一验/主投”。",
+      "rationale": "防止新增公开摘要和安全覆盖破坏合法性边界，并让 Pi 修改后能快速发现回归错误。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充“预言家早死遗产包”规则：警上或遗言必须用短句明确：验人事实、金水/查杀接力人、警徽去向、下一验、唯一主线；金水接警徽不等于系统验明，但必须要求其复述你的公开查验链。补充“下一验承诺要尽量兑现，除非目标死亡/已验/非法”。",
+      "rationale": "把代码层新增行为与角色规约对齐，减少模型把遗产包理解成可选风格。"
+    }
+  ],
+  "risks": [
+    "自动解析自然语言发言可能误识别玩家 id 或角色声明；必须把 public_signals 标注为公开发言摘要而非查验事实，不能写入 inspection_map。",
+    "过强的 vote 纠偏可能在特殊局面下阻止预言家战术性投金水；因此只应在有合法非金水替代且无活查杀冲突时启用。",
+    "把 current_round_dialogue 自动摘要进 prompt 可能增加 prompt 长度；需要严格限制最近条数、每条字符数和总字段数量，不能注入完整历史。",
+    "早死遗产包更强可能让狼人更容易确认预言家身份，但当前标准局中真预言家公开查验通常本就高价值，且早死时隐忍收益很低。",
+    "公开承诺下一验并强制兑现可能被狼队利用刀口干扰；应允许目标死亡、已验、非法、或出现更高优先级活查杀链时改验。",
+    "评测胜率受其他角色节点影响很大；game4 村民胜利并不代表 seer 修改一定提升整体胜率，需要以 20 局以上评测观察。"
+  ],
+  "code_agent_brief": "请只修改 task_agent.py 和 task.md。目标是在 seer-n00088 上做最小增量：保留现有合法行动契约、_seer_context、inspection_map 和安全覆盖框架，不访问网络/文件/隐藏状态，不修改引擎。实现一个有界的公开信号摘要：从当前 turn_packet 的 public_state 和 tool_context.current_round_dialogue（当前轮可见发言）中提取最近 claim/vote/pressure/claimed_inspection 摘要，限制条数和文本长度，写入 prompt.packet 的 seer_ledger 或 public_signals；不要保存完整对话。扩展 _seer_ledger 保存最近公开 claimants、claimed inspections、pressure targets、last_next_inspect、last_badge_plan、last_main_vote_target。让 _rank_seer_inspect_targets 接收这些 public_signals：公开对跳、强保/强踩查验链、关键票仓、直接质疑预言家者加分；已验、死亡、活金水、自身降分，目标仍必须来自 allowed_actions.target_ids。增强 _seer_instruction_text 的 sheriff_election_speech/last_words/高风险模式，要求短句输出验人事实、金水/查杀、若死警徽交给谁、接力人要复述哪条查验链、下一验、唯一主线，避免“想拿警徽带节奏”这类无对象主线。增强 vote safety：有活查杀仍强制投活查杀；如果模型投已验活金水且存在合法非金水替代，则改为已声明主票或公开压力最高非金水目标。记录自身发言中的“下一验pX”并在夜验合法时优先兑现。给 _run_seer_self_checks 增加公开摘要、夜验排序、避免投金水、高风险指令关键词测试。同步在 task.md 增加早死遗产包与下一验承诺规则。"
+}

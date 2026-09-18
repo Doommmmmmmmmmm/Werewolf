@@ -1,0 +1,76 @@
+你正在修改狼人杀角色 hunter 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "hunter-n00076 的主要问题不是合法性，而是猎人身份与开枪收益没有被转化为可执行的局面判断。该节点 20 局胜率 0.2、focus 无非法/无 fallback，说明 schema 稳定；但实战中猎人活着时过早明跳并给出偏保守/摇摆的发言，死亡触发猎人反应时又在关键残局选择 pass。下一代应最小修改：保留当前合法性框架，增强猎人隐蔽发言、当前/历史公开证据压缩、残局开枪阈值和反诱导评分，使猎人既不乱枪，也不要在低容错残局无条件跳过。",
+  "evidence": [
+    "评测汇总：hunter-n00076 在 20 局中 win_count=4、loss_count=16、win_rate=0.2；focus_decision 无 fallback、无 invalid，说明问题集中在策略质量而非行动格式。",
+    "随机回放 game1：p11 为 hunter。第 1 天发言 seq106 直接说“我是猎人，今天谁想走我都可以试试”，早于被强推或濒死场景，违背任务中“不必急于自证身份”的方向，也降低了猎人身份的威慑/伪装价值。",
+    "game1 seq104 真预言家 p9 明确报 p3 查杀；p10 seq105 以“太顺了”质疑 p9，p11 seq106 跟随 p10 的质疑，要求 3 和 9 都充分发言后再投票。虽然 p11 最终 seq122 投 p3 正确，但白天发言没有坚定利用真预言家的强信息。",
+    "game1 seq181 p9 第二天继续报 p7 查杀；p11 seq183 仍强调“双死坑没人填”“别只甩结论”，发言继续稀释真预言家信息。p11 seq194 投 p7 是正确结果，但发言信号偏摇摆。",
+    "game1 seq249-251 中 p10 首先攻击继承警徽的 p12，随后第 3 天 p12 被放逐且翻后为 villager；第 5 天残局 p10 仍存活并成为最后一狼。p11 死亡反应发生在 seq362-365，此时猎人可开枪但返回 pass，错失直接清除 p10 的机会。",
+    "game1 结局 seq442：狼人获胜，最终角色显示 p10 是最后存活狼人；p11 的猎人枪 seq363 选择 pass，没有利用死亡触发能力改变终局。",
+    "当前代码 _rank_hunter_targets 中 pass_recommended 条件为 best_score < 4 或 best 与 second 差距不足时跳过；该阈值适合早期防误伤，但在 5 人左右、猎人死亡后的低容错残局过于保守。",
+    "当前代码的公开记忆主要来自 observe(sync_packet) 的压缩记录和 _build_decision_brief 的简短摘要。runner 的 PUBLIC_STATE_SYNC 在每轮开头发生，且 current_round_dialogue 只预览最近 3 条；跨轮票型、谁推动放逐好人、谁质疑真预言家等证据容易被压缩丢失。"
+  ],
+  "root_causes": [
+    "猎人反应策略过度保守：当前评分要求较高且没有根据 alive_count、legal_targets、已出狼数量、剩余狼坑收窄程度动态降低开枪阈值，导致残局仍按早期“证据不足优先跳过”执行。",
+    "公开证据压缩不面向猎人枪决：现有 memory records 数量少、按通用字段抽取，缺少对“反真预言家”“推动好人出局”“与已放逐狼/好人的票型关系”“假死/伪造事实”等猎人开枪高价值特征的持久化。",
+    "活着时身份管理不足：task.md 虽提示不必急于自证，但当前 agent 没有更强的反明跳约束，模型在第 1 天主动报猎人，牺牲了猎人应有的隐藏威慑和被狼误判空间。",
+    "发言和投票之间不一致：p11 多次口头质疑真预言家信息，但投票又跟查杀走。这种发言会给其他好人制造不确定性，也可能让狼队借势攻击真预言家或警徽流。",
+    "决策简报缺少残局计数：没有显式告诉模型“猎人已死后开枪若命中最后狼可直接胜利，若 pass 会把选择权交回白天票型”，导致模型继续套用通用 pass 规则。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task.md",
+      "change": "新增“猎人隐蔽发言”小节：除非自己当天濒临放逐、被迫对跳、需要保护已高度可信神职/警长，或死亡反应已经触发，否则不要主动明跳猎人；活着时以普通好人视角输出具体证据，不用“我是猎人谁来试试”作为威慑。",
+      "rationale": "直接针对 game1 seq106 的早跳问题，降低身份暴露和挑衅式空威慑，提高猎人存活期对好人阵营的信息贡献。"
+    },
+    {
+      "file": "task.md",
+      "change": "新增“猎人反应残局规则”：若触发 hunter_reaction 时合法目标较少、场上已进入 5 人及以下或已多狼出局，不能默认 pass；必须在合法目标中优先比较最近推动好人出局、持续质疑已高可信预言家/警长、伪造死亡/票型事实、末位存活且缺少身份可信度的人。只有没有任何可区分证据且误伤会立即送狼胜时才 pass。",
+      "rationale": "把猎人枪从早期防误伤策略切换到残局收益最大化，避免 p11 seq363 这类在最后狼存在时跳过。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_decision_brief 中为 hunter_reaction 增加残局计数摘要：从 public_state.players 统计 alive_count、legal_target_count、dead_count、公开 revealed_role；输出“当前为死亡反应，合法目标 N 个，剩余存活 M 个，若局面低容错则应优先开枪最高嫌疑而非默认 pass”。",
+      "rationale": "不改引擎和可见性，只把行动包和公开状态已有信息转化为模型可见的关键局面提示，帮助模型按阶段切换策略。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "调整 _rank_hunter_targets 的 pass_recommended 逻辑：保留早期阈值，但若 mode 为 hunter_reaction 且 alive_count <= 6 或 legal_targets <= 5，则将开枪阈值降低，例如 best_score >= 2 且 best_score >= second_score 时不推荐 pass；若 best_score >= 3，即使领先不足 2 也给出“残局可开枪”提示。仍在无证据时允许 pass。",
+      "rationale": "当前 best_score < 4 的硬阈值导致残局过度保守；动态阈值能在低容错局面放大猎人枪的胜负价值。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增轻量公开事件画像结构，例如 self._public_suspicion: dict[player_id, {score,reasons}]，在 observe 和 _build_decision_brief 处理 tool_context.current_round_dialogue 时更新。特征包括：质疑/反打后来高度可信的预言家查杀、推动或归票已死亡且未被证实为狼的玩家、公开伪造死亡/警徽事实、连续“信息不足/平票/别推人”但不提供替代狼坑、被多人点名为带节奏。每名玩家最多保留 3 条 reason，避免注入完整历史。",
+      "rationale": "当前通用 memory 很容易丢失跨轮行为链。猎人枪需要的是候选人级别的压缩证据，而不是完整历史。该修改仍符合预算和可见性边界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _score_hunter_target 中合并 self._public_suspicion：目标每有一条强特征加 1-3 分；若目标有公开强好人信号则扣分，例如 revealed_role 为 guard/seer/witch/hunter、被可信预言家明确金水、当天被伪造事实者攻击等。理由写入 target_ranking。",
+      "rationale": "让目标排序真正反映猎人应比较的“身份可信度 / 票型一致性 / 连锁风险”，同时降低误射公开强好人。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_decision_brief 的 speak/day_vote 分支加入一致性提醒：若已经存在单预言家查杀且无可信对跳，发言应先承认查杀的执行优先级，再提出待验证疑点；不要口头强烈稀释查杀、投票却跟查杀，除非明确说明原因。",
+      "rationale": "减少 game1 中 p11 对 p9 真预言家信息的摇摆式表达，避免给团队制造混乱。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 _summarize_current_dialogue 的最近 3 条预览扩展为猎人专用摘要：不增加工具调用，只从已给的 tool_context.current_round_dialogue 中提取最近所有可见发言的 player_id、是否点名、是否含查杀/金水/对跳/假死/投票建议；摘要控制在 300-400 字以内。",
+      "rationale": "当前只看最后 3 条，早发言位的关键信息容易丢失；压缩全轮对话比完整注入历史更符合预算。"
+    }
+  ],
+  "risks": [
+    "降低残局开枪阈值可能增加误射好人的概率，尤其在狼人故意诱导猎人攻击高发言量好人时。应通过强好人扣分和反诱导特征缓解。",
+    "公开事件画像如果过度相信玩家自述，可能把悍跳狼的查杀当成强证据。需要在评分中区分“单预言家且持续被验证”与“有对跳/未验证查杀”。",
+    "task_agent.py 中新增状态压缩若实现过重，可能超过 prompt 或维护复杂度；应限制每名玩家 reasons 数量、总摘要长度和扫描深度。",
+    "早期不明跳猎人可能导致猎人被白天误推时未能及时自救。因此 task.md 应保留濒临放逐、被集中攻击或关键轮次可以明跳的例外。",
+    "单局 game1 只能证明存在错失开枪和发言摇摆案例，不能保证所有 16 败均由同一原因导致；但评测整体无合法性问题且胜率低，优先修正策略阈值和证据摘要是低风险方向。"
+  ],
+  "code_agent_brief": "请只修改候选工作区的 task_agent.py 和 task.md，不改引擎、规则、schema、工具、评测或可见性。目标是生成 hunter-n00076 的下一代：1) 在 task.md 增加猎人隐蔽发言约束：非濒死/非对跳/非死亡反应不要主动说自己是猎人，活着时用具体公开证据发言；增加 hunter_reaction 残局规则：5-6 人以下或合法目标少时不能机械 pass，应优先枪最高嫌疑，只有无可区分证据才跳过。2) 在 task_agent.py 保留现有合法性校验，增强 _build_decision_brief/_rank_hunter_targets：统计 public_state 中 alive_count、legal_target_count、公开 revealed_role；hunter_reaction 时输出低容错开枪提示。3) 将 pass_recommended 从固定 best_score<4 改为阶段动态阈值：早期仍保守；hunter_reaction 且 alive_count<=6 或 legal_targets<=5 时，best_score>=2 且不低于第二名即可不推荐 pass，best_score>=3 明确推荐开枪；无证据仍允许 pass。4) 新增轻量的玩家嫌疑画像，不要注入完整历史：从 observe(sync_packet) 和每次 decide 可见的 tool_context.current_round_dialogue 中提取玩家级 reason/score，每人最多 3 条，总摘要截断。特征包括反打/稀释高可信预言家查杀、推动后来未证狼的玩家出局、伪造死亡或警徽事实、持续劝平票/别推人但不给替代狼坑、被多人指出带节奏；同时对公开强好人信号扣分。5) 发言简报中加入一致性提醒：单预言家查杀且无可信对跳时，发言先承认执行优先级，再说疑点，避免口头强烈质疑但投票又跟查杀。控制所有新增摘要在现有 12000 字符预算内，不增加工具种类或工具调用上限。"
+}

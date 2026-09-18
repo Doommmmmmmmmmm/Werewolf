@@ -1,0 +1,353 @@
+--- guard-base/task_agent.py
++++ guard-n00018/task_agent.py
+@@ -91,6 +91,8 @@
+         )
+         if valid_targets:
+             lines.append("  target_id 候选值：" + "、".join(valid_targets) + "。")
++        if kind == "guard_protect" and valid_targets:
++            lines.append("  守卫必须只用当前 target_ids；优先避开上一晚保护对象，若原目标非法就改选合法候选。")
+         if kind in _SPEECH_ACTION_KINDS:
+             max_chars = allowed.get("max_chars")
+             constraints: list[str] = []
+@@ -99,7 +101,7 @@
+             if allowed.get("require_chinese"):
+                 constraints.append("text 至少包含一个中文字符")
+             constraints.append("text 可以包含英文、数字和玩家编号")
+-            lines.append("  " + "；".join(constraints) + "。")
++            lines.append("  " + ";".join(constraints) + "。")
+ 
+     lines.append(
+         "kind 和 target_id 是协议字段，使用英文是合法且必须原样保留；不要把它们翻译成中文。"
+@@ -124,11 +126,19 @@
+     return action
+ 
+ 
+-def decision_error(action: dict[str, Any], request: dict[str, Any]) -> str | None:
++def decision_error(
++    action: dict[str, Any],
++    request: dict[str, Any],
++    guard_state: Mapping[str, Any] | None = None,
++) -> str | None:
+     """在提交引擎前做一次本地校验，便于让模型重试。"""
+ 
+     allowed = next(
+-        (item for item in request["allowed_actions"] if item["kind"] == action["kind"]),
++        (
++            item
++            for item in request["allowed_actions"]
++            if isinstance(item, Mapping) and item.get("kind") == action["kind"]
++        ),
+         None,
+     )
+     if allowed is None:
+@@ -141,10 +151,15 @@
+             return f"发言超过 max_chars={allowed['max_chars']}"
+         if allowed.get("require_chinese") and not _CHINESE_CHARACTER.search(text):
+             return "发言必须包含中文"
+-    target_ids = allowed.get("target_ids")
++    raw_target_ids = allowed.get("target_ids")
++    target_ids = raw_target_ids if isinstance(raw_target_ids, list) else None
+     if target_ids:
+         if action.get("target_id") not in target_ids:
+             return "target_id 必须是 target_ids 中的一项"
++        if action["kind"] == "guard_protect" and guard_state is not None:
++            last_protected_id = guard_state.get("last_protected_id")
++            if last_protected_id and action.get("target_id") == last_protected_id and len(target_ids) > 1:
++                return f"guard_protect 不能连续守同一人：last_protected_id={last_protected_id}"
+     elif action.get("target_id"):
+         return "该行动不能提供 target_id"
+     return None
+@@ -187,12 +202,16 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._guard_memory: dict[str, Any] = {
++            "last_protected_id": None,
++            "last_night_round": None,
++            "last_public_confirmed_guard_target": None,
++        }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步；仅保留守卫决策所需的最小状态。"""
++
++        self._update_guard_memory(sync_packet)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -201,6 +220,7 @@
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
++        self._update_guard_memory(turn_packet)
+         system = self._system_prompt(private)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -263,7 +283,8 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
+-            error = decision_error(action, turn_packet["request"])
++            action, repair_note = self._repair_guard_action(action, turn_packet)
++            error = decision_error(action, turn_packet["request"], self._guard_memory)
+             if error is None:
+                 return action
+             if _attempt >= self.max_decision_retries:
+@@ -275,7 +296,7 @@
+                     attempted_action=action,
+                     validation_error=error,
+                 )
+-            feedback = f"上一次行动未通过校验：{error}"
++            feedback = self._build_validation_feedback(action, turn_packet["request"], error, repair_note)
+ 
+     def agent_manifest(self) -> dict[str, Any]:
+         return {
+@@ -296,7 +317,225 @@
+     def model_token_usage_snapshot(self) -> dict[str, int]:
+         return dict(self._model_token_usage)
+ 
++    def _update_guard_memory(self, source: Any) -> None:
++        if not isinstance(source, Mapping):
++            return
++        candidates: list[Mapping[str, Any]] = [source]
++        for key in ("public_state", "private_information", "sync_packet", "role_state"):
++            nested = source.get(key)
++            if isinstance(nested, Mapping):
++                candidates.append(nested)
++                nested_role_state = nested.get("role_state")
++                if isinstance(nested_role_state, Mapping):
++                    candidates.append(nested_role_state)
++        for candidate in candidates:
++            self._merge_guard_state(candidate)
++
++    def _merge_guard_state(self, state: Mapping[str, Any]) -> None:
++        last_protected_id = self._first_str(
++            state.get("last_protected_id"),
++            state.get("last_protected_target_id"),
++            state.get("protected_target_id"),
++            state.get("protected_id"),
++        )
++        if last_protected_id is not None:
++            self._guard_memory["last_protected_id"] = last_protected_id
++
++        confirmed_target = self._first_str(
++            state.get("last_public_confirmed_guard_target"),
++            state.get("confirmed_guard_target"),
++            state.get("public_confirmed_guard_target"),
++        )
++        if confirmed_target is not None:
++            self._guard_memory["last_public_confirmed_guard_target"] = confirmed_target
++
++        last_round = self._first_int(
++            state.get("last_night_round"),
++            state.get("last_guard_round"),
++            state.get("night_round"),
++            state.get("round"),
++        )
++        if last_round is not None:
++            self._guard_memory["last_night_round"] = last_round
++
++    def _repair_guard_action(
++        self, action: dict[str, Any], turn_packet: dict[str, Any]
++    ) -> tuple[dict[str, Any], str | None]:
++        if action.get("kind") != "guard_protect":
++            return action, None
++        allowed = next(
++            (
++                item
++                for item in turn_packet["request"].get("allowed_actions", [])
++                if isinstance(item, Mapping) and item.get("kind") == "guard_protect"
++            ),
++            None,
++        )
++        if not isinstance(allowed, Mapping):
++            return action, None
++        raw_target_ids = allowed.get("target_ids")
++        if not isinstance(raw_target_ids, list):
++            return action, None
++        target_ids = [str(target_id) for target_id in raw_target_ids if target_id is not None]
++        if not target_ids:
++            return action, None
++
++        chosen = action.get("target_id")
++        chosen_id = str(chosen) if chosen is not None else None
++        last_protected_id = self._guard_memory.get("last_protected_id")
++        if chosen_id in target_ids and chosen_id != last_protected_id:
++            self._guard_memory["last_protected_id"] = chosen_id
++            self._guard_memory["last_night_round"] = self._current_round(turn_packet)
++            return action, None
++
++        replacement = self._choose_guard_target(target_ids, turn_packet)
++        if replacement is None:
++            return action, None
++        repaired = dict(action)
++        repaired["target_id"] = replacement
++        self._guard_memory["last_protected_id"] = replacement
++        self._guard_memory["last_night_round"] = self._current_round(turn_packet)
++
++        if chosen_id is None:
++            note = f"guard_protect 缺少 target_id，已自动改写为 {replacement}。"
++        elif chosen_id not in target_ids:
++            note = (
++                f"guard_protect 的 target_id={chosen_id} 不在当前合法 target_ids 中，"
++                f"已自动改写为 {replacement}。"
++            )
++        else:
++            note = (
++                f"guard_protect 不能连续守同一人：last_protected_id={last_protected_id}，"
++                f"已自动改写为 {replacement}。"
++            )
++        return repaired, note
++
++    def _choose_guard_target(self, target_ids: list[str], turn_packet: dict[str, Any]) -> str | None:
++        if not target_ids:
++            return None
++        last_protected_id = str(self._guard_memory.get("last_protected_id") or "")
++        confirmed = str(self._guard_memory.get("last_public_confirmed_guard_target") or "")
++        alive_ids = self._extract_alive_player_ids(turn_packet.get("public_state"))
++        candidates = [target_id for target_id in target_ids if target_id != last_protected_id]
++        if not candidates:
++            candidates = list(target_ids)
++        if alive_ids:
++            alive_candidates = [target_id for target_id in candidates if target_id in alive_ids]
++            if alive_candidates:
++                candidates = alive_candidates
++        return sorted(
++            candidates,
++            key=lambda target_id: (
++                0 if confirmed and target_id == confirmed else 1,
++                self._seat_order_key(target_id),
++                target_id,
++            ),
++        )[0]
++
++    @staticmethod
++    def _extract_alive_player_ids(public_state: Any) -> set[str]:
++        alive_ids: set[str] = set()
++        if not isinstance(public_state, Mapping):
++            return alive_ids
++        for key in ("alive_player_ids", "living_player_ids", "alive_ids"):
++            value = public_state.get(key)
++            if isinstance(value, list):
++                alive_ids.update(str(item) for item in value if item is not None)
++        players = public_state.get("players")
++        if isinstance(players, list):
++            for player in players:
++                if not isinstance(player, Mapping):
++                    continue
++                if player.get("alive") is False or player.get("is_alive") is False:
++                    continue
++                if str(player.get("status") or "").lower() in {"dead", "eliminated"}:
++                    continue
++                player_id = player.get("player_id", player.get("id"))
++                if player_id is not None:
++                    alive_ids.add(str(player_id))
++        return alive_ids
++
++    @staticmethod
++    def _seat_order_key(player_id: object) -> tuple[int, str]:
++        text = str(player_id or "")
++        match = re.search(r"(\d+)$", text)
++        return (int(match.group(1)) if match else 10**9, text)
++
++    @staticmethod
++    def _first_str(*values: object) -> str | None:
++        for value in values:
++            if value is None:
++                continue
++            text = str(value).strip()
++            if text:
++                return text
++        return None
++
++    @staticmethod
++    def _first_int(*values: object) -> int | None:
++        for value in values:
++            if value is None or isinstance(value, bool):
++                continue
++            try:
++                normalized = int(value)
++            except (TypeError, ValueError):
++                continue
++            return normalized
++        return None
++
++    def _current_round(self, turn_packet: Mapping[str, Any]) -> int | None:
++        game = turn_packet.get("game")
++        if not isinstance(game, Mapping):
++            return None
++        return self._first_int(game.get("round"))
++
++    def _build_validation_feedback(
++        self,
++        action: Mapping[str, Any],
++        request: Mapping[str, Any],
++        error: str,
++        repair_note: str | None,
++    ) -> str:
++        if action.get("kind") == "guard_protect":
++            allowed = next(
++                (
++                    item
++                    for item in request.get("allowed_actions", [])
++                    if isinstance(item, Mapping) and item.get("kind") == "guard_protect"
++                ),
++                None,
++            )
++            target_ids = []
++            if isinstance(allowed, Mapping):
++                raw_target_ids = allowed.get("target_ids")
++                if isinstance(raw_target_ids, list):
++                    target_ids = [str(target_id) for target_id in raw_target_ids if target_id is not None]
++            attempted_target = action.get("target_id")
++            last_protected_id = self._guard_memory.get("last_protected_id")
++            parts = [f"guard_protect 校验失败：{error}。"]
++            if repair_note:
++                parts.append(f"本地已尝试修复：{repair_note}")
++            if target_ids:
++                parts.append("当前合法 target_ids=" + "、".join(target_ids) + "。")
++            if last_protected_id:
++                parts.append(f"last_protected_id={last_protected_id}。")
++            if attempted_target is not None:
++                parts.append(f"请从合法候选中重选，不要再次给出 {attempted_target} 这类非法目标。")
++            else:
++                parts.append("请从合法候选中重选，不要再次输出缺少 target_id 的守护行动。")
++            return " ".join(parts)
++        return f"上一次行动未通过校验：{error}"
++
+     def _system_prompt(self, private: Mapping[str, Any]) -> str:
++        role_task = self.profile.task
++        if str(private.get("role")) == "guard":
++            guard_note = [
++                "守卫约束：必须使用当前 allowed target_ids；必须记住上一晚保护对象，严禁连守同一人。",
++                "若模型原目标非法或与 last_protected_id 冲突，先改成合法候选再输出；不要把守护成功当作确认事实。",
++            ]
++            if self._guard_memory.get("last_protected_id"):
++                guard_note.append(f"已知上一晚保护对象：{self._guard_memory['last_protected_id']}。")
++            role_task = role_task + "\n\n" + " ".join(guard_note)
+         return render_prompt(
+             "player_system.txt",
+             player_id=self.player_id,
+@@ -304,7 +543,7 @@
+             team=private["team"],
+             persona=self.persona,
+             role_base=self.profile.base,
+-            role_task=self.profile.task,
++            role_task=role_task,
+             tool_name=CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+             max_tool_calls=self.max_tool_calls_per_decision,
+             max_tool_result_tokens=self.max_tool_result_tokens,
+--- guard-base/task.md
++++ guard-n00018/task.md
+@@ -3,6 +3,7 @@
+ 你的任务是用守护行动延长好人关键角色的生存时间，并自然参与白天讨论。
+ 
+ - 依据公开信息猜测狼人可能的刀口，选择当前行动包允许的守护目标。
+-- 遵守不能连续守同一人的规则；没有可靠目标时也要做出合理而非随机的选择。
++- 守卫最小规则：优先保护当前局面里最关键的生存目标；严禁连续守同一人；如果包里的合法目标和你的预期冲突，必须以合法性优先，先从当前 target_ids 里重选。
++- 没有可靠目标时，也要选当前合法且最有价值的生存目标，而不是随机沿用旧目标。
+ - 不要把“守护成功”当作系统已确认事实，因为引擎不会直接告诉你结果。
+ - 发言可以隐藏身份，重点回应具体矛盾和票型，不要机械宣称自己在保护谁。

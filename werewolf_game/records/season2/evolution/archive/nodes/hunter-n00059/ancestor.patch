@@ -1,0 +1,455 @@
+--- hunter-n00040/task_agent.py
++++ hunter-n00059/task_agent.py
+@@ -185,6 +185,7 @@
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
+         self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)
+         self._player_notes: dict[str, dict[str, Any]] = {}
++        self._round_book: dict[str, dict[str, deque[str]]] = {}
+         self._round_memory: deque[str] = deque(maxlen=10)
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+@@ -225,11 +226,15 @@
+         phase = self._request_phase_label(turn_packet, request, allowed_actions)
+         recent_memory = self._recent_memory(8)
+         evidence_snapshot = self._evidence_snapshot(recent_memory)
++        top_suspects = self._top_suspects(recent_memory, turn_packet, limit=4)
++        round_book = self._round_book_preview(limit=3)
+         brief: dict[str, Any] = {
+             "phase": phase,
+             "recent_public_signals": recent_memory,
++            "recent_round_book": round_book,
+             "evidence_snapshot": evidence_snapshot,
+             "current_round_dialogue_preview": self._compact_dialogue(current_dialogue, limit=3),
++            "top_suspects": top_suspects,
+         }
+         mode = self._request_mode(allowed_actions)
+         if mode == "hunter_reaction":
+@@ -238,10 +243,12 @@
+                 {
+                     "decision_mode": "hunter_reaction",
+                     "focus": "先比票型、改口、身份声明和死亡链条；只有多源证据都很弱时才考虑跳过。",
++                    "required_output": "在合法 target 中优先选多源证据最强者；只有全部都弱才允许 skip。",
+                     "target_ranking": ranking["target_ranking"],
+                     "skip_option": ranking["skip_option"],
+                     "skip_condition": ranking["skip_condition"],
+                     "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "top_repeat_vote_pressure": evidence_snapshot["top_repeat_vote_pressure"],
+                     "top_contradictions": evidence_snapshot["top_contradictions"],
+                     "claimed_roles": evidence_snapshot["claimed_roles"],
+                     "hard_clears": evidence_snapshot["hard_clears"],
+@@ -252,9 +259,11 @@
+                 {
+                     "decision_mode": "last_words",
+                     "focus": "收束到已公开的票型、身份冲突、改口与死亡顺序，先列证据再下结论。",
++                    "required_output": "必须点名一个具体怀疑对象，并给出一条具体证据链。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
+                     "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "top_repeat_vote_pressure": evidence_snapshot["top_repeat_vote_pressure"],
+                     "top_contradictions": evidence_snapshot["top_contradictions"],
+                     "claimed_roles": evidence_snapshot["claimed_roles"],
+                     "hard_clears": evidence_snapshot["hard_clears"],
+@@ -265,9 +274,11 @@
+                 {
+                     "decision_mode": "speak",
+                     "focus": "回应当前争议，优先点出票型变化、身份声明矛盾和谁在保谁。",
++                    "required_output": "必须点名一个具体怀疑对象，并给出一条具体证据链。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
+                     "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "top_repeat_vote_pressure": evidence_snapshot["top_repeat_vote_pressure"],
+                     "top_contradictions": evidence_snapshot["top_contradictions"],
+                     "claimed_roles": evidence_snapshot["claimed_roles"],
+                     "hard_clears": evidence_snapshot["hard_clears"],
+@@ -359,6 +370,77 @@
+                 return f"{player_id}:{contradictions[-1]}"
+         return recent_memory[-1] if recent_memory else "暂无明确矛盾"
+ 
++    def _round_key(self, round_value: object, phase_value: object) -> str:
++        parts: list[str] = []
++        if round_value is not None:
++            parts.append(f"r{round_value}")
++        if phase_value is not None:
++            parts.append(str(phase_value))
++        return "/".join(parts) if parts else "r?"
++
++    def _round_bucket(self, round_value: object, phase_value: object) -> dict[str, deque[str]]:
++        key = self._round_key(round_value, phase_value)
++        bucket = self._round_book.get(key)
++        if bucket is None:
++            bucket = {
++                "votes": deque(maxlen=4),
++                "claims": deque(maxlen=4),
++                "reveals": deque(maxlen=4),
++                "deaths": deque(maxlen=4),
++                "supports": deque(maxlen=4),
++                "attacks": deque(maxlen=4),
++                "contradictions": deque(maxlen=4),
++                "summary": deque(maxlen=4),
++            }
++            self._round_book[key] = bucket
++        return bucket
++
++    def _round_book_preview(self, limit: int = 3) -> list[str]:
++        if limit <= 0:
++            return []
++        items = list(self._round_book.items())[-limit:]
++        preview: list[str] = []
++        for key, bucket in items:
++            pieces: list[str] = []
++            for field in ("votes", "claims", "reveals", "deaths", "supports", "attacks", "contradictions"):
++                values = list(bucket.get(field) or [])
++                if values:
++                    pieces.append(f"{field}:{self._compact_text(values[-1], limit=28)}")
++            summary = list(bucket.get("summary") or [])
++            if summary:
++                pieces.insert(0, self._compact_text(summary[-1], limit=36))
++            if pieces:
++                preview.append(f"[{key}] " + "；".join(pieces[:4]))
++        return preview
++
++    def _top_suspects(
++        self,
++        recent_memory: list[str],
++        turn_packet: Mapping[str, Any],
++        limit: int = 4,
++    ) -> list[str]:
++        del turn_packet
++        candidates: list[dict[str, Any]] = []
++        for player_id in self._player_notes:
++            if player_id == self.player_id:
++                continue
++            note = self._player_notes.get(player_id) or {}
++            if note.get("status") in {"dead", "out"}:
++                continue
++            score_info = self._score_hunter_target(player_id, recent_memory, {})
++            candidates.append(
++                {
++                    "player_id": player_id,
++                    "score": round(score_info["score"], 2),
++                    "reasons": score_info["reasons"],
++                }
++            )
++        candidates.sort(key=lambda item: item["score"], reverse=True)
++        return [
++            f"{self._player_label(item['player_id'])}:{item['score']:.2f}({'/'.join(item['reasons'][:2])})"
++            for item in candidates[:limit]
++        ]
++
+     def _player_note(self, player_id: str) -> dict[str, Any]:
+         note = self._player_notes.get(player_id)
+         if note is None:
+@@ -366,11 +448,15 @@
+                 "speeches": deque(maxlen=4),
+                 "claims": deque(maxlen=4),
+                 "revealed_roles": deque(maxlen=3),
+-                "vote_history": deque(maxlen=6),
++                "vote_history": deque(maxlen=8),
+                 "attack_lines": deque(maxlen=4),
+                 "support_lines": deque(maxlen=4),
+                 "contradictions": deque(maxlen=4),
+                 "death_links": deque(maxlen=4),
++                "attack_targets": deque(maxlen=6),
++                "support_targets": deque(maxlen=6),
++                "claim_history": deque(maxlen=6),
++                "reveal_history": deque(maxlen=6),
+                 "latest_vote": "",
+                 "status": "unknown",
+                 "hard_clear": False,
+@@ -454,6 +540,7 @@
+         negative_words = ("改口", "矛盾", "对跳", "反水", "卖队", "带节奏", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")
+         positive_words = ("可信", "一致", "解释清楚", "对得上", "稳定", "金水", "好人", "站对", "硬清")
+         contradiction_words = ("改口", "矛盾", "对跳", "反水", "自相矛盾")
++        round_bucket = self._round_bucket(round_value, phase_value)
+         for player_id in related_ids:
+             note = self._player_note(player_id)
+             note["last_round"] = round_value
+@@ -466,26 +553,41 @@
+                 if target:
+                     actor_note["latest_vote"] = target
+                     actor_note["vote_history"].append(target)
++                    round_bucket["votes"].append(self._compact_text(summary or f"{actor}→{target}", limit=48))
+             if is_claim:
+                 previous_claims = self._unique_strings(list(actor_note["claims"]))
+                 if role:
+                     if previous_claims and role not in previous_claims:
+-                        actor_note["contradictions"].append(self._compact_text(summary or text or role, limit=60))
+-                    actor_note["claims"].append(self._compact_text(role, limit=24))
++                        contradiction = self._compact_text(summary or text or role, limit=60)
++                        actor_note["contradictions"].append(contradiction)
++                        round_bucket["contradictions"].append(contradiction)
++                    claim_text = self._compact_text(role, limit=24)
++                    actor_note["claims"].append(claim_text)
++                    actor_note["claim_history"].append(claim_text)
++                    round_bucket["claims"].append(self._compact_text(summary or f"{actor}:{claim_text}", limit=48))
+                 if text and text != role:
+-                    actor_note["claims"].append(self._compact_text(text, limit=32))
++                    claim_text = self._compact_text(text, limit=32)
++                    actor_note["claims"].append(claim_text)
++                    actor_note["claim_history"].append(claim_text)
+             if is_reveal:
+                 previous_roles = self._unique_strings(list(actor_note["revealed_roles"]))
+                 if role:
+                     if previous_roles and role not in previous_roles:
+-                        actor_note["contradictions"].append(self._compact_text(summary or text or role, limit=60))
+-                    actor_note["revealed_roles"].append(self._compact_text(role, limit=24))
++                        contradiction = self._compact_text(summary or text or role, limit=60)
++                        actor_note["contradictions"].append(contradiction)
++                        round_bucket["contradictions"].append(contradiction)
++                    reveal_text = self._compact_text(role, limit=24)
++                    actor_note["revealed_roles"].append(reveal_text)
++                    actor_note["reveal_history"].append(reveal_text)
++                    round_bucket["reveals"].append(self._compact_text(summary or f"{actor}:{reveal_text}", limit=48))
+                     if self._role_looks_clear(role):
+                         actor_note["hard_clear"] = True
+                 if text and any(keyword in text for keyword in ("金水", "查验好人", "已验好", "确认好人")):
+                     actor_note["hard_clear"] = True
+             if text and any(keyword in text for keyword in contradiction_words):
+-                actor_note["contradictions"].append(self._compact_text(summary or text, limit=60))
++                contradiction = self._compact_text(summary or text, limit=60)
++                actor_note["contradictions"].append(contradiction)
++                round_bucket["contradictions"].append(contradiction)
+             if text and any(keyword in text for keyword in ("金水", "可信", "好人", "站边", "支持")):
+                 actor_note["soft_clear"] = True
+         if is_death:
+@@ -493,37 +595,63 @@
+             for player_id in dead_ids:
+                 note = self._player_note(player_id)
+                 note["status"] = "dead"
+-                note["death_links"].append(self._compact_text(summary or text or f"{player_id}死亡", limit=60))
++                death_text = self._compact_text(summary or text or f"{player_id}死亡", limit=60)
++                note["death_links"].append(death_text)
++                round_bucket["deaths"].append(death_text)
+         if text:
+             summary_text = self._compact_text(summary or text, limit=64)
+             if any(keyword in text for keyword in negative_words) and target:
+                 self._player_note(target)["attack_lines"].append(summary_text)
++                self._player_note(target)["attack_targets"].append(target)
++                round_bucket["attacks"].append(summary_text)
+             if any(keyword in text for keyword in positive_words) and target:
+                 self._player_note(target)["support_lines"].append(summary_text)
++                self._player_note(target)["support_targets"].append(target)
++                round_bucket["supports"].append(summary_text)
+             for player_id in mentioned_ids:
+                 if player_id == actor:
+                     continue
+                 mention_note = self._player_note(player_id)
+                 if any(keyword in text for keyword in negative_words):
+                     mention_note["attack_lines"].append(summary_text)
++                    mention_note["attack_targets"].append(player_id)
+                 if any(keyword in text for keyword in positive_words):
+                     mention_note["support_lines"].append(summary_text)
++                    mention_note["support_targets"].append(player_id)
+                 mention_note["last_round"] = round_value
+                 mention_note["last_phase"] = phase_value
++            round_bucket["summary"].append(summary_text)
+         if target and is_vote:
+-            self._player_note(target)["attack_lines"].append(self._compact_text(summary or f"{actor}投{target}", limit=60))
++            vote_text = self._compact_text(summary or f"{actor}投{target}", limit=60)
++            self._player_note(target)["attack_lines"].append(vote_text)
++            self._player_note(target)["attack_targets"].append(target)
+         if target and is_death:
+             self._player_note(target)["death_links"].append(self._compact_text(summary or text or f"{target}死亡", limit=60))
+ 
+     def _evidence_snapshot(self, recent_memory: list[str]) -> dict[str, list[str]]:
+         vote_pressure: Counter[str] = Counter()
++        repeat_vote_pressure: Counter[str] = Counter()
+         role_claims: dict[str, list[str]] = {}
+         top_contradictions: list[str] = []
+         hard_clears: list[str] = []
++        attack_pressure: Counter[str] = Counter()
++        support_pressure: Counter[str] = Counter()
+         for player_id, note in self._player_notes.items():
+             latest_vote = str(note.get("latest_vote") or "").strip()
+             if latest_vote:
+                 vote_pressure[latest_vote] += 1
++            for vote_target in list(note.get("vote_history") or []):
++                target = str(vote_target or "").strip()
++                if target:
++                    repeat_vote_pressure[target] += 1
++            for attack_target in list(note.get("attack_targets") or []):
++                target = str(attack_target or "").strip()
++                if target:
++                    attack_pressure[target] += 1
++            for support_target in list(note.get("support_targets") or []):
++                target = str(support_target or "").strip()
++                if target:
++                    support_pressure[target] += 1
+             contradictions = list(note.get("contradictions") or [])
+             if contradictions:
+                 top_contradictions.append(
+@@ -541,6 +669,9 @@
+                 break
+         return {
+             "top_vote_pressure": [f"{player_id}×{count}" for player_id, count in vote_pressure.most_common(3)],
++            "top_repeat_vote_pressure": [f"{player_id}×{count}" for player_id, count in repeat_vote_pressure.most_common(3)],
++            "top_attack_pressure": [f"{player_id}×{count}" for player_id, count in attack_pressure.most_common(3)],
++            "top_support_pressure": [f"{player_id}×{count}" for player_id, count in support_pressure.most_common(3)],
+             "top_contradictions": top_contradictions[:3],
+             "claimed_roles": claimed_roles[:4],
+             "hard_clears": hard_clears[:4],
+@@ -584,10 +715,10 @@
+             default=0,
+         )
+         if skip_option:
+-            if strongest_signals >= 2 or best_score >= 1.4:
++            if strongest_signals >= 2 or best_score >= 1.8:
+                 skip_condition = "只有当所有合法目标都只剩单一薄弱线索、且没有改口/对跳/死亡链条冲突时才可跳过。"
+             else:
+-                skip_condition = "证据过弱且没有明显多源冲突时可以跳过；否则优先出手。"
++                skip_condition = "只要出现票压、身份冲突、死亡链或持续站边中的任意两类，就优先出手而不是跳过。"
+         else:
+             skip_condition = "没有跳过动作时，必须从合法目标里选风险最低且证据最弱的那个。"
+         return {
+@@ -607,18 +738,31 @@
+         reasons: list[str] = []
+         signals = {
+             "vote_pressure": 0,
++            "repeat_vote_pressure": 0,
++            "ally_vote_pressure": 0,
+             "contradictions": 0,
+             "claim_conflict": 0,
+             "death_links": 0,
+             "clear_hits": 0,
+             "recent_mentions": 0,
++            "support_pressure": 0,
++            "attack_pressure": 0,
+         }
+         vote_pressure = 0
++        repeat_vote_pressure = 0
++        support_pressure = 0
++        attack_pressure = 0
+         for player_id, note in self._player_notes.items():
+             if str(note.get("latest_vote") or "").strip() == target_id:
+                 vote_pressure += 1
++            vote_history = Counter(str(vote or "").strip() for vote in list(note.get("vote_history") or []))
++            repeat_vote_pressure += max(0, vote_history.get(target_id, 0) - 1)
+             if player_id == target_id:
+                 continue
++            if target_id in {str(item or "").strip() for item in list(note.get("support_targets") or [])}:
++                support_pressure += 1
++            if target_id in {str(item or "").strip() for item in list(note.get("attack_targets") or [])}:
++                attack_pressure += 1
+             for line in list(note.get("attack_lines") or [])[-2:]:
+                 if pattern.search(line):
+                     signals["recent_mentions"] += 1
+@@ -627,23 +771,36 @@
+                     signals["recent_mentions"] += 1
+         if vote_pressure:
+             signals["vote_pressure"] = vote_pressure
+-            score += 0.8 + min(vote_pressure, 4) * 0.55
++            score += 0.55 + min(vote_pressure, 4) * 0.5
+             reasons.append(f"票压{vote_pressure}")
++        if repeat_vote_pressure:
++            signals["repeat_vote_pressure"] = repeat_vote_pressure
++            score += 0.25 * min(repeat_vote_pressure, 4)
++            reasons.append(f"重复站边{repeat_vote_pressure}")
++        if support_pressure:
++            signals["ally_vote_pressure"] = support_pressure
++            signals["support_pressure"] = support_pressure
++            score += 0.2 * min(support_pressure, 4)
++            reasons.append(f"持续同盟{support_pressure}")
++        if attack_pressure:
++            signals["attack_pressure"] = attack_pressure
++            score += 0.3 * min(attack_pressure, 4)
++            reasons.append(f"持续攻击{attack_pressure}")
+         target_note = self._player_notes.get(target_id) or {}
+         contradictions = list(target_note.get("contradictions") or [])
+         if contradictions:
+             signals["contradictions"] = len(contradictions)
+-            score += 0.7 + 0.35 * min(len(contradictions), 3)
++            score += 0.9 + 0.4 * min(len(contradictions), 3)
+             reasons.append("改口/对跳:" + self._compact_text(contradictions[-1], limit=48))
+         death_links = list(target_note.get("death_links") or [])
+         if death_links:
+             signals["death_links"] = len(death_links)
+-            score += 0.6 + 0.25 * min(len(death_links), 3)
++            score += 0.8 + 0.3 * min(len(death_links), 3)
+             reasons.append("死亡链:" + self._compact_text(death_links[-1], limit=48))
+         target_claims = self._unique_strings(list(target_note.get("claims") or []) + list(target_note.get("revealed_roles") or []))
+         if len(target_claims) >= 2:
+             signals["claim_conflict"] = len(target_claims)
+-            score += 0.9
++            score += 1.0
+             reasons.append("多次身份声明:" + "/".join(target_claims[:2]))
+         if target_claims:
+             role_claim_counts: dict[str, list[str]] = {}
+@@ -655,7 +812,7 @@
+                 claimers = role_claim_counts.get(role, [])
+                 if len(claimers) >= 2:
+                     signals["claim_conflict"] = max(signals["claim_conflict"], len(claimers))
+-                    score += 0.45 + 0.15 * min(len(claimers), 4)
++                    score += 0.6 + 0.2 * min(len(claimers), 4)
+                     reasons.append(f"对跳{role}:{'/'.join(claimers[:3])}")
+                     break
+         recent_hits = 0
+@@ -664,31 +821,34 @@
+                 continue
+             recent_hits += 1
+             if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "卖队", "带节奏", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")):
+-                score += 0.9
++                score += 0.75
+                 reasons.append(self._compact_text(line, limit=60))
+             elif any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
+-                score += 0.25
++                score += 0.18
+             elif any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水", "好人")):
+-                score -= 0.35
++                score -= 0.45
+         signals["recent_mentions"] += recent_hits
+         if recent_hits and not reasons:
+             reasons.append(self._compact_text(f"最近记忆命中{recent_hits}次", limit=60))
+         if target_note.get("hard_clear"):
+             signals["clear_hits"] += 1
+-            score -= 1.8
++            score -= 2.2
+             reasons.append("公开硬清")
+         if target_note.get("soft_clear"):
+             signals["clear_hits"] += 1
+-            score -= 0.8
++            score -= 1.0
+             reasons.append("软清/正向背书")
+         if target_note.get("status") in {"dead", "out"}:
+-            score -= 0.6
++            score -= 0.8
+             reasons.append("已出局")
+         if not reasons:
+             reasons.append("公开证据单薄")
+-        # 若允许，优先比较多源冲突；单一薄证据不应直接压成高优先级。
+         if signals["vote_pressure"] == 0 and signals["contradictions"] == 0 and signals["claim_conflict"] == 0 and signals["death_links"] == 0:
+-            score = max(0.0, score - 0.6)
++            score = max(0.0, score - 0.8)
++        if signals["attack_pressure"] >= 2:
++            score += 0.2
++        if signals["support_pressure"] >= 2:
++            score -= 0.2
+         return {"score": score, "reasons": reasons[:4], "signals": signals}
+ 
+     @staticmethod
+--- hunter-n00040/task.md
++++ hunter-n00059/task.md
+@@ -2,8 +2,20 @@
+ 
+ 你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。
+ 
+-- 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据账本：谁支持谁、谁投了谁、谁改口、谁对跳、谁公开声明了什么身份、谁已经死亡或出局。
+-- 公开发言优先回应当前争议，按这个顺序组织判断：先看票型和身份声明是否一致，再看改口、对跳和死亡链条，最后才看主观像狼与否。
+-- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择同时被票型、身份冲突、改口/对跳和死亡链条指向的人。
+-- 只有当所有合法目标都只有单一薄弱线索、且看不出明显多源冲突时，才可以选择跳过；如果已经出现明显证据差异，即使分数不高也不要把“跳过”当默认。
+-- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手；如果目标中存在明显硬清或公开确认的好人，优先保护。+## 长期账本
++- 持续维护公开证据账本：谁支持谁、谁投了谁、谁改口、谁对跳、谁公开声明了什么身份、谁已经死亡或出局。
++- 优先按“玩家”和“轮次”两条线记录：票型、身份声明、改口、对跳、死亡、支持、攻击、矛盾。
++- 说话前先看最近几轮账本，避免只凭当前一句话判断。
++
++## 公开发言
++- 发言必须优先回应当前争议，不要只说泛泛的好人话术。
++- 每次发言尽量只围绕一个具体怀疑对象展开，并给出一条具体证据链。
++- 证据链优先顺序：票型与身份声明是否一致 > 改口/对跳 > 死亡链条 > 主观像狼。
++- 如果已有明显冲突，直接点名具体对象和具体证据，不要只说“先听听”。
++
++## 猎人反应
++- 只能在合法 target_ids 内比较目标，不能越界选人。
++- 先比较每个合法目标是否同时具备多源证据：票压、重复站边、身份冲突、改口/对跳、死亡链、持续支持/攻击。
++- 只有当所有合法目标都只剩单一薄弱线索，且看不出明显多源冲突时，才允许 skip。
++- 一旦某个目标出现多类证据叠加，优先选择风险最低的那个目标，而不是默认跳过。
++- 若目标里有公开硬清或明显确认好人，先保护再决定是否出手。

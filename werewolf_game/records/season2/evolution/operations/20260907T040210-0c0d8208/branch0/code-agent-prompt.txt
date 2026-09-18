@@ -1,0 +1,45 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00027 运行稳定但转化率偏低：20 局仅 7 胜，几乎没有结构化非法动作，说明主要问题不在 schema 或工具调用，而在把正确查验转成持续公共压力、归票优势和自保节奏的能力不足。",
+  "evidence": [
+    "评测汇总显示该节点 game_count=20、win_count=7、loss_count=13、win_rate=0.35；invalid_decision_count=4 但 focus_role_only 下整体仍以策略性失利为主，而非大量合法性失败。",
+    "随机回放 game8 中，seer p8 第 1 夜验 p3=好人、第 2 夜验 p6=好人，但白天公共局势很快被 p5/p10/p4 等人的对跳与归票接管，p8 也在第 2 夜被击杀，说明查验信息没有稳定沉淀成公共压制力。",
+    "当前 task_agent.py 虽已引入 SeerMemory，但主要保存的是 inspected、declared_claims、challenged_players、recent_vote_summary 等摘要字段，缺少按轮次和发言顺序组织的 claim/vote 时间线，难以做强对跳比对。",
+    "_turn_instruction 只按 mode 追加通用说明，没有硬性要求固定发言骨架；高压时仅追加一条短句建议，仍可能生成分散叙述，未把“事实→矛盾→票向/自保”固化成输出结构。",
+    "_rank_inspect_targets 主要基于 sheriff、对跳、公开声明、近期票型、发言密度打分，缺少对“未解决对跳链”“可用于次日落票的核心矛盾位”“已失去增量的信息位”的显式区分。"
+  ],
+  "root_causes": [
+    "状态表示偏摘要化：能记住“谁说过什么”，但不能稳定表示“谁先声明、谁后对跳、谁在何轮形成了哪条票型矛盾”，导致对局势的复盘和压票链构建不足。",
+    "发言约束不够强：当前 prompt 只是给建议，没有按 day_speech / sheriff_election_speech / vote / self_risk 生成强模板，因此模型在压力局面下容易发散或自相矛盾。",
+    "夜验目标排序与次日转化脱节：排序更像静态启发式，而不是围绕“下一天最容易形成公共证据链”的对象来验。",
+    "自保逻辑不足：当 seer 已经被点名或暴露度升高时，代码没有独立的短发言、收缩暴露、先保命后举证模式。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "扩展 SeerMemory，新增按轮次记录的 claim_timeline、vote_timeline、pressure_targets 和 self_risk_mode；在 _update_claims_from_dialogue / _update_claims_and_challenges_from_packet / _summarize_vote_info 中保留顺序信息，而不是只保留去重后的字符串摘要。",
+      "rationale": "让预言家能稳定比较对跳顺序、票型演化和重复发言，形成可回看的证据链。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _build_seer_brief 和 _turn_instruction：为 day_speech、sheriff_election_speech、vote、night_inspect、self_risk 分别输出固定骨架，强制包含“已知事实、唯一主矛盾、明确票向/自保位”；当 self_risk 升高时自动切换到短模板。",
+      "rationale": "把“事实先行、单点施压、可验证推断”从软建议变成硬约束，减少高压局中的发言分散和逻辑打架。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 _rank_inspect_targets：引入未解决对跳链、最近公共矛盾、票型领投者和已失去增量的目标判定；对已知好人、重复低收益目标和仅靠发言量高但无结构冲突的对象降权，同时把 target_reasons 保留给白天发言复用。",
+      "rationale": "让夜验直接服务于次日归票，而不是只做泛化的高曝光排序。"
+    }
+  ],
+  "risks": [
+    "结构化状态增加后，prompt 体积可能上升，若摘要控制不好会挤压上下文预算。",
+    "模板约束过强可能降低模型在少信息局面的临场灵活性。",
+    "更激进的对跳/票型联动可能误伤高发言但真实为好的关键位，导致夜验收益波动。"
+  ],
+  "code_agent_brief": "请只改 task_agent.py，保持 TaskAgent 接口、工具 schema 和游戏内核不变。目标是把 seer-n00027 从“摘要记忆 + 静态排序”升级为“结构化对跳/票型状态机 + 强发言模板”。必须完成三件事：1）在 SeerMemory 里增加 claim_timeline、vote_timeline、pressure_targets、self_risk_mode，并在现有 ingest/summary 流程中保留轮次和顺序；2）重写 _turn_instruction 和 _build_seer_brief，让 day_speech、sheriff_election_speech、vote、night_inspect、self_risk 五种模式都输出固定骨架，尤其高压时只保留事实、主矛盾、票向/自保位；3）重做 _rank_inspect_targets，使其显式偏向未解决对跳链、可转化为次日公共压力的目标，并把理由写回 brief 供白天发言复用。不要修改 Game Engine、规则、可见性、schema 或工具实现。"
+}

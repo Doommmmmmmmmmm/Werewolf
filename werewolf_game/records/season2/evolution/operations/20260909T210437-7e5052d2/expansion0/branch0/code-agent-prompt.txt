@@ -1,0 +1,162 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00079 的主要问题不是 schema 稳定性，而是女巫关键信息使用失效：代码没有从 private_information 中提取当夜狼刀目标，导致救药逻辑几乎永远看不到“当前夜真实夜死/狼刀目标”；同时安全 fallback 会把模型可能给出的救人动作改回 pass。该节点在 20 局中仅 4 胜 16 负，focus fallback/invalid 均为 0，说明失败来自策略/状态组织而非行动格式。下一代应最小修改为：显式解析私密狼刀目标；在夜间女巫阶段用该目标驱动救药，尤其自救和关键轮次救人；把私密狼刀目标作为内部判断去反制“把狼刀死者说成查杀成立”的假预言家叙事，但公开发言仍只能用公开逻辑表达；修正 fallback 不要在有私密狼刀目标时误判为无目标而 pass。",
+  "evidence": [
+    {
+      "source": "evaluation_summary",
+      "fact": "witch-n00079 最近评测 20 局，win_count=4，loss_count=16，win_rate=0.2；focus_fallback_count=0，focus_error_counts={}。",
+      "interpretation": "节点可稳定输出合法行动，但胜率低，问题集中在决策质量。"
+    },
+    {
+      "source": "random_game_replay",
+      "fact": "game11 中 p12 为 witch，最终 winner=wolf；p3,p4,p5,p7 为狼，p12 女巫死亡于第 4 夜。",
+      "interpretation": "样本局展示了女巫未能利用救药阻止关键减员，且白天多次被狼队叙事牵引。"
+    },
+    {
+      "source": "random_game_replay seq 28-42",
+      "fact": "第 1 夜狼队 4 票选择 p6；女巫 seq 39 提交 pass；夜晚结算 p6 死于 wolf_attack。",
+      "interpretation": "首夜不救平民不一定错误，但说明女巫没有把当夜刀口纳入可见的 rescue_targets 使用。"
+    },
+    {
+      "source": "random_game_replay seq 62-64, 102-112, 114-141",
+      "fact": "p2 公开跳预言家并给 p1 金水；p7 狼人对跳预言家，声称验 p6 查杀且 p6 已死；女巫 p12 在 seq 78 警长票投 p7，seq 124 白天票投 p2，导致真预言家 p2 被全票推出。",
+      "interpretation": "女巫没有把自己夜间应知的 p6 是狼刀目标用于内部质疑 p7 的叙事。公开不能说刀口，但内部投票应降低对 p7 的信任。"
+    },
+    {
+      "source": "random_game_replay seq 155-167",
+      "fact": "第 2 夜狼队刀 p8；女巫 seq 164 继续 pass；p8 死于 wolf_attack。",
+      "interpretation": "再次表现为救药未被使用。p8 是否高价值不确定，但代码层面 current_night_death_targets 很可能为空。"
+    },
+    {
+      "source": "random_game_replay seq 224-240",
+      "fact": "第 3 夜狼队内出现 p12/p9 平票无刀；女巫 seq 236 毒 p7，成功毒死狼人 p7。",
+      "interpretation": "毒药并非完全无效，说明 ledger/模型偶尔能在公共证据足够时命中狼；但这不能弥补救药逻辑缺失。"
+    },
+    {
+      "source": "random_game_replay seq 288-301",
+      "fact": "第 4 夜狼队刀 p12；女巫 seq 295 pass；结算 p12 死于 wolf_attack，随后游戏结束，wolf 获胜。最终 role_state 显示 p12 antidote_available=true, poison_available=false。",
+      "interpretation": "这是最明确的失败点：女巫有解药且自己成为狼刀目标，却没有自救，直接导致狼人胜利。"
+    },
+    {
+      "source": "current_agent._extract_current_night_death_targets",
+      "fact": "该函数只遍历 public_state、game、request、tool_context，并用 death/kill 关键词收集目标；没有读取 private_information。",
+      "interpretation": "与角色规则“女巫行动阶段私下提供当夜狼人目标”不匹配。当前夜狼刀目标如果只在 private_information 中，救药上下文必然缺失。"
+    },
+    {
+      "source": "current_agent._rank_witch_rescue_targets",
+      "fact": "救人候选必须同时在 current_night_death_targets 中，并且在 ledger_snapshot 中满足 _is_witch_heal_candidate；后者要求 score >= 2 且证据类型包含 death_chain/claim_conflict/role_chain。",
+      "interpretation": "即使提取到当夜狼刀，自救或救关键好人也可能因没有公开 ledger 分数被排除。第 4 夜 p12 自己被刀时，自己未必在 ledger 中，因此会被判定不可救。"
+    },
+    {
+      "source": "current_agent._apply_role_safe_fallback",
+      "fact": "对 heal/save/antidote 行动会重新调用 _extract_current_night_death_targets(turn_packet)，再用 _rank_witch_rescue_targets 过滤；不使用已经构造的 witch_context 中的推荐目标。",
+      "interpretation": "即使模型选择救人，只要本地 fallback 的目标集合为空，也会改成 pass。当前逻辑会主动阻断合法且关键的救药。"
+    },
+    {
+      "source": "current_agent._collect_structured_targets",
+      "fact": "该函数只要 key 命中关键词，就从整个子树文本中抽取所有 p\\d+，不区分 voter_id、target_id、speaker_id、被提及者和真实被归票者。",
+      "interpretation": "毒药/嫌疑 ledger 容易被噪声污染。它在样本中最终毒中 p7，但泛化风险是把大量被提到的人误记为高置信候选。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "私密狼刀目标没有进入女巫夜间决策上下文",
+      "details": "角色规则保证女巫行动包中私下提供狼刀目标，但代码的 current_night_death_targets 只从 public_state/game/request/tool_context 搜索 death/kill 关键词，没有搜索 private_information。结果是 recommendation 和 fallback 都倾向 pass。"
+    },
+    {
+      "cause": "救药 gate 过度依赖公开嫌疑 ledger，忽略女巫救人的核心触发条件",
+      "details": "救人候选被要求具有 ledger 分数和证据类型，这更像“公开信息重要性”判断，而不是“当前夜被刀且救下可改变轮次”的判断。自救、末轮救命、救警长/公开核心位都可能被错误排除。"
+    },
+    {
+      "cause": "fallback 逻辑在关键处与 witch_context 脱节",
+      "details": "_build_witch_decision_context 已经构造 recommendation，但 _apply_role_safe_fallback 对 heal/poison 重新计算目标集合，且重新计算仍不看 private_information。这会把模型输出的正确救药动作降级为 pass。"
+    },
+    {
+      "cause": "没有把私密狼刀目标转化为内部反诈信号",
+      "details": "当 p7 声称 p6 是其查杀且 p6 已死时，女巫应在内部知道 p6 是当夜狼刀目标，从而警惕“用刀口包装查杀”的悍跳；当前代码没有维护 private wolf target history，也没有给白天投票/发言提供内部 caution。"
+    },
+    {
+      "cause": "公开证据 ledger 的抽取粒度过粗",
+      "details": "_collect_structured_targets 会在命中关键词的整棵子树里抽取所有玩家编号，导致候选可能来自被提及、发言者、投票者等噪声，不满足 task 中“结构化、多源、一致”的毒药条件。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增私密狼刀目标解析函数，例如 _extract_private_wolf_attack_targets(private, turn_packet)，优先从 private_information 中的精确键提取：wolf_target、wolf_attack_target、wolf_kill_target、attacked_player_id、victim_id、night_death_target、night_kill_target；只接受值为合法 p\\d+ 的标量或列表。避免用宽泛 death 关键词扫整个 public_state。",
+      "rationale": "女巫救药的核心依据是行动包私密提供的当夜狼刀目标。必须显式读取 private_information，而不是依赖公开死亡字段。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _build_witch_decision_context：current_night_death_targets/night_death_targets 改为来自 _extract_private_wolf_attack_targets 的结果；另保留 public_recent_deaths 作为白天公开摘要，不要混入当前夜救药判断。把 private_wolf_attack_targets 单独放入 witch_decision_context，但 safety_notes 明确该字段不得公开发言。",
+      "rationale": "区分“私密当前刀口”和“公开历史死亡”，既能正确救人，又避免把私密信息误当公开事实。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _rank_witch_rescue_targets 的救药准入：只要目标在 private_wolf_attack_targets 且解药可用，则在以下情况进入 high_value_rescue_targets：target_id == self.player_id；目标是当前公开 sheriff_id；目标是公开强神/核心链（公开遗言或发言中明确跳预言家且未被强反证）；或 alive_count <= 6 / 本次死亡会显著接近屠边失败。首夜普通未知身份仍可 pass。",
+      "rationale": "救药应围绕真实刀口和轮次价值，而不是要求被救者已在嫌疑 ledger 中有分数。第 4 夜自救应被强制推荐。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _apply_role_safe_fallback：优先使用传入的 witch_context['current_night_death_targets'] 和 witch_context['high_value_rescue_targets']，不要重新用旧函数计算；若模型选择 heal/save/antidote 且目标在 high_value_rescue_targets，则直接允许；若目标是 self 且在 private_wolf_attack_targets 且 antidote_available 为 true，也允许并优先于 pass。",
+      "rationale": "防止本地安全层把正确的救药动作误改成 pass。fallback 应阻止无目标乱救，不应阻止真实刀口自救。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "维护一个小型私密刀口历史，例如 self._witch_private_wolf_targets_by_round，observe 不写入，decide 在女巫夜间从 private_information 更新。白天 compact_memory 中只给模型内部字段 private_wolf_target_cautions，例如“有人把已知狼刀目标包装成查杀时，应降低其可信度；公开表达只能说死亡不等于查杀成立”。不要在发言文本中直接注入具体刀口作为可公开事实。",
+      "rationale": "女巫可以用私密信息做内部判断，但不能公开泄露。样本局中 p7 的核心骗术正是把 p6 的夜死包装成查杀。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为白天投票/发言增加 witch-specific guidance 字段：如果候选 A 声称验出 B 为狼，而 B 同时是女巫已知狼刀目标，则不要轻易给 A 警长票或跟 A 归票；公开发言建议使用非泄密模板，如“单凭死亡不能证明查杀成立，需要对跳双方给验人逻辑和票型”。",
+      "rationale": "减少女巫被狼人假预言家带队推出真预言家的概率，同时保持私密信息边界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "收紧 _collect_structured_targets 或新增结构化 ledger 更新路径：对 VOTE_CAST/DAY_VOTE_RESOLVED 只给被投出或高票 target 加 vote_pressure，不给所有 voter 加嫌疑；对 PLAYER_SPOKE 只在文本包含“查杀pX/归票pX/出pX/怀疑pX”等局部模式时记录 pX，并把 speaker_id 与 mentioned target 分开。",
+      "rationale": "降低 ledger 噪声，避免毒药候选来自“被提到”而非结构化证据。"
+    },
+    {
+      "file": "task.md",
+      "change": "在女巫任务中补充可执行规则：夜间先读取 private_information 中的当夜狼刀目标；没有该目标才默认 pass；若自己被刀且解药可用，默认自救，除非 allowed_actions 不含救药；公开发言不得说出刀口，只能用公开逻辑质疑“死亡=查杀成立”。",
+      "rationale": "把代码行为与任务约束对齐，减少模型在救药/泄密之间摇摆。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充白天内部判断规则：如果某玩家的预言家叙事依赖“女巫私下知道的狼刀目标已死所以我的查杀成立”，女巫应内部强烈怀疑该玩家，但公开表述必须改写为“这条链不能只靠死亡自证，需要看对跳、警徽流、票型和发言一致性”。",
+      "rationale": "针对样本局 p7 类型悍跳，提升女巫投票与发言的抗骗能力，同时不泄露夜间信息。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "过度自救或过度救人可能浪费解药",
+      "mitigation": "只把自救、公开警长/核心预言家、alive_count 较低的关键轮次设为强救；首夜未知身份仍允许 pass。"
+    },
+    {
+      "risk": "把私密狼刀信息用于白天发言可能造成隐性泄密",
+      "mitigation": "代码只给模型非具体化 caution 和公开话术模板；不要在 public speech prompt 中要求复述具体 private_wolf_attack_targets。保留 safety_notes 强约束。"
+    },
+    {
+      "risk": "wolves_can_target_wolves=true，狼刀目标不必然是好人",
+      "mitigation": "私密狼刀目标只作为反诈/救药依据，不作为单独毒药依据；毒药仍要求公开结构化证据或多源冲突。"
+    },
+    {
+      "risk": "private_information 的实际字段名可能与假设不同",
+      "mitigation": "实现时做保守多键名解析，并在 witch_decision_context 中保留解析失败时的空列表；不修改 engine 或 schema。"
+    },
+    {
+      "risk": "ledger 收紧后毒药触发频率下降",
+      "mitigation": "毒药宁缺毋滥符合当前任务；可通过 private contradiction + public claim conflict 共同提高嫌疑排序，但不要单凭私密信息下毒。"
+    },
+    {
+      "risk": "prompt 增加可能挤占 12000 字符预算",
+      "mitigation": "新增上下文字段保持短小，历史只存最近 2-3 轮私密刀口 caution 和公开摘要，不注入完整历史。"
+    }
+  ],
+  "code_agent_brief": "请在候选工作区最小修改 witch 的 task_agent.py 和 task.md，不要改 Game Engine、规则、行动 schema、工具、评测记录或外部预算。核心问题：witch-n00079 没有从 private_information 读取女巫行动阶段私密提供的当夜狼刀目标，导致 current_night_death_targets 为空，救药 recommendation 和 _apply_role_safe_fallback 都倾向 pass；样本局第 4 夜 p12 女巫有 antidote_available=true 且自己被狼刀 p12，却输出 pass 后死亡，狼人获胜。实现要求：1) 新增保守的 _extract_private_wolf_attack_targets(private, turn_packet)，从 private_information 的精确键如 wolf_target/wolf_kill_target/wolf_attack_target/attacked_player_id/victim_id/night_kill_target/night_death_target 等提取 p\\d+；2) _build_witch_decision_context 使用该结果作为 current_night_death_targets，并把 public deaths 与 private current target 分离；3) 重写救药排序：自救且解药可用必须进入 high_value_rescue_targets，公开 sheriff/核心跳预言家/低存活关键轮次也可进入，首夜普通未知目标仍可 pass；4) _apply_role_safe_fallback 使用传入 witch_context，不要旧式重算并误把救药改 pass；5) 白天内部加入 private wolf target caution：若有人把女巫已知狼刀死者包装成自己的查杀成立，应内部降低其可信度，但公开发言只能说“死亡不能自证查杀，需要看对跳、票型和逻辑”，不得泄露具体刀口；6) 收紧 _collect_structured_targets 或新增结构化投票/发言抽取，区分 voter/speaker/target，避免把所有被提及玩家都堆进毒药 ledger；7) task.md 补充上述女巫可执行规则，特别是“有私密狼刀目标才考虑救；自己被刀且解药可用默认自救；公开禁止说出刀口”。"
+}

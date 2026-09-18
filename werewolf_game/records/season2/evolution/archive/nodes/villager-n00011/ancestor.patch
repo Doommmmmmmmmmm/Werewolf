@@ -1,0 +1,517 @@
+--- villager-base/task_agent.py
++++ villager-n00011/task_agent.py
+@@ -20,6 +20,7 @@
+ 
+ 
+ _CHINESE_CHARACTER = re.compile(r"[\u3400-\u9fff]")
++_PLAYER_TOKEN = re.compile(r"\b(?:p|P)\d+\b")
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL_NAME = "read_current_round_dialogue"
+ DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5
+@@ -187,12 +188,17 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._working_memory: dict[str, Any] = {
++            "recent_public_events": [],
++            "claim_log": [],
++            "vote_log": [],
++            "suspicion_scores": {},
++        }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步并压缩成轻量工作记忆。"""
++
++        self._update_working_memory(sync_packet)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -201,6 +207,9 @@
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
++        decision_aid = self._build_decision_aid(turn_packet, current_dialogue)
+         system = self._system_prompt(private)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -209,6 +218,7 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
++            "decision_aid": decision_aid,
+             "history_policy": {
+                 "default_context": "current_state_only",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -216,9 +226,6 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
+-
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -236,7 +243,9 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], feedback),
++                "instruction": self._turn_instruction(
++                    turn_packet["request"], feedback, decision_aid
++                ),
+                 "packet": prompt,
+             }
+             try:
+@@ -297,7 +306,7 @@
+         return dict(self._model_token_usage)
+ 
+     def _system_prompt(self, private: Mapping[str, Any]) -> str:
+-        return render_prompt(
++        base_prompt = render_prompt(
+             "player_system.txt",
+             player_id=self.player_id,
+             role=private["role"],
+@@ -310,13 +319,418 @@
+             max_tool_result_tokens=self.max_tool_result_tokens,
+             max_prompt_chars=self.max_prompt_chars,
+         )
++        return base_prompt + "\n\n" + self._villager_policy_block()
+ 
+     @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
+-        return render_prompt(
++    def _turn_instruction(
++        request: Mapping[str, Any], feedback: str, decision_aid: Mapping[str, Any]
++    ) -> str:
++        action_kinds = sorted(
++            {
++                str(item.get("kind"))
++                for item in request.get("allowed_actions", [])
++                if isinstance(item, Mapping) and item.get("kind")
++            }
++        )
++        action_hint = "、".join(action_kinds) if action_kinds else "未知"
++        memory_text = json.dumps(decision_aid, ensure_ascii=False, separators=(",", ":"))
++        base = render_prompt(
+             "player_turn_instruction.txt",
+             action_contract=render_action_contract(request),
+             validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
++        )
++        return (
++            base
++            + "\n\n【平民决策清单】\n"
++            + "1. 先写系统事实，再写玩家声明，再写自己的推测；不要把推测写成事实。\n"
++            + "2. 发言必须点名当前局面里的具体人、具体票型或具体话术，避免空泛重复。\n"
++            + "3. 投票或其他目标类行动前，至少比较两个候选，再说明为什么选当前目标。\n"
++            + "4. 如果信息不足，给出当前怀疑顺序和下一步观察点，不要只说‘没信息’或‘先听’。\n"
++            + f"【本次可见工作记忆】{memory_text}\n"
++            + f"【本次允许行动】{action_hint}"
++        )
++
++    def _build_decision_aid(
++        self, turn_packet: Mapping[str, Any], current_dialogue: list[Any]
++    ) -> dict[str, Any]:
++        public_summary = self._summarize_public_packet(turn_packet.get("public_state"))
++        dialogue_summary = self._summarize_dialogue(current_dialogue)
++        return {
++            "public_facts": public_summary,
++            "working_memory": self._working_memory_snapshot(),
++            "current_dialogue": dialogue_summary,
++            "comparison_frame": [
++                "先确认事实，再分辨声明与推测",
++                "比较至少两个候选",
++                "优先使用票型、死亡和公开身份冲突",
++            ],
++        }
++
++    def _working_memory_snapshot(self) -> dict[str, Any]:
++        scores: dict[str, int] = self._working_memory.get("suspicion_scores", {})
++        ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
++        return {
++            "recent_public_events": list(self._working_memory.get("recent_public_events", []))[-4:],
++            "claim_log": list(self._working_memory.get("claim_log", []))[-4:],
++            "vote_log": list(self._working_memory.get("vote_log", []))[-4:],
++            "suspicion_order": [name for name, _score in ranked[:4]],
++        }
++
++    def _update_working_memory(self, sync_packet: Mapping[str, Any]) -> None:
++        summary = self._summarize_public_packet(sync_packet)
++        if not summary:
++            return
++        event_line = self._format_summary_line(summary)
++        if event_line:
++            recent = self._working_memory.setdefault("recent_public_events", [])
++            recent.append(event_line)
++            del recent[:-4]
++        self._merge_events("claim_log", summary.get("claims", []), limit=4)
++        self._merge_events("vote_log", summary.get("votes", []), limit=4)
++        self._update_suspicion_scores(summary)
++
++    def _update_suspicion_scores(self, summary: Mapping[str, Any]) -> None:
++        scores: dict[str, int] = self._working_memory.setdefault("suspicion_scores", {})
++        for claim in summary.get("claims", []):
++            player, claim_text = self._split_claim(claim)
++            if not player:
++                continue
++            delta = 2 if self._contains_role_like_word(claim_text) else 1
++            scores[player] = scores.get(player, 0) + delta
++        for vote in summary.get("votes", []):
++            target = vote.split("->", 1)[-1].strip()
++            if target:
++                scores[target] = scores.get(target, 0) + 1
++        for sheriff in summary.get("sheriff", []):
++            holder = self._extract_head(sheriff)
++            if holder:
++                scores.setdefault(holder, 0)
++
++    def _merge_events(self, key: str, items: list[str], *, limit: int) -> None:
++        if not items:
++            return
++        bucket = self._working_memory.setdefault(key, [])
++        for item in items:
++            if item and item not in bucket:
++                bucket.append(item)
++        del bucket[:-limit]
++
++    def _summarize_public_packet(self, packet: object) -> dict[str, Any]:
++        if not isinstance(packet, Mapping):
++            return {}
++        summary: dict[str, Any] = {
++            "round": None,
++            "phase": None,
++            "deaths": [],
++            "sheriff": [],
++            "claims": [],
++            "votes": [],
++        }
++        self._walk_public_packet(packet, summary)
++        summary["deaths"] = self._dedupe_texts(summary["deaths"])[:4]
++        summary["sheriff"] = self._dedupe_texts(summary["sheriff"])[:2]
++        summary["claims"] = self._dedupe_texts(summary["claims"])[:4]
++        summary["votes"] = self._dedupe_texts(summary["votes"])[:4]
++        return summary
++
++    def _walk_public_packet(self, node: object, summary: dict[str, Any]) -> None:
++        if isinstance(node, Mapping):
++            lower = {str(key).lower(): key for key in node.keys()}
++            if summary["round"] is None:
++                round_value = self._first_matching_value(node, lower, ("round", "day", "turn"))
++                if round_value:
++                    summary["round"] = round_value
++            if summary["phase"] is None:
++                phase_value = self._first_matching_value(
++                    node, lower, ("phase", "public_phase", "stage")
++                )
++                if phase_value:
++                    summary["phase"] = phase_value
++
++            for key in ("death", "dead", "deaths", "eliminated", "elimination", "out"):
++                if key in lower:
++                    self._append_event_labels(summary["deaths"], node[lower[key]], kind="death")
++            for key in ("sheriff", "police", "badge", "captain", "leader"):
++                if key in lower:
++                    self._append_event_labels(summary["sheriff"], node[lower[key]], kind="sheriff")
++            for key in ("claim", "claims", "identity", "role", "reveal", "revealed"):
++                if key in lower:
++                    self._append_event_labels(summary["claims"], node[lower[key]], kind="claim")
++            for key in ("vote", "votes", "ballot", "voting"):
++                if key in lower:
++                    self._append_event_labels(summary["votes"], node[lower[key]], kind="vote")
++
++            for value in node.values():
++                self._walk_public_packet(value, summary)
++        elif isinstance(node, list):
++            for item in node:
++                self._walk_public_packet(item, summary)
++
++    def _append_event_labels(self, bucket: list[str], value: object, *, kind: str) -> None:
++        if kind == "vote":
++            labels = self._extract_vote_labels(value)
++        elif kind == "claim":
++            labels = self._extract_claim_labels(value)
++        elif kind == "sheriff":
++            labels = self._extract_sheriff_labels(value)
++        else:
++            labels = self._extract_death_labels(value)
++        for label in labels:
++            if label and label not in bucket:
++                bucket.append(label)
++
++    def _extract_death_labels(self, value: object) -> list[str]:
++        labels: list[str] = []
++        if isinstance(value, Mapping):
++            player = self._first_key_text(value, ("player_id", "player", "id", "name", "target_id", "target"))
++            reason = self._first_key_text(value, ("reason", "cause", "result"))
++            if player:
++                labels.append(player if not reason else f"{player}({reason})")
++            elif reason:
++                labels.append(reason)
++        elif isinstance(value, list):
++            for item in value:
++                labels.extend(self._extract_death_labels(item))
++        elif isinstance(value, str):
++            text = self._compact_text(value, 80)
++            if text:
++                labels.append(text)
++        return labels
++
++    def _extract_sheriff_labels(self, value: object) -> list[str]:
++        labels: list[str] = []
++        if isinstance(value, Mapping):
++            holder = self._first_key_text(value, ("player_id", "player", "id", "name", "sheriff_id", "badge_holder"))
++            if holder:
++                labels.append(f"{holder}(警长)")
++            elif any(self._compact_text(item, 20) for item in value.values()):
++                labels.append(self._compact_text(value, 60))
++        elif isinstance(value, list):
++            for item in value:
++                labels.extend(self._extract_sheriff_labels(item))
++        elif isinstance(value, str):
++            text = self._compact_text(value, 80)
++            if text:
++                labels.append(text)
++        return labels
++
++    def _extract_claim_labels(self, value: object) -> list[str]:
++        labels: list[str] = []
++        if isinstance(value, Mapping):
++            player = self._first_key_text(value, ("player_id", "player", "id", "name", "speaker", "speaker_id"))
++            claim = self._first_key_text(
++                value,
++                (
++                    "role",
++                    "claim",
++                    "identity",
++                    "self_claim",
++                    "claimed_role",
++                    "description",
++                    "text",
++                ),
++            )
++            if player and claim:
++                labels.append(f"{player}:{claim}")
++            elif player:
++                labels.append(player)
++            elif claim:
++                labels.append(claim)
++        elif isinstance(value, list):
++            for item in value:
++                labels.extend(self._extract_claim_labels(item))
++        elif isinstance(value, str):
++            text = self._compact_text(value, 80)
++            if text:
++                labels.append(text)
++        return labels
++
++    def _extract_vote_labels(self, value: object) -> list[str]:
++        labels: list[str] = []
++        if isinstance(value, Mapping):
++            voter = self._first_key_text(
++                value, ("voter_id", "voter", "player_id", "player", "id", "name", "speaker")
++            )
++            target = self._first_key_text(value, ("target_id", "target", "candidate", "vote_target"))
++            if voter and target:
++                labels.append(f"{voter}->{target}")
++            elif target:
++                labels.append(target)
++            elif voter:
++                labels.append(voter)
++        elif isinstance(value, list):
++            for item in value:
++                labels.extend(self._extract_vote_labels(item))
++        elif isinstance(value, str):
++            text = self._compact_text(value, 80)
++            if text:
++                labels.append(text)
++        return labels
++
++    def _format_summary_line(self, summary: Mapping[str, Any]) -> str:
++        parts: list[str] = []
++        round_value = summary.get("round")
++        phase_value = summary.get("phase")
++        if round_value is not None:
++            parts.append(f"R{self._compact_text(round_value, 12)}")
++        if phase_value is not None:
++            parts.append(self._compact_text(phase_value, 16))
++        if summary.get("deaths"):
++            parts.append("死亡:" + "、".join(summary["deaths"]))
++        if summary.get("sheriff"):
++            parts.append("警长:" + "、".join(summary["sheriff"]))
++        if summary.get("claims"):
++            parts.append("声明:" + "；".join(summary["claims"]))
++        if summary.get("votes"):
++            parts.append("票型:" + "；".join(summary["votes"]))
++        return " | ".join(parts)
++
++    def _summarize_dialogue(self, dialogue: object) -> list[str]:
++        if not isinstance(dialogue, list):
++            return []
++        lines: list[str] = []
++        for item in dialogue[-8:]:
++            if isinstance(item, Mapping):
++                speaker = self._first_key_text(item, ("player_id", "player", "speaker_id", "speaker", "name", "id"))
++                text = self._first_key_text(item, ("text", "content", "message", "say"))
++                if speaker and text:
++                    lines.append(f"{speaker}:{self._compact_text(text, 40)}")
++                else:
++                    compact = self._compact_text(item, 60)
++                    if compact:
++                        lines.append(compact)
++            else:
++                compact = self._compact_text(item, 60)
++                if compact:
++                    lines.append(compact)
++        return lines[:4]
++
++    def _first_matching_value(
++        self, node: Mapping[str, Any], lower: Mapping[str, str], keys: tuple[str, ...]
++    ) -> str | None:
++        for key in keys:
++            original = lower.get(key)
++            if original is None:
++                continue
++            text = self._compact_text(node[original], 24)
++            if text:
++                return text
++        return None
++
++    def _first_key_text(self, node: Mapping[str, Any], keys: tuple[str, ...]) -> str:
++        for key in keys:
++            if key not in node:
++                continue
++            text = self._compact_text(node[key], 48)
++            if text:
++                return text
++        for value in node.values():
++            if isinstance(value, Mapping):
++                text = self._first_key_text(value, keys)
++                if text:
++                    return text
++        return ""
++
++    def _split_claim(self, claim: str) -> tuple[str, str]:
++        if ":" not in claim:
++            return claim, ""
++        head, tail = claim.split(":", 1)
++        return head.strip(), tail.strip()
++
++    def _extract_head(self, text: str) -> str:
++        if not text:
++            return ""
++        if "(" in text:
++            return text.split("(", 1)[0].strip()
++        if ":" in text:
++            return text.split(":", 1)[0].strip()
++        return text.strip()
++
++    def _contains_role_like_word(self, text: str) -> bool:
++        if not text:
++            return False
++        keywords = (
++            "预言家",
++            "女巫",
++            "猎人",
++            "守卫",
++            "警长",
++            "狼人",
++            "好人",
++            "平民",
++            "民",
++            "神",
++            "身份",
++            "claim",
++            "seer",
++            "witch",
++            "hunter",
++            "guard",
++            "sheriff",
++            "werewolf",
++            "villager",
++        )
++        lowered = text.lower()
++        return any(word.lower() in lowered or word in text for word in keywords)
++
++    def _dedupe_texts(self, items: list[str]) -> list[str]:
++        seen: set[str] = set()
++        result: list[str] = []
++        for item in items:
++            text = self._compact_text(item, 80)
++            if not text or text in seen:
++                continue
++            seen.add(text)
++            result.append(text)
++        return result
++
++    def _compact_text(self, value: object, limit: int) -> str:
++        if value is None:
++            return ""
++        if isinstance(value, bool):
++            text = "true" if value else "false"
++        elif isinstance(value, (str, int, float)):
++            text = str(value)
++        elif isinstance(value, Mapping):
++            for key in (
++                "player_id",
++                "player",
++                "speaker_id",
++                "speaker",
++                "id",
++                "name",
++                "target_id",
++                "target",
++                "role",
++                "claim",
++                "identity",
++                "text",
++                "content",
++            ):
++                if key in value:
++                    text = self._compact_text(value[key], limit)
++                    if text:
++                        return text
++            text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
++        elif isinstance(value, list):
++            parts = [self._compact_text(item, max(8, limit // 2)) for item in value[:4]]
++            parts = [part for part in parts if part]
++            text = "、".join(parts)
++        else:
++            text = str(value)
++        text = re.sub(r"\s+", " ", text).strip()
++        if len(text) > limit:
++            return text[: max(0, limit - 1)] + "…"
++        return text
++
++    def _villager_policy_block(self) -> str:
++        return (
++            "【平民专用原则】\n"
++            "- 先列事实，再列玩家声明，再列自己的推测。\n"
++            "- 只把可见信息当事实，推测必须明确标注为推测。\n"
++            "- 投票前至少比较两个候选，说明为什么当前目标更优先。\n"
++            "- 发言要点名具体人、具体票型或具体话术，避免空泛重复。\n"
++            "- 如果暂时不确定，就给出当前怀疑顺序和下一步观察点。"
+         )
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+--- villager-base/task.md
++++ villager-n00011/task.md
+@@ -2,7 +2,10 @@
+ 
+ 你的任务是帮助好人阵营找出狼人并完成放逐，同时像真实玩家一样参与讨论。
+ 
+-- 先区分系统事实、玩家声明和自己的猜测，再根据发言、票型和死亡信息形成判断。
+-- 发言要回应当前局面中的具体人和具体理由，允许暂时不确定，不要每轮都说同一句话。
++- 早期优先收集并记住公开声明、初始票型、警徽归属和关键死亡信息，尽量给每个重要玩家留下简短标签。
++- 中期重点比较冲突身份、前后说法是否一致、谁的票仓与发言不匹配，并持续更新一个小型怀疑对象列表。
++- 后期根据剩余人数、出局链路、警徽流向和历史票型做核算，不要只看当前一轮的局部发言。
++- 每轮发言先区分系统事实、玩家声明和自己的推测；如果信息不足，说明当前最可疑的两到三个候选和下一步要观察什么。
++- 发言要回应当前局面中的具体人和具体理由，尽量引用票型、身份声明或原话关键词，不要反复输出“没信息”“先听”。
+ - 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实。
+-- 投票前比较多个候选，不要只因为一个模糊印象就机械跟票。
++- 投票前必须比较至少两个候选，并把自己的怀疑对象列表更新到本轮决定里；不要只因为一个模糊印象就机械跟票。

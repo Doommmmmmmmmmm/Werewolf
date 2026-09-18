@@ -1,0 +1,99 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00003 是可运行但偏保守的版本：没有触发 focus 级别的非法行动，但 20 局仅 6 胜，主要问题不是 schema，而是女巫资源决策太弱、跨回合信息压缩不足，导致毒药经常保留到失去价值，且缺少对公开票型/查验/死亡链的结构化整合。",
+  "evidence": [
+    {
+      "type": "evaluation_summary",
+      "fact": "20 局全量评测完成，win_rate=0.3，focus_role_only 下 invalid_decision_count=0，说明主要失败不是动作格式，而是策略质量。",
+      "detail": "win_count=6, loss_count=14, decision_count=288, fallback_count=0"
+    },
+    {
+      "type": "replay_game2",
+      "fact": "该局女巫第一夜成功使用解药救下 p1，且与公开狼刀、守卫目标一致，属于典型高价值救人。",
+      "detail": "NIGHT_RESOLVED 显示 wolf_target=p1, guarded_targets=[p1], healed_targets=[p1], deaths=[]"
+    },
+    {
+      "type": "replay_game3",
+      "fact": "该局最终狼队获胜，女巫到结束仍保留毒药，说明资源未在后续高压阶段转化为有效击杀。",
+      "detail": "final_snapshot.role_state.p6 = {antidote_available:false, poison_available:true}; winner=wolf"
+    },
+    {
+      "type": "replay_game4",
+      "fact": "该局最终狼队获胜，女巫没有形成足够的翻盘影响，整体仍呈现保守或错失毒口的问题。",
+      "detail": "winner=wolf; witch p3 在关键阶段未形成决定性资源交换"
+    },
+    {
+      "type": "code_structure",
+      "fact": "当前实现只保留 recent_public_summaries + private_resource_summary 这类轻量摘要，没有显式的女巫候选排序、票型压力表或查验矛盾表。",
+      "detail": "状态压缩依赖字符串摘要，缺少结构化 suspicion ledger"
+    },
+    {
+      "type": "code_structure",
+      "fact": "当前 poison 兜底只对毒药动作做判断，而且依赖关键词匹配 combined text 来判断高置信目标，规则较脆弱。",
+      "detail": "_high_confidence_targets 使用 marker 词 + p\\d+ 抽取，容易过宽或过窄"
+    },
+    {
+      "type": "branch_compare",
+      "fact": "其他分支已经在往结构化 witch 决策上下文推进，例如加入 witch_decision_summary、resource_state、recent_public_deaths、recent_vote_pressure、counterclaim_summary 和 recommendation。",
+      "detail": "n00023/n00024 的修改方向都在增强女巫专属上下文，而不是泛化聊天"
+    }
+  ],
+  "root_causes": [
+    "女巫决策缺少结构化长期记忆：当前只保存少量公共摘要，不能稳定累积“谁是高置信狼 / 谁是悍跳核心 / 谁的票型在收拢”这类跨回合判断，因此容易在后期继续保留毒药。",
+    "女巫动作政策过于依赖模型自由发挥：prompt 有“保留资源”原则，但没有把“什么情况下必须考虑毒药、什么情况下应直接 pass”编码成明确的候选集或门槛，导致模型倾向保守弃权。",
+    "高置信目标识别过于粗糙：用关键词和所有 p\\d+ 的文本抽取判断高置信，既不是真正的票型/查验融合，也没有把公开信息转成可复用的结构化分数。",
+    "资源策略不对称：现有 fallback 主要围绕毒药安全性，没有把解药的高价值救人与夜死存在性做成同等级检查，策略更像“防误伤”而不是“做有效交换”。",
+    "task.md 对女巫行为的约束已经有原则，但缺少面向实现的操作性细则，模型容易把这些原则理解成泛策略口号，而不是每回合可执行检查表。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个女巫专属的结构化决策上下文构建器，显式抽取并缓存：最近夜死、票型压力、公开身份对跳、警长归票/换票、当前可行动作、药水余量与已用状态；同时按 game_id 重置这一结构化记忆。",
+      "rationale": "把当前零散字符串摘要改成可复用的候选表，降低跨回合信息丢失，避免女巫在后期长期保守或重复错过毒口。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把毒药 fallback 从“关键词 + 抽取到的所有玩家编号”改成结构化门控：只有当目标进入高置信候选集时才允许 poison，否则强制 pass；高置信候选集应由公开票型收拢、查验冲突、明确悍跳、已公开角色链等结构化条件生成，而不是纯文本关键词匹配。",
+      "rationale": "减少误判和无效毒口，同时避免现有高置信判定既过宽又过窄的问题，让毒药真正用于可验证的高价值目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "补齐解药侧的显式检查：仅当当夜确有狼刀/夜杀目标、解药仍可用、且救人能改变轮次或保住关键公开信息链时才优先救；否则在代码层保留 pass 作为默认合法动作。",
+      "rationale": "把“救人只在高价值场景使用”落实为代码逻辑，避免模型凭感觉乱救或拖延到失去价值。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为女巫加入一个轻量的 suspicion ledger，例如按玩家维度累计 public vote pressure、查验冲突次数、死亡后价值、对跳一致性；在 prompt 和 fallback 中优先使用该 ledger，而不是最近一轮的局部文本。",
+      "rationale": "解决当前实现只看最近几条公共摘要、缺乏跨天归纳的问题，让女巫更容易在第 3-5 天形成稳定毒口。"
+    },
+    {
+      "file": "task.md",
+      "change": "把女巫最小任务改写成可执行检查表：先确认夜死与药水余量，再判断救/毒/留；明确什么算高价值救人、什么算高置信毒人、什么情况必须 pass；继续保留严禁泄露私密夜间信息的规则。",
+      "rationale": "让模型接收到的不是泛策略，而是和代码门控一致的操作说明，减少 prompt 与实现之间的语义漂移。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "毒药门槛过高会让女巫继续过于保守，仍然错过少数可翻盘的毒口。",
+      "mitigation": "候选集应允许“公开身份链冲突”和“多方票型压缩”两类较宽松信号，但仍需结构化证据，不要只靠单一关键词。"
+    },
+    {
+      "risk": "新增结构化记忆会增加 prompt 长度与上下文复杂度，可能抬高 token 使用。",
+      "mitigation": "只保留压缩后的计数和短结论，不回灌完整发言；继续限制最近窗口长度。"
+    },
+    {
+      "risk": "如果 suspicion ledger 过度依赖噪声票型，可能把早期误判固定化。",
+      "mitigation": "加入时间衰减或“仅对多源一致证据加权”的规则，避免单轮误票永久锁死。"
+    },
+    {
+      "risk": "改动过多会让 Task-Agent 更复杂，调试成本上升。",
+      "mitigation": "优先做最小闭环：结构化上下文 + 毒药门控 + 解药显式检查，再观察评测是否改善。"
+    }
+  ],
+  "code_agent_brief": "请修改 witch-n00003 的 Task-Agent，使女巫决策从“泛化文本判断”升级为“结构化资源决策”。重点是 task_agent.py：新增女巫专属决策上下文和跨回合 suspicion ledger，按 game_id 重置；把解药/毒药的可用性、夜死、票型压力、查验冲突、公开身份链整理成固定字段输入给模型；把毒药 fallback 改成结构化高置信门控，默认低置信 pass；把救人也做成显式高价值检查。并同步收紧 task.md，把女巫行为改写成可执行检查表而不是抽象原则。不要改 Game Engine、规则、可见性或 schema。"
+}

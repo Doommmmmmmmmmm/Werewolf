@@ -1,0 +1,66 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00012 is runtime-stable but strategically weak: 6/20 wins (30%), with losses dominated by judgment failures rather than schema or tool failures. The current patch improved generic discipline, but it still does not give the model a compact current-state recap or a strict late-game re-ranking rule, so the villager over-defends public chains and misses the last wolf.",
+  "evidence": [
+    {
+      "type": "evaluation",
+      "fact": "20 complete games; 6 wins, 14 losses; win_rate 0.3. Node-level fallback/invalid rates are low, and the sampled replay shows no focus-role schema breakage.",
+      "implication": "This is a strategy/prompting problem more than a runtime correctness problem."
+    },
+    {
+      "type": "replay",
+      "fact": "In game2, the village repeatedly followed public claims and sheriff flow; by day 6 only p3, p9, p10, p12 remained, and p12 still ended up voting p9 while wolf p3 survived to kill p12.",
+      "implication": "The villager is not re-ranking suspects well in endgame once the public claim structure collapses."
+    },
+    {
+      "type": "replay",
+      "fact": "The replay had strong public information: p11 was a real seer with repeated village checks, p8 was sheriff/hunter and later died without shooting, and badge transfer/destroy events were public.",
+      "implication": "The agent should have been able to lean harder on alive/dead status and vote history, but instead stayed too close to broad trust heuristics."
+    },
+    {
+      "type": "code",
+      "fact": "Current task_agent.py adds a static checklist keyed mostly by request phase; it does not generate a compact public-state brief or a live-count-dependent endgame branch.",
+      "implication": "Each new decision re-parses a large packet with the same generic advice, which dilutes signal on decisive turns."
+    },
+    {
+      "type": "cost",
+      "fact": "Across the evaluation the node consumed 927,052 input tokens and 339 API attempts, with 135 unreported attempts.",
+      "implication": "Prompt bloat and repeated state rereading are likely hurting attention and efficiency."
+    }
+  ],
+  "root_causes": [
+    "Advice is too static and generic; it does not switch behavior when alive count is small or when sheriff/badge state changes.",
+    "The agent has no compact public-memory summary, so each new session rereads the full state and loses salience on vote/death patterns.",
+    "The prompt overprotects trusted public chains but lacks an explicit rule for downgrading them once they are dead, badge-less, or contradicted by current live evidence.",
+    "Voting guidance requires comparing two candidates, but it does not provide a concrete elimination rubric using vote matrix, death order, and public contradictions, so the agent drifts toward consensus or passive votes."
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "Add a compact `render_public_state_brief(public_state, request)` helper and include its output in `_turn_instruction`, summarizing alive/dead players, sheriff status, revealed roles, recent vote counts, and phase-specific candidates.",
+      "rationale": "A short structured recap will reduce prompt noise and keep the model anchored on the current live set instead of rereading the raw packet."
+    },
+    {
+      "file": "task_agent.py",
+      "change": "Extend `render_villager_decision_checklist` to accept `public_state` and add explicit endgame branches: when alive players are small, when sheriff is dead or transferred, and when only one public chain remains, force a top-two suspect ranking from current vote/death evidence.",
+      "rationale": "This directly targets the late-game failure mode seen in the replay, where the villager kept following old public-chain heuristics instead of re-ranking suspects from the remaining live players."
+    },
+    {
+      "file": "task.md",
+      "change": "Append a concrete endgame rubric: at <=6 alive always name two current suspects, explicitly state why one is preferred over the other using vote/death/public-claim evidence, and stop treating dead or badge-less claimants as privileged unless current live evidence still supports them.",
+      "rationale": "The model needs an explicit role contract, not only a generic reminder to split facts and guesses."
+    }
+  ],
+  "risks": [
+    "If the new state brief is too verbose, it may worsen token use instead of improving it.",
+    "A stronger endgame heuristic can overfit to this replay and make the villager too aggressive against sheriff/claim holders in games where those claims are true.",
+    "Any memory added in code must remain strictly derived from public state; otherwise it could accidentally introduce hidden-state assumptions.",
+    "The evaluation still has broad variance across random role assignments, so one heuristic may improve late-game accuracy without fully closing the 30% win-rate gap."
+  ],
+  "code_agent_brief": "Please update villager-n00012 in task_agent.py and task.md to make the villager explicitly endgame-aware. The current agent is stable but too generic: it reuses the same checklist in every phase, rereads a large raw packet each decision, and does not force a re-ranking of suspects when the sheriff/claim chain collapses or alive players drop below 6. Implement a compact public-state brief, feed it into the turn instruction, and add phase/live-count-specific villager rules that require a top-two suspect comparison based on alive/dead list, vote history, badge transfer, and current public claims. Then tighten task.md with the same endgame rubric so the model applies it consistently."
+}

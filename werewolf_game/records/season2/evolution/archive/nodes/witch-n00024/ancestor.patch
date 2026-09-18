@@ -1,0 +1,540 @@
+--- witch-n00001/task_agent.py
++++ witch-n00024/task_agent.py
+@@ -7,6 +7,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++from collections import Counter
+ from collections.abc import Mapping
+ import hashlib
+ import inspect
+@@ -216,6 +217,7 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         self._update_private_state(private)
++        witch_summary = self._witch_decision_summary(turn_packet)
+         system = self._system_prompt(private)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -226,7 +228,7 @@
+             "request": turn_packet["request"],
+             "compact_memory": self._render_compact_memory(),
+             "self_resource_state": dict(self._known_private_state),
+-            "witch_decision_summary": self._witch_decision_summary(turn_packet),
++            "witch_decision_summary": witch_summary,
+             "speech_safety": (
+                 "所有发言只能基于公开事实；不要把药水余量、夜刀目标、自己未公开的用药结果、"
+                 "或未公开身份链说成既成事实。"
+@@ -287,6 +289,7 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            action = self._apply_witch_safety_fallback(turn_packet, action, witch_summary)
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 self._remember_witch_action(turn_packet, action)
+@@ -348,10 +351,24 @@
+ 
+     def _update_private_state(self, private: Mapping[str, Any]) -> None:
+         extracted: dict[str, Any] = {}
+-        for key in ("role", "team", "status", "can_heal", "can_poison", "heal_used", "poison_used"):
++        for key in (
++            "role",
++            "team",
++            "status",
++            "can_heal",
++            "can_poison",
++            "heal_used",
++            "poison_used",
++            "heal_available",
++            "poison_available",
++            "antidote_available",
++            "poisoner_available",
++            "heal_remaining",
++            "poison_remaining",
++        ):
+             if key in private:
+                 extracted[key] = private[key]
+-        for key in ("healed", "poisoned", "used_heal", "used_poison"):
++        for key in ("healed", "poisoned", "used_heal", "used_poison", "last_heal_target", "last_poison_target"):
+             if key in private:
+                 extracted[key] = private[key]
+         for key, value in extracted.items():
+@@ -426,6 +443,18 @@
+                 "alive",
+                 "reason",
+                 "count",
++                "heal_ready",
++                "poison_ready",
++                "heal_available",
++                "poison_available",
++                "antidote_available",
++                "poisoner_available",
++                "heal_remaining",
++                "poison_remaining",
++                "heal_used",
++                "poison_used",
++                "last_heal_target",
++                "last_poison_target",
+             ):
+                 if key in value:
+                     compact[key] = value[key]
+@@ -450,37 +479,400 @@
+         self._known_private_state["last_witch_action"] = dict(self._last_witch_action)
+ 
+     def _witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
++        context = self._build_witch_decision_context(turn_packet)
++        recommendation = self._recommend_witch_action(context)
++        context["recommendation"] = recommendation
++        return context
++
++    def _build_witch_decision_context(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+-        phase = str(turn_packet.get("game", {}).get("public_phase", turn_packet.get("game", {}).get("phase", "")))
++        private = turn_packet.get("private_information") or {}
++        game = turn_packet.get("game") or {}
++        public_state = turn_packet.get("public_state") or {}
++        tool_context = turn_packet.get("tool_context") or {}
++        phase = str(game.get("public_phase", game.get("phase", "")))
++        allowed_actions = [item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)]
++        action_kinds = [str(item.get("kind") or "") for item in allowed_actions if item.get("kind")]
++        heal_kind = next((kind for kind in action_kinds if "heal" in kind), None)
++        poison_kind = next((kind for kind in action_kinds if "poison" in kind), None)
++        pass_kind = next((kind for kind in action_kinds if "pass" in kind or kind == "wait"), None)
++
++        resource_state = self._extract_witch_resource_state(private)
++        recent_public_deaths = self._collect_compact_events(public_state, ("deaths", "dead_players", "night_deaths", "death_events"))
++        recent_votes = self._collect_compact_events(public_state, ("votes", "voting", "vote_results", "vote_events"))
++        recent_claims = self._collect_compact_events(public_state, ("claims", "reveals", "public_claims", "role_claims", "counterclaims"))
++        current_dialogue = self._collect_compact_events(tool_context.get("current_round_dialogue") or [])
++        high_confidence_targets = self._rank_high_confidence_targets(recent_votes, recent_claims, current_dialogue)
++        heal_candidate = self._infer_heal_candidate(resource_state, recent_public_deaths, high_confidence_targets, allowed_actions)
++        poison_candidate = self._infer_poison_candidate(resource_state, recent_votes, recent_claims, current_dialogue, allowed_actions)
++        info_level = self._judge_witch_information_level(resource_state, recent_public_deaths, recent_votes, recent_claims, current_dialogue)
++
+         summary: dict[str, Any] = {
+             "phase": phase,
+             "request_kind": request.get("kind"),
+-            "resource_state": dict(self._known_private_state),
+-            "recent_public_events": self._compact_history[-3:],
++            "allowed_action_kinds": [kind for kind in action_kinds if kind],
++            "resource_state": resource_state,
++            "recent_public_deaths": recent_public_deaths[-2:],
++            "recent_vote_pressure": recent_votes[-3:],
++            "counterclaim_summary": recent_claims[-3:],
++            "public_high_confidence_targets": high_confidence_targets[:3],
++            "current_round_dialogue_signals": current_dialogue[:4],
+             "last_witch_action": dict(self._last_witch_action) if self._last_witch_action else {},
++            "information_level": info_level,
++            "decision_rule": {
++                "low_info_default": "pass",
++                "heal_rule": "only when explicit save target exists or recent death is clearly actionable",
++                "poison_rule": "only when target has double public support or hard contradiction",
++                "fallback": pass_kind or "pass",
++            },
+         }
+-        if "witch" not in phase and "night" not in phase:
+-            summary["recommendation"] = "not_witch_phase"
+-            return summary
+-        allowed_actions = request.get("allowed_actions") if isinstance(request, Mapping) else None
+-        action_kinds = [str(item.get("kind")) for item in allowed_actions or [] if isinstance(item, Mapping)]
+-        if not action_kinds:
+-            summary["recommendation"] = {"heal_candidate": None, "poison_candidate": None, "pass_candidate": "pass", "default": "pass"}
+-            return summary
+-        heal_kind = next((kind for kind in action_kinds if "heal" in kind), None)
+-        poison_kind = next((kind for kind in action_kinds if "poison" in kind), None)
+-        pass_kind = next((kind for kind in action_kinds if "pass" in kind or kind == "wait"), None)
+-        low_resources = any(bool(self._known_private_state.get(flag)) for flag in ("heal_used", "poison_used"))
+-        summary["recommendation"] = {
+-            "heal_candidate": {"kind": heal_kind, "confidence": "high_only" if heal_kind else "none"},
+-            "poison_candidate": {"kind": poison_kind, "confidence": "high_only" if poison_kind else "none"},
+-            "pass_candidate": {"kind": pass_kind or "pass", "confidence": "default"},
+-            "priority": ["heal", "poison", "pass"],
+-            "default": "pass",
+-            "confidence_rule": "only_act_on_high_confidence_or_high_value",
+-            "resource_hint": "preserve" if low_resources else "normal",
++        if heal_kind:
++            summary["heal_candidate"] = heal_candidate or {"kind": heal_kind, "target_id": None, "confidence": "low", "reason": "no_clear_save_target"}
++        else:
++            summary["heal_candidate"] = None
++        if poison_kind:
++            summary["poison_candidate"] = poison_candidate or {"kind": poison_kind, "target_id": None, "confidence": "low", "reason": "no_clear_poison_target"}
++        else:
++            summary["poison_candidate"] = None
++        summary["pass_candidate"] = {"kind": pass_kind or "pass", "reason": "default_safety", "confidence": "high" if info_level == "low" else "medium"}
++        return summary
++
++    def _extract_witch_resource_state(self, private: Mapping[str, Any]) -> dict[str, Any]:
++        state = dict(self._known_private_state)
++        for key in (
++            "can_heal",
++            "can_poison",
++            "heal_available",
++            "poison_available",
++            "antidote_available",
++            "poisoner_available",
++            "heal_remaining",
++            "poison_remaining",
++            "heal_used",
++            "poison_used",
++            "last_heal_target",
++            "last_poison_target",
++            "wolf_target",
++            "kill_target",
++            "night_target",
++            "attack_target",
++            "attacked_target",
++            "saved_target",
++            "heal_target",
++            "poison_target",
++            "target_id",
++            "healed",
++            "poisoned",
++            "used_heal",
++            "used_poison",
++        ):
++            if key in private:
++                state[key] = private[key]
++        for key in ("heal_available", "antidote_available", "can_heal"):
++            if key in state:
++                state["heal_ready"] = bool(state[key])
++                break
++        for key in ("poison_available", "can_poison", "poisoner_available"):
++            if key in state:
++                state["poison_ready"] = bool(state[key])
++                break
++        return self._compact_value(state) if isinstance(state, Mapping) else state
++
++    def _collect_compact_events(self, source: Any, keys: tuple[str, ...] | tuple[()] = ()) -> list[Any]:
++        items: Any = source
++        if isinstance(source, Mapping) and keys:
++            for key in keys:
++                if key in source:
++                    items = source[key]
++                    break
++            else:
++                return []
++        if not isinstance(items, list):
++            return []
++        return [self._compact_value(item) for item in items[:8]]
++
++    def _rank_high_confidence_targets(self, votes: list[Any], claims: list[Any], dialogue: list[Any]) -> list[dict[str, Any]]:
++        scores: dict[str, dict[str, Any]] = {}
++        for item in votes:
++            target = self._extract_target_id(item)
++            if not target:
++                continue
++            entry = scores.setdefault(target, {"target_id": target, "score": 0, "reasons": []})
++            entry["score"] += 2
++            entry["reasons"].append("vote_pressure")
++        for item in claims:
++            text = self._stringify_item(item)
++            targets = self._extract_target_ids_from_text(text)
++            for target in targets:
++                entry = scores.setdefault(target, {"target_id": target, "score": 0, "reasons": []})
++                if any(keyword in text for keyword in ("对跳", "悍跳", "查杀", "狼人", "狼刀", "毒")):
++                    entry["score"] += 2
++                    entry["reasons"].append("hard_claim")
++                else:
++                    entry["score"] += 1
++                    entry["reasons"].append("public_claim")
++        for item in dialogue:
++            text = self._stringify_item(item)
++            targets = self._extract_target_ids_from_text(text)
++            if not targets:
++                continue
++            hard_signal = any(keyword in text for keyword in ("查杀", "悍跳", "狼人", "对跳", "刀", "毒"))
++            for target in targets:
++                entry = scores.setdefault(target, {"target_id": target, "score": 0, "reasons": []})
++                entry["score"] += 2 if hard_signal else 1
++                entry["reasons"].append("dialogue_signal")
++        ranked = sorted(scores.values(), key=lambda item: (-int(item.get("score", 0)), str(item.get("target_id", ""))))
++        for item in ranked:
++            item["confidence"] = "high" if int(item.get("score", 0)) >= 4 else "medium" if int(item.get("score", 0)) >= 2 else "low"
++            reasons = item.get("reasons")
++            if isinstance(reasons, list):
++                item["reasons"] = reasons[:3]
++        return ranked
++
++    def _infer_heal_candidate(
++        self,
++        resource_state: Mapping[str, Any],
++        deaths: list[Any],
++        high_confidence_targets: list[dict[str, Any]],
++        allowed_actions: list[Mapping[str, Any]],
++    ) -> dict[str, Any] | None:
++        if not self._resource_ready(resource_state, "heal"):
++            return None
++        heal_action = next((item for item in allowed_actions if "heal" in str(item.get("kind") or "")), None)
++        if heal_action is None:
++            return None
++        explicit_target = self._extract_first_target_from_sources(
++            resource_state,
++            deaths,
++            high_confidence_targets,
++            ("wolf_target", "kill_target", "night_target", "attacked_target", "attack_target", "target_id", "saved_target", "heal_target"),
++        )
++        if explicit_target:
++            confidence = "high" if deaths or self._has_strong_signal(high_confidence_targets, explicit_target) else "medium"
++            if confidence == "high" or deaths:
++                return {"kind": str(heal_action.get("kind")), "target_id": explicit_target, "confidence": confidence, "reason": "explicit_save_target"}
++        if deaths and len(deaths) == 1:
++            target = self._extract_target_id(deaths[0])
++            if target:
++                return {"kind": str(heal_action.get("kind")), "target_id": target, "confidence": "medium", "reason": "single_public_death"}
++        return None
++
++    def _infer_poison_candidate(
++        self,
++        resource_state: Mapping[str, Any],
++        votes: list[Any],
++        claims: list[Any],
++        dialogue: list[Any],
++        allowed_actions: list[Mapping[str, Any]],
++    ) -> dict[str, Any] | None:
++        if not self._resource_ready(resource_state, "poison"):
++            return None
++        poison_action = next((item for item in allowed_actions if "poison" in str(item.get("kind") or "")), None)
++        if poison_action is None:
++            return None
++        vote_targets = [self._extract_target_id(item) for item in votes]
++        vote_counts = Counter(target for target in vote_targets if target)
++        claim_counts = Counter(target for target in self._targets_from_items(claims) if target)
++        dialogue_counts = Counter(target for target in self._targets_from_items(dialogue) if target)
++        combined: list[tuple[str, int, list[str]]] = []
++        for target in set(vote_counts) | set(claim_counts) | set(dialogue_counts):
++            score = 0
++            reasons: list[str] = []
++            if vote_counts.get(target, 0) >= 2:
++                score += 2
++                reasons.append("vote_pressure")
++            if claim_counts.get(target, 0) >= 1:
++                score += 2
++                reasons.append("claim_conflict")
++            if dialogue_counts.get(target, 0) >= 1:
++                score += 1
++                reasons.append("dialogue_signal")
++            combined.append((target, score, reasons))
++        combined.sort(key=lambda item: (-item[1], item[0]))
++        if not combined:
++            return None
++        best_target, best_score, best_reasons = combined[0]
++        if best_score < 4:
++            return None
++        confidence = "high" if best_score >= 4 else "medium"
++        return {"kind": str(poison_action.get("kind")), "target_id": best_target, "confidence": confidence, "reason": "+".join(best_reasons[:3]) or "double_public_support"}
++
++    def _judge_witch_information_level(
++        self,
++        resource_state: Mapping[str, Any],
++        deaths: list[Any],
++        votes: list[Any],
++        claims: list[Any],
++        dialogue: list[Any],
++    ) -> str:
++        signals = 0
++        if deaths:
++            signals += 1
++        if len({self._extract_target_id(item) for item in votes if self._extract_target_id(item)}) >= 2:
++            signals += 1
++        if len(self._targets_from_items(claims)) >= 2:
++            signals += 1
++        if len(self._targets_from_items(dialogue)) >= 2:
++            signals += 1
++        if resource_state.get("heal_used") or resource_state.get("poison_used"):
++            signals += 1
++        if signals <= 1:
++            return "low"
++        if signals == 2:
++            return "medium"
++        return "high"
++
++    def _recommend_witch_action(self, context: Mapping[str, Any]) -> dict[str, Any]:
++        info_level = str(context.get("information_level") or "low")
++        heal_candidate = context.get("heal_candidate") if isinstance(context.get("heal_candidate"), Mapping) else None
++        poison_candidate = context.get("poison_candidate") if isinstance(context.get("poison_candidate"), Mapping) else None
++        pass_candidate = context.get("pass_candidate") if isinstance(context.get("pass_candidate"), Mapping) else {"kind": "pass"}
++        if info_level == "low":
++            return {
++                "primary_action": str(pass_candidate.get("kind") or "pass"),
++                "selected_target_id": None,
++                "heal_candidate": heal_candidate,
++                "poison_candidate": poison_candidate,
++                "confidence_level": "low",
++                "pass_reason": "low_info_default_pass",
++            }
++        if heal_candidate and str(heal_candidate.get("confidence")) == "high" and heal_candidate.get("target_id"):
++            return {
++                "primary_action": str(heal_candidate.get("kind") or "heal"),
++                "selected_target_id": str(heal_candidate.get("target_id")),
++                "heal_candidate": heal_candidate,
++                "poison_candidate": poison_candidate,
++                "confidence_level": "high",
++                "pass_reason": "",
++            }
++        if poison_candidate and str(poison_candidate.get("confidence")) == "high" and poison_candidate.get("target_id"):
++            return {
++                "primary_action": str(poison_candidate.get("kind") or "poison"),
++                "selected_target_id": str(poison_candidate.get("target_id")),
++                "heal_candidate": heal_candidate,
++                "poison_candidate": poison_candidate,
++                "confidence_level": "high",
++                "pass_reason": "",
++            }
++        return {
++            "primary_action": str(pass_candidate.get("kind") or "pass"),
++            "selected_target_id": None,
++            "heal_candidate": heal_candidate,
++            "poison_candidate": poison_candidate,
++            "confidence_level": "medium",
++            "pass_reason": "insufficient_public_convergence",
+         }
+-        return summary
++
++    def _apply_witch_safety_fallback(self, turn_packet: Mapping[str, Any], action: dict[str, Any], summary: Mapping[str, Any]) -> dict[str, Any]:
++        request = turn_packet.get("request") or {}
++        allowed_actions = [item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)]
++        if not allowed_actions:
++            return action
++        action_kind = str(action.get("kind") or "")
++        pass_kind = next((str(item.get("kind")) for item in allowed_actions if "pass" in str(item.get("kind") or "") or str(item.get("kind") or "") == "wait"), None)
++        if action_kind not in {str(item.get("kind") or "") for item in allowed_actions}:
++            return action
++        if "witch" not in str(turn_packet.get("game", {}).get("public_phase", turn_packet.get("game", {}).get("phase", ""))) and "witch" not in str(request.get("kind") or ""):
++            return action
++        info_level = str(summary.get("information_level") or "low")
++        heal_candidate = summary.get("heal_candidate") if isinstance(summary.get("heal_candidate"), Mapping) else None
++        poison_candidate = summary.get("poison_candidate") if isinstance(summary.get("poison_candidate"), Mapping) else None
++        pass_candidate = summary.get("pass_candidate") if isinstance(summary.get("pass_candidate"), Mapping) else None
++        if action_kind and "heal" in action_kind:
++            if info_level == "low" or not heal_candidate or str(heal_candidate.get("confidence")) != "high":
++                if pass_kind:
++                    return {"request_id": action["request_id"], "player_id": action["player_id"], "kind": pass_kind}
++                return action
++            if not action.get("target_id") and heal_candidate.get("target_id"):
++                action["target_id"] = str(heal_candidate.get("target_id"))
++            if heal_candidate.get("target_id") and action.get("target_id") and str(action.get("target_id")) != str(heal_candidate.get("target_id")):
++                if pass_kind:
++                    return {"request_id": action["request_id"], "player_id": action["player_id"], "kind": pass_kind}
++                action["target_id"] = str(heal_candidate.get("target_id"))
++            return action
++        if action_kind and "poison" in action_kind:
++            if info_level == "low" or not poison_candidate or str(poison_candidate.get("confidence")) != "high":
++                if pass_kind:
++                    return {"request_id": action["request_id"], "player_id": action["player_id"], "kind": pass_kind}
++                return action
++            if not action.get("target_id") and poison_candidate.get("target_id"):
++                action["target_id"] = str(poison_candidate.get("target_id"))
++            if poison_candidate.get("target_id") and action.get("target_id") and str(action.get("target_id")) != str(poison_candidate.get("target_id")):
++                if pass_kind:
++                    return {"request_id": action["request_id"], "player_id": action["player_id"], "kind": pass_kind}
++                action["target_id"] = str(poison_candidate.get("target_id"))
++            return action
++        if pass_candidate and pass_kind and action_kind == str(pass_candidate.get("kind") or ""):
++            return action
++        return action
++
++    def _resource_ready(self, resource_state: Mapping[str, Any], resource_name: str) -> bool:
++        if resource_name == "heal":
++            return bool(resource_state.get("heal_ready") or resource_state.get("can_heal") or resource_state.get("heal_available") or resource_state.get("antidote_available"))
++        if resource_name == "poison":
++            return bool(resource_state.get("poison_ready") or resource_state.get("can_poison") or resource_state.get("poison_available") or resource_state.get("poisoner_available"))
++        return False
++
++    def _extract_first_target_from_sources(self, *sources: Any) -> str | None:
++        for source in sources:
++            if isinstance(source, Mapping):
++                for key in ("wolf_target", "kill_target", "night_target", "attacked_target", "attack_target", "saved_target", "heal_target", "poison_target", "target_id", "player_id", "id"):
++                    value = source.get(key)
++                    if value:
++                        return str(value)
++            elif isinstance(source, list):
++                for item in source:
++                    target = self._extract_target_id(item)
++                    if target:
++                        return target
++        return None
++
++    def _has_strong_signal(self, targets: list[dict[str, Any]], target_id: str) -> bool:
++        for item in targets:
++            if str(item.get("target_id")) == str(target_id) and int(item.get("score", 0)) >= 4:
++                return True
++        return False
++
++    def _targets_from_items(self, items: list[Any]) -> list[str]:
++        targets: list[str] = []
++        for item in items:
++            target = self._extract_target_id(item)
++            if target:
++                targets.append(target)
++            else:
++                targets.extend(self._extract_target_ids_from_text(self._stringify_item(item)))
++        return targets
++
++    def _extract_target_id(self, value: Any) -> str | None:
++        if isinstance(value, Mapping):
++            for key in ("target_id", "vote_target_id", "player_id", "id", "speaker_id", "voter_id"):
++                target = value.get(key)
++                if target:
++                    return str(target)
++            text = self._stringify_item(value)
++            return self._extract_target_ids_from_text(text)[0] if self._extract_target_ids_from_text(text) else None
++        if isinstance(value, str):
++            matches = self._extract_target_ids_from_text(value)
++            return matches[0] if matches else None
++        return None
++
++    def _extract_target_ids_from_text(self, text: str) -> list[str]:
++        if not text:
++            return []
++        matches = re.findall(r"\bp\d+\b", text, flags=re.IGNORECASE)
++        return [match.lower() for match in matches]
++
++    def _stringify_item(self, value: Any) -> str:
++        if isinstance(value, str):
++            return value
++        if isinstance(value, Mapping):
++            try:
++                return json.dumps(value, ensure_ascii=False, sort_keys=True)
++            except TypeError:
++                return str(value)
++        if isinstance(value, list):
++            return json.dumps([self._compact_value(item) for item in value[:4]], ensure_ascii=False)
++        return str(value)
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+         if self.request_coordinator is not None:
+--- witch-n00001/task.md
++++ witch-n00024/task.md
+@@ -1,20 +1,15 @@
+ # 女巫任务规约
+ 
+-你的任务是帮助好人获胜，并且严格保密不应公开的药水和夜间信息。
++你的目标是帮助好人获胜，但必须严格保密夜间信息。
+ 
+-## 行动优先级
+-1. 先确认当夜狼刀、自己药水余量、以及当前阶段允许的行动。
+-2. 救药只用于高价值目标，或确实能明显改变当前轮次的局面时。
+-3. 毒药只打高置信狼人、悍跳核心，或已经形成稳定负面链条的目标。
+-4. 证据不足、信息冲突或收益不明显时，默认保留资源，优先选择合法的放弃行动。
+-5. 不要固定套用首夜或模板化用药；每次决策都要结合前几天的票型、死亡信息和公开对跳。
++## 决策树
++1. 先看当前是否允许女巫行动，再看自己剩余药水。
++2. 如果是首夜、信息很少、或公开证据没有收敛，默认 `pass` / 放弃。
++3. 救药只在“明确被刀且救下能改变局势”时使用；没有明确救人目标就不要救。
++4. 毒药只打高置信目标：至少要有公开票型、对跳、发言指向中的两类证据收敛；证据不足就 `pass`。
++5. 不要把稀缺资源浪费在低收益、低置信、模板化场景。
+ 
+-## 发言保密要求
+-- 白天发言只能基于公开事实。
+-- 不得把药水余量、夜刀目标、自己未公开的用药结果，或未公开身份链说成既成事实。
+-- 可以自然表达怀疑和推理，但不能泄露只属于你的夜间信息。
+-
+-## 决策风格
+-- 保持像正常玩家或自然的神职玩家。
+-- 先看公开票型与死亡，再决定救、毒或 pass。
+-- 宁可保留关键资源，也不要因为短期直觉过早消耗唯一药水。
++## 发言保密
++- 白天只说公开事实和公开推理。
++- 不要泄露药水余量、夜刀目标、自己是否救过/毒过、或任何未公开身份链。
++- 可以怀疑、可以分析，但不能把私密夜间信息说成既定事实。

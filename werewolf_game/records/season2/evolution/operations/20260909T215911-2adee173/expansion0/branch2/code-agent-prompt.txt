@@ -1,0 +1,99 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00030 相比父节点胜率从 0.3 提升到 0.4，但仍有两个主要问题：一是代码层把策略提示升级成硬校验，少量误判会直接导致 RuleViolation/fallback；二是每次决策新会话且只读当前轮对话，平民在中后期频繁混淆死亡方式、警徽传递、查验链归属，甚至把自己/金水位置说成“持续报验”。下一代应做最小改动：保留 n00030 的查杀/归票跟随倾向，但修正公共声明解析和质量校验的失败模式，并加入一个仅含公开事实的轻量台账摘要，帮助模型在发言与投票前核对历史公开事实。",
+  "evidence": [
+    {
+      "source": "evaluation_summary",
+      "detail": "villager-n00030：20 局，胜 8 负 12，胜率 0.4；focus role 决策 762 次，fallback 3 次，invalid_decision 3 次；recommended_status=retained。"
+    },
+    {
+      "source": "evaluation_summary game0",
+      "detail": "3 个 focus villager 因同一质量校验失败进入 participant_error/fallback：校验提示“公开查杀/警长归票目标为 p11；无硬反证时应投 p11”，但模型最终 attempted_action 为 day_vote p1。说明当前 villager_quality_error 会把策略分歧变成非法行动。"
+    },
+    {
+      "source": "current_agent",
+      "detail": "villager_quality_error 在 clear_target 存在且未 contested 时，若模型不投 clear_target 就返回错误；重试耗尽后 decide 抛 RuleViolationError，而不是提交可用行动或做安全纠偏。"
+    },
+    {
+      "source": "current_agent",
+      "detail": "_extract_public_claim_hint 把 wolf_check、wolf_kill、gold 都加入 claim_targets，并在 claim_targets 数量大于 1 时设置 contested。这会把“首验金水 + 当日查杀”误视为多目标冲突，或者在复杂发言中错误地生成 clear_target。"
+    },
+    {
+      "source": "random_game_replay game15",
+      "detail": "第 3 天 p3 是 villager 且因 p5 死亡后警徽转移获得警长，但发言 seq258/seq265 出现“p3 一直报验”“警徽是我竞选时拿的，不是从 p5 手里传下来的，p5 是夜里走的，不存在交接问题”等与公开事件 seq246-250 矛盾的说法。"
+    },
+    {
+      "source": "random_game_replay game15",
+      "detail": "p12 在 seq263 称“夜里刀的是 p6”“p5 是白天放逐走的”，但公开事实是第 3 夜 p5 死于狼刀，随后警徽转给 p3；p6 当时存活且没有公开夜死/被救事实。"
+    },
+    {
+      "source": "random_game_replay game15",
+      "detail": "同一局虽最终好人胜利，但中后期平民发言多次把玩家声明、系统事实和推测混淆，说明当前 prompt 的核对要求不足以抵消无跨行动记忆。"
+    },
+    {
+      "source": "evolution_path",
+      "detail": "n00012 只加入平民清单；n00030 在其上加入公开提示解析和硬质量校验。新增机制带来查杀跟随能力，但也引入误判导致的 invalid/fallback 风险。"
+    },
+    {
+      "source": "other_branch villager-n00029 / villager-n00046",
+      "detail": "其他保留分支尝试维护公开台账/工作记忆，方向上针对 n00030 的历史遗忘问题；但这些分支补丁很大，下一代不宜直接照搬，应做小型、只读公开事实摘要。"
+    }
+  ],
+  "root_causes": [
+    "当前 Agent 每次行动都是新模型会话，observe 明确不保存跨行动状态；只靠 public_state 和当前轮 dialogue，模型很难稳定记住上一天查验、警徽传递、日放逐/夜死亡和票型。",
+    "n00030 的 public_hint 只从当前轮 dialogue 粗正则抽取查杀/金水/归票，没有结构化区分“金水目标”“查杀目标”“归票目标”“对跳者”，导致 contested/clear_target 判定语义不可靠。",
+    "质量校验把“应该跟唯一查杀/归票”作为硬非法行动处理，误判或模型坚持其他目标时会触发 RuleViolationError；这降低了完成率，也把策略约束变成了稳定性风险。",
+    "发言提示虽然要求核对存活/已死/警长，但没有给模型一个短的、可直接引用的公开事实表；所以模型在中后期会编造死亡方式、警徽来源、夜间刀口/救人目标，或者把继承的查验链说成自己的查验。",
+    "任务文本允许策略性伪装神职，但没有足够强调平民持警徽/接警徽时不能把继承链说成自己真实验人，容易诱发 villager 用预言家口吻发言。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个轻量 PublicLedger：在 __init__ 初始化；在 observe(sync_packet) 中只 ingest 公开同步包里的公开状态/事件摘要；在 decide(turn_packet) 开始时再 ingest 当前 public_state。Ledger 只保存 bounded 数据：alive_ids、dead_ids、revealed_roles、current_sheriff_id、sheriff_alive、badge_transfers、death_log、day_eliminations、night_deaths、last_vote_counts、public_claims 最近若干条。不要保存私有信息，不读取额外文件，不扩大工具能力。",
+      "rationale": "解决新会话导致的历史遗忘，同时遵守“不要完整历史自动注入”的限制；只注入短公开事实摘要，用于事实核对而不是隐藏推理。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _turn_instruction 中加入一个长度受限的【公开事实台账】字符串，放在 public_hint/checklist 之前。建议内容控制在约 1200-1800 字符以内，包括：当前存活、已死、公开死亡方式、警长/警徽传递、最近两轮放逐结果、最近公开查验/金水/查杀/归票声明。若无对应信息则省略。",
+      "rationale": "让模型在发言和投票前直接看到高权重公开事实，减少“p2 夜死”“p5 白天放逐”“p3 自己报验”等事实错误。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _extract_public_claim_hint 的数据结构：分别返回 wolf_check_targets、rally_targets、gold_targets、seer_claimers、strong_role_claimers、claim_snippets；clear_target 只可来自明确查杀/归票目标，不得由金水目标参与；contested 只在存在硬对跳、同一可信链冲突、多个不同查杀/归票目标且无法判断唯一链时为 True。",
+      "rationale": "避免把“金水 + 查杀”误判为冲突，也避免用模糊话术生成错误 clear_target。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "调整 villager_quality_error/decide 的失败模式：质量错误第一次和第二次仍作为 feedback 重试；若最后一次仍违反“唯一 clear_target”但 clear_target 来自 robust parser 且在合法 day_vote_targets 中，则直接返回规范化 day_vote clear_target；若不是高置信 clear_target，则不要抛 RuleViolationError，仅允许模型的 schema 合法行动通过。pass 仍可给 feedback，但最终不要因为 pass 质量问题抛 participant_error。",
+      "rationale": "把策略约束从导致 fallback 的硬失败改成安全纠偏或软约束，降低 invalid_decision_count，同时保留唯一查杀/归票时的跟票收益。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 checklist 增加中后期事实核对短句：‘如果你是平民但持有警徽，只能说继承/采信某人的公开查验链，不能说自己昨晚验了谁；死亡方式只按公开事件说，日放逐叫出局，夜晚死亡叫夜死；平安夜不能推出具体刀口或救人对象。’",
+      "rationale": "针对回放中 p3/p12 的典型事实错误做低成本 prompt 修正。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充平民持警徽与事实边界规则：接到警徽/被金水不等于获得验人能力；可以转述已公开预言家链，但必须标记为‘玩家声明/遗产’，不能说成自己系统查验；不得凭平安夜编造具体刀口、守卫或女巫操作。",
+      "rationale": "从角色任务层强化约束，减少模型因‘带队’而冒充真实预言家或虚构夜间信息。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 ledger 和 claim parser 增加小型纯函数辅助：coerce_player_id、extract_players_alive_dead、extract_sheriff、extract_public_event_notes、append_bounded、render_public_ledger_summary。实现时保持保守：无法确认的字段写成‘玩家声明/不确定’，不要把审计字段或 private 字段注入 prompt。",
+      "rationale": "便于 coding agent 以最小侵入方式实现，不改变引擎、schema、工具或模型网关。"
+    }
+  ],
+  "risks": [
+    "轻量台账如果递归解析过宽，可能把非公开或审计字段误当公开事实；实现必须只处理 observe/turn_packet 中已传入的公开可见内容，并避免使用 audit/private 字段。",
+    "自动改票到 clear_target 会放大 parser 误判的影响；因此必须先提高 clear_target 置信度，只允许明确查杀/归票且目标在合法 day_vote_targets 中时纠偏。",
+    "加入 ledger 摘要会增加 prompt 长度；需要严格截断，优先保留存活/死亡/警长/最近票型/最近查杀，避免超过 12000 字符预算。",
+    "过度保护公开链可能让狼人悍跳预言家时更容易带队；所以 prompt 仍需保留硬对跳、事实矛盾、票型反证、被公开查杀时可推翻的条件。",
+    "其他分支的大型工作记忆补丁虽然有参考价值，但直接移植会增加复杂度和解析 bug；建议本轮只做 bounded public ledger 与校验失败模式修正。"
+  ],
+  "code_agent_brief": "请在候选 villager Task-Agent 上做最小可执行修改，目标是降低事实混淆和质量校验导致的 fallback。只能改 task_agent.py 和 task.md，不改引擎/规则/schema/工具/预算。具体要求：1) 在 task_agent.py 增加轻量公开事实台账 PublicLedger，__init__ 初始化，observe(sync_packet) ingest 公开同步，decide(turn_packet) ingest 当前 public_state；只保存公开可见的 alive_ids、dead_ids、revealed_roles、sheriff、badge transfer、day elimination/night death、recent vote counts、recent public claims，所有列表 bounded。2) 在 _turn_instruction 注入一个短的【公开事实台账】摘要，控制 1200-1800 字符左右，优先显示存活/已死、死亡方式、警长/警徽传递、最近放逐票型、明确查杀/金水/归票声明。3) 重构 _extract_public_claim_hint：金水、查杀、归票、预言家/神职自称分开记录；clear_target 只来自明确查杀或归票，不把金水算入 claim_targets；contested 只在硬对跳或多个不同查杀/归票链时设置。4) 修改 villager_quality_error/decide：schema 非法仍抛错；策略质量错误先反馈重试，但最后一次若有高置信 clear_target 且目标合法，直接返回 day_vote clear_target；否则不要因策略质量错误抛 RuleViolationError，避免 participant_error/fallback。5) 在 checklist 和 task.md 增加规则：平民即使持警徽也不能声称自己有真实查验，只能转述/继承公开查验链；日放逐和夜死亡必须按公开事件区分；平安夜不能推出具体刀口、救人或守人对象。保持工具预算和 prompt 长度限制，不新增网络、文件、shell 或隐藏状态访问。"
+}

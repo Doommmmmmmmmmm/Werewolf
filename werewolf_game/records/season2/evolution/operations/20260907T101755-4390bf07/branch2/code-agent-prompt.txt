@@ -1,0 +1,100 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00028 通过了宽松筛选，但实战只拿到 7/20 胜，核心问题不是行动 schema，而是决策层在终局与跨轮整合上不够强：它能发言、能投票、几乎不再出非法行动，但不能稳定把公开查验链、警徽链、死亡顺序和票型整合成可复用的结构化判断，最后在残局被口水战和局部印象带偏。",
+  "evidence": [
+    {
+      "fact": "评测汇总：20 局完整评测，胜 7 负 13，胜率 0.35；fallback 1 次，invalid 1 次，错误率很低。",
+      "implication": "这说明主要瓶颈不是协议错误，而是胜率导向的策略质量不足。"
+    },
+    {
+      "fact": "随机回放 game13 中，p11 的预言家链其实非常明确：首日查 p6 为狼，p7 守 p11，p12 接徽后死亡，公开信息足够形成可信链。",
+      "implication": "当前 agent 没有把这条公开链长期压到高权重，终局仍然被局部发言和跟票节奏冲散。"
+    },
+    {
+      "fact": "game13 第 6 天游票最终把 p2 出掉，场上剩 p4/p8/p10；而狼实际是 p8、p10、p1、p6。",
+      "implication": "残局排序失真：没有把存活者中的真正狼核持续前置。"
+    },
+    {
+      "fact": "当前 current_agent 只做一次性 prompt 组装，没有跨回合工作记忆、票据表、嫌疑排序或显式 late-mode。",
+      "implication": "它每轮都要重新理解局面，容易丢失死亡顺序、警徽转移和历史票型。"
+    },
+    {
+      "fact": "task.md 已经要求‘分系统事实/玩家声明/自己的推测’、‘投票前至少比较两个候选’、‘残局点名两个嫌疑人’，但这些只是文本约束，没有被代码硬化成结构化输入或固定决策框架。",
+      "implication": "规则有了，但执行不稳定，尤其在信息变复杂时容易退化。"
+    },
+    {
+      "fact": "其他分支 n00046 / n00054 已经朝 working_memory、verified_facts、suspect_list、late_mode 方向演进。",
+      "implication": "正确改法更像结构化记忆与候选排序，而不是继续堆长段自然语言提示。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "缺少结构化局内记忆，导致对死亡顺序、票型、警徽链和自报的跨轮整合不稳定。",
+      "evidence": [
+        "current_agent 是无持久状态的决策器",
+        "game13 的公开链足够强，但终局仍被带偏"
+      ]
+    },
+    {
+      "cause": "终局没有显式候选比较框架，模型容易用主观印象代替‘存活名单 + 票型 + 公开查验链’的对照。",
+      "evidence": [
+        "round 6 的讨论集中在 p2/p4/p8/p10 的口水与表态",
+        "真正应前置的狼核没有稳定保住"
+      ]
+    },
+    {
+      "cause": "公开信息提取偏通用摘要，缺少 verified facts / claim ledger / vote ledger 这种可复用的硬分层。",
+      "evidence": [
+        "task.md 的分栏原则没有被代码结构化实现"
+      ]
+    },
+    {
+      "cause": "提示词约束存在，但没有把‘保护可信公开链’转成更强的 prompt 组织和晚期决策模式。",
+      "evidence": [
+        "p11 的持续报验链在回放里可用，但 agent 没有持续强化其权重"
+      ]
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "增加轻量局内工作记忆：每次 observe / decide 时从 public_state 和当前轮对话中提取并缓存 alive、dead、sheriff、public claims、vote ledger、recent deaths；在决策 prompt 里注入 compact 的 verified_facts、suspect_list、late_mode 三块。",
+      "rationale": "让模型每轮都拿到稳定、压缩、可比较的事实视图，减少重新推理成本和信息丢失。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "加入显式的终局排序逻辑：当存活人数 <= 6 时，按公开查验链、警徽转移、死亡顺序、投票轨迹和事实矛盾生成 top-2 嫌疑列表，并要求模型在发言/投票前先比较这两个对象。",
+      "rationale": "修正当前最弱的残局阶段，避免只凭话术和局部观感下票。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把旧警徽/已死持证者自动降权：如果 sheriff 已死亡、失徽或链条中断，则在 prompt 中明确标记为‘旧权威，不自动继承高权重’。",
+      "rationale": "防止把断链的旧权威继续当成默认可信来源。"
+    },
+    {
+      "file": "task.md",
+      "change": "重写 villager 最小任务为更短的决策协议：每次发言至少包含一个关注对象和一个暂不投对象；每次投票前必须比较至少两个候选；残局必须先点名两个嫌疑人并排序。",
+      "rationale": "把策略要求写成更硬、更短、更容易被模型稳定遵守的任务文本。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "结构化记忆过多会增加 prompt 长度和 token 成本。",
+      "mitigation": "只保留最近几轮的 compact facts 和 top-5 候选，不保存全文。"
+    },
+    {
+      "risk": "过强的启发式排序可能误判少见局面，尤其是真预言家悍跳或反逻辑真神局。",
+      "mitigation": "保留硬推翻条件：硬对跳、明显矛盾、查杀命中、事实错误。"
+    },
+    {
+      "risk": "把 task.md 写得太刚会让发言变机械，降低真实玩家感。",
+      "mitigation": "只硬化决策顺序和比较步骤，不限制口语表达风格。"
+    }
+  ],
+  "code_agent_brief": "请为 villager-n00028 做下一代 Task-Agent 升级，但只改 task_agent.py 和 task.md，不改引擎、规则、schema 或裁决。重点实现一层轻量局内记忆和终局排序：从当前 public_state、当前轮对话、投票、死亡、警徽转移、公开自报/查验里提取结构化事实，维护 compact 的 verified_facts、vote ledger、claim ledger、recent deaths、sheriff chain 和 top suspect list；当存活人数 <= 6 时，强制在 prompt 中要求先比较两个嫌疑人并排序，再做发言/投票。同步把 task.md 收紧为短协议，明确‘分栏事实、比较两个候选、残局点名两个嫌疑人、旧链断了就降权’，目标是提升 villager 在终局的事实整合能力，而不是继续加长通用策略文案。"
+}

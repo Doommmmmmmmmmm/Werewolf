@@ -1,0 +1,534 @@
+--- villager-n00011/task_agent.py
++++ villager-n00047/task_agent.py
+@@ -192,7 +192,12 @@
+             "recent_public_events": [],
+             "claim_log": [],
+             "vote_log": [],
++            "player_notes": {},
++            "seer_claims": [],
++            "accusations_against_self": [],
++            "round_stances": [],
+             "suspicion_scores": {},
++            "_seen_dialogue_keys": set(),
+         }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+@@ -209,6 +214,12 @@
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
++        game_info = turn_packet.get("game") or {}
++        self._update_memory_from_dialogue(
++            current_dialogue,
++            game_info.get("round"),
++            game_info.get("public_phase", game_info.get("phase")),
++        )
+         decision_aid = self._build_decision_aid(turn_packet, current_dialogue)
+         system = self._system_prompt(private)
+         prompt = {
+@@ -343,9 +354,10 @@
+             base
+             + "\n\n【平民决策清单】\n"
+             + "1. 先写系统事实，再写玩家声明，再写自己的推测；不要把推测写成事实。\n"
+-            + "2. 发言必须点名当前局面里的具体人、具体票型或具体话术，避免空泛重复。\n"
+-            + "3. 投票或其他目标类行动前，至少比较两个候选，再说明为什么选当前目标。\n"
+-            + "4. 如果信息不足，给出当前怀疑顺序和下一步观察点，不要只说‘没信息’或‘先听’。\n"
++            + "2. 若有人公开给你发查杀或说你是狼，默认将其列为高风险对跳；不要把票或警徽直接给他，除非你能说明更强的公开矛盾。\n"
++            + "3. 投票、归票或其他目标类行动时，只在当前合法的活人候选中比较至少两个对象。\n"
++            + "4. 对跳预言家时先对比双方验人链和票型；后期先核算存活人数、死亡链与警徽流向，再决定票。\n"
++            + "5. 发言必须点名至少两个候选和一条证据，避免空泛重复或只说‘先听’。\n"
+             + f"【本次可见工作记忆】{memory_text}\n"
+             + f"【本次允许行动】{action_hint}"
+         )
+@@ -354,14 +366,22 @@
+         self, turn_packet: Mapping[str, Any], current_dialogue: list[Any]
+     ) -> dict[str, Any]:
+         public_summary = self._summarize_public_packet(turn_packet.get("public_state"))
+-        dialogue_summary = self._summarize_dialogue(current_dialogue)
++        request = turn_packet.get("request") or {}
++        allowed_actions = [
++            item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)
++        ]
+         return {
+             "public_facts": public_summary,
+             "working_memory": self._working_memory_snapshot(),
+-            "current_dialogue": dialogue_summary,
++            "current_dialogue": self._summarize_dialogue(current_dialogue),
++            "candidate_frame": self._build_candidate_frame(allowed_actions, public_summary),
++            "top_conflicts": self._build_top_conflicts(public_summary),
++            "consistency_warnings": self._build_consistency_warnings(
++                public_summary, allowed_actions
++            ),
+             "comparison_frame": [
+                 "先确认事实，再分辨声明与推测",
+-                "比较至少两个候选",
++                "比较至少两个活人候选",
+                 "优先使用票型、死亡和公开身份冲突",
+             ],
+         }
+@@ -369,10 +389,24 @@
+     def _working_memory_snapshot(self) -> dict[str, Any]:
+         scores: dict[str, int] = self._working_memory.get("suspicion_scores", {})
+         ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
++        player_notes = self._working_memory.get("player_notes", {})
++        player_notes_snapshot: dict[str, list[str]] = {}
++        if isinstance(player_notes, Mapping):
++            for player, notes in list(player_notes.items())[-8:]:
++                if isinstance(notes, list) and notes:
++                    player_notes_snapshot[str(player)] = [
++                        self._compact_text(note, 60) for note in notes[-2:] if self._compact_text(note, 60)
++                    ]
+         return {
+-            "recent_public_events": list(self._working_memory.get("recent_public_events", []))[-4:],
+-            "claim_log": list(self._working_memory.get("claim_log", []))[-4:],
+-            "vote_log": list(self._working_memory.get("vote_log", []))[-4:],
++            "recent_public_events": list(self._working_memory.get("recent_public_events", []))[-6:],
++            "claim_log": list(self._working_memory.get("claim_log", []))[-6:],
++            "vote_log": list(self._working_memory.get("vote_log", []))[-8:],
++            "player_notes": player_notes_snapshot,
++            "seer_claims": list(self._working_memory.get("seer_claims", []))[-8:],
++            "accusations_against_self": list(
++                self._working_memory.get("accusations_against_self", [])
++            )[-6:],
++            "round_stances": list(self._working_memory.get("round_stances", []))[-8:],
+             "suspicion_order": [name for name, _score in ranked[:4]],
+         }
+ 
+@@ -384,27 +418,267 @@
+         if event_line:
+             recent = self._working_memory.setdefault("recent_public_events", [])
+             recent.append(event_line)
+-            del recent[:-4]
+-        self._merge_events("claim_log", summary.get("claims", []), limit=4)
+-        self._merge_events("vote_log", summary.get("votes", []), limit=4)
++            del recent[:-6]
++        self._merge_events("claim_log", summary.get("claims", []), limit=6)
++        self._merge_events("vote_log", summary.get("votes", []), limit=8)
++        if summary.get("sheriff_id"):
++            self._merge_events("round_stances", [f"警长:{summary['sheriff_id']}"], limit=8)
+         self._update_suspicion_scores(summary)
+ 
+     def _update_suspicion_scores(self, summary: Mapping[str, Any]) -> None:
+         scores: dict[str, int] = self._working_memory.setdefault("suspicion_scores", {})
++        dead_players = {str(player).lower() for player in summary.get("dead_players", [])}
+         for claim in summary.get("claims", []):
+             player, claim_text = self._split_claim(claim)
+             if not player:
+                 continue
+-            delta = 2 if self._contains_role_like_word(claim_text) else 1
+-            scores[player] = scores.get(player, 0) + delta
++            claim_lower = claim_text.lower()
++            if self.player_id.lower() in claim_lower and (
++                "查杀" in claim_text or "狼人" in claim_text or "狼" in claim_text
++            ):
++                scores[player] = scores.get(player, 0) + 4
++            elif any(dead in claim_lower for dead in dead_players) and (
++                "查杀" in claim_text or "验" in claim_text
++            ):
++                scores[player] = scores.get(player, 0) + 1
+         for vote in summary.get("votes", []):
+-            target = vote.split("->", 1)[-1].strip()
+-            if target:
+-                scores[target] = scores.get(target, 0) + 1
++            voter, target = self._split_vote(vote)
++            if voter and target and target.lower() in dead_players:
++                scores[voter] = scores.get(voter, 0) + 2
+         for sheriff in summary.get("sheriff", []):
+             holder = self._extract_head(sheriff)
+             if holder:
+                 scores.setdefault(holder, 0)
++
++    def _update_memory_from_dialogue(
++        self, dialogue: object, round_value: object, stage_value: object
++    ) -> None:
++        if not isinstance(dialogue, list):
++            return
++        seen = self._working_memory.setdefault("_seen_dialogue_keys", set())
++        player_notes = self._working_memory.setdefault("player_notes", {})
++        seer_claims = self._working_memory.setdefault("seer_claims", [])
++        accusations = self._working_memory.setdefault("accusations_against_self", [])
++        round_stances = self._working_memory.setdefault("round_stances", [])
++        vote_log = self._working_memory.setdefault("vote_log", [])
++        recent_events = self._working_memory.setdefault("recent_public_events", [])
++        scores: dict[str, int] = self._working_memory.setdefault("suspicion_scores", {})
++        round_tag = self._compact_text(round_value, 12) if round_value is not None else "?"
++        stage_tag = self._compact_text(stage_value, 16) if stage_value is not None else "?"
++        for item in dialogue:
++            speaker = ""
++            text = ""
++            if isinstance(item, Mapping):
++                speaker = self._first_key_text(
++                    item, ("player_id", "player", "speaker_id", "speaker", "name", "id")
++                )
++                text = self._first_key_text(item, ("text", "content", "message", "say"))
++                if not text:
++                    text = self._compact_text(item, 60)
++            else:
++                text = self._compact_text(item, 60)
++            if not speaker or not text:
++                continue
++            cache_key = f"{round_tag}|{stage_tag}|{speaker}|{text}"
++            if cache_key in seen:
++                continue
++            seen.add(cache_key)
++            notes: list[str] = []
++            role_claim = self._extract_role_claim(text)
++            if role_claim:
++                notes.append(f"自称{role_claim}")
++            seer_notes = self._extract_seer_notes(text)
++            notes.extend(seer_notes)
++            vote_note = self._extract_vote_note(text)
++            if vote_note:
++                notes.append(vote_note)
++            self_note = self._extract_self_accusation(text)
++            if self_note:
++                notes.append(self_note)
++                scores[speaker] = scores.get(speaker, 0) + 3
++            if notes:
++                compact_notes = self._dedupe_texts(notes)[:4]
++                combined = "；".join(compact_notes)
++                self._append_player_note(player_notes, speaker, combined, limit=2)
++                self._merge_events("round_stances", [f"{speaker}:{combined}"], limit=12)
++                self._merge_events("recent_public_events", [f"R{round_tag}/{stage_tag}:{speaker}:{combined}"], limit=6)
++                if role_claim or seer_notes:
++                    self._merge_events("seer_claims", [f"{speaker}:{combined}"], limit=8)
++            if vote_note:
++                self._merge_events("vote_log", [f"{speaker}->{vote_note}"], limit=8)
++            if self_note:
++                self._merge_events("accusations_against_self", [f"{speaker}:{self_note}"], limit=8)
++
++    def _append_player_note(
++        self, notes_map: dict[str, Any], player: str, note: str, *, limit: int
++    ) -> None:
++        if not player or not note:
++            return
++        bucket = notes_map.setdefault(player, [])
++        if not isinstance(bucket, list):
++            bucket = []
++            notes_map[player] = bucket
++        compact = self._compact_text(note, 80)
++        if compact and compact not in bucket:
++            bucket.append(compact)
++        del bucket[:-limit]
++
++    def _extract_role_claim(self, text: str) -> str:
++        lowered = text.lower()
++        role_words = ("预言家", "女巫", "猎人", "守卫", "平民")
++        claim_markers = ("我是", "自称", "我跳", "跳", "claim", "claiming")
++        for role in role_words:
++            if role in text and (
++                any(marker in text for marker in claim_markers) or (role == "预言家" and "验" in text)
++            ):
++                return role
++            if role == "平民" and ("民" in text and any(marker in text for marker in claim_markers)):
++                return role
++        if "狼人" in text and any(marker in lowered for marker in ("claim", "跳", "我是", "自称")):
++            return "狼人"
++        return ""
++
++    def _extract_seer_notes(self, text: str) -> list[str]:
++        ids = self._extract_player_ids(text)
++        if not ids:
++            return []
++        notes: list[str] = []
++        lowered = text.lower()
++        if any(word in text for word in ("查杀", "狼", "狼人")):
++            for pid in ids:
++                notes.append(f"查杀{pid}" if "查杀" in text else f"狼{pid}")
++        if any(word in text for word in ("金水", "好人")):
++            for pid in ids:
++                notes.append(f"金水{pid}")
++        if "验" in text:
++            for pid in ids:
++                notes.append(f"验{pid}")
++        if any(word in text for word in ("归票", "出", "投")):
++            for pid in ids[:1]:
++                notes.append(f"归票{pid}")
++        if "警徽" in text:
++            notes.append(self._compact_text(text, 50))
++        return self._dedupe_texts(notes)[:4]
++
++    def _extract_vote_note(self, text: str) -> str:
++        ids = self._extract_player_ids(text)
++        if not ids:
++            return ""
++        for keyword in ("归票", "投", "出", "票给"):
++            if keyword in text:
++                return f"{keyword}{ids[0]}"
++        return ""
++
++    def _extract_self_accusation(self, text: str) -> str:
++        if not self._mentions_player(text, self.player_id):
++            return ""
++        if any(word in text for word in ("查杀", "狼人", "狼", "出", "票", "验死")):
++            return self._compact_text(text, 60)
++        return ""
++
++    def _extract_player_ids(self, text: str) -> list[str]:
++        ids = []
++        for token in _PLAYER_TOKEN.findall(text):
++            token = token.lower()
++            if token not in ids:
++                ids.append(token)
++        return ids
++
++    def _mentions_player(self, text: str, player: str) -> bool:
++        if not text or not player:
++            return False
++        return player.lower() in self._extract_player_ids(text)
++
++    def _build_candidate_frame(
++        self, allowed_actions: list[Mapping[str, Any]], public_summary: Mapping[str, Any]
++    ) -> list[dict[str, Any]]:
++        alive_players = [str(item) for item in public_summary.get("alive_players", []) if item]
++        dead_players = {str(item) for item in public_summary.get("dead_players", []) if item}
++        sheriff_id = str(public_summary.get("sheriff_id") or "")
++        allowed_targets: list[str] = []
++        for action in allowed_actions:
++            target_ids = action.get("target_ids")
++            if not isinstance(target_ids, list):
++                continue
++            for target in target_ids:
++                target_text = str(target)
++                if target_text and target_text not in allowed_targets:
++                    allowed_targets.append(target_text)
++        candidates = allowed_targets or alive_players
++        frame: list[dict[str, Any]] = []
++        for candidate in candidates[:8]:
++            notes: list[str] = []
++            if candidate in alive_players:
++                notes.append("存活")
++            if candidate in dead_players:
++                notes.append("已死")
++            if sheriff_id and candidate == sheriff_id:
++                notes.append("警长")
++            notes.extend(self._candidate_memory_notes(candidate))
++            frame.append({"id": candidate, "notes": self._dedupe_texts(notes)[:4]})
++        return frame
++
++    def _candidate_memory_notes(self, candidate: str) -> list[str]:
++        notes: list[str] = []
++        player_notes = self._working_memory.get("player_notes", {})
++        if isinstance(player_notes, Mapping):
++            notes.extend(list(player_notes.get(candidate, []))[-2:])
++        for key in ("seer_claims", "accusations_against_self", "round_stances", "vote_log", "recent_public_events"):
++            for item in list(self._working_memory.get(key, []))[-6:]:
++                text = self._compact_text(item, 80)
++                if text and self._mentions_player(text, candidate):
++                    notes.append(text)
++        return notes
++
++    def _build_top_conflicts(self, public_summary: Mapping[str, Any]) -> dict[str, list[str]]:
++        return {
++            "seer_claims": self._dedupe_texts(
++                list(self._working_memory.get("seer_claims", []))[-6:]
++                + list(public_summary.get("claims", []))[-4:]
++            )[:8],
++            "accusations_against_self": self._dedupe_texts(
++                list(self._working_memory.get("accusations_against_self", []))[-6:]
++            )[:6],
++            "recent_votes": self._dedupe_texts(
++                list(self._working_memory.get("vote_log", []))[-6:]
++                + list(public_summary.get("votes", []))[-4:]
++            )[:8],
++        }
++
++    def _build_consistency_warnings(
++        self, public_summary: Mapping[str, Any], allowed_actions: list[Mapping[str, Any]]
++    ) -> list[str]:
++        warnings: list[str] = []
++        alive_players = [str(item) for item in public_summary.get("alive_players", []) if item]
++        dead_players = [str(item) for item in public_summary.get("dead_players", []) if item]
++        sheriff_id = str(public_summary.get("sheriff_id") or "")
++        alive_count = public_summary.get("alive_count")
++        dead_count = public_summary.get("dead_count")
++        if alive_count is not None or dead_count is not None:
++            warnings.append(
++                f"alive={alive_count if alive_count is not None else '?'} dead={dead_count if dead_count is not None else '?'}"
++            )
++        if dead_players:
++            warnings.append("只在存活玩家里比较候选；已死玩家不能当今日归票对象")
++        if sheriff_id:
++            warnings.append(f"警长:{sheriff_id}")
++        allowed_targets: list[str] = []
++        for action in allowed_actions:
++            target_ids = action.get("target_ids")
++            if isinstance(target_ids, list):
++                for target in target_ids:
++                    target_text = str(target)
++                    if target_text and target_text not in allowed_targets:
++                        allowed_targets.append(target_text)
++        invalid = [target for target in allowed_targets if alive_players and target not in alive_players]
++        if invalid:
++            warnings.append("候选含非存活目标:" + "、".join(invalid[:4]))
++        if any(
++            self._mentions_player(str(item), self.player_id)
++            for item in self._working_memory.get("accusations_against_self", [])
++        ):
++            warnings.append("有人给我发查杀时，优先对跳与解释，不要机械站边")
++        return warnings[:5]
+ 
+     def _merge_events(self, key: str, items: list[str], *, limit: int) -> None:
+         if not items:
+@@ -421,16 +695,31 @@
+         summary: dict[str, Any] = {
+             "round": None,
+             "phase": None,
++            "alive_players": [],
++            "dead_players": [],
++            "alive_count": None,
++            "dead_count": None,
++            "sheriff_id": "",
+             "deaths": [],
+             "sheriff": [],
+             "claims": [],
+             "votes": [],
+         }
+         self._walk_public_packet(packet, summary)
++        summary["alive_players"] = self._dedupe_texts(summary["alive_players"])[:20]
++        summary["dead_players"] = self._dedupe_texts(summary["dead_players"])[:20]
++        summary["alive_count"] = len(summary["alive_players"]) if summary["alive_players"] else None
++        summary["dead_count"] = (
++            len(summary["dead_players"])
++            if summary["dead_players"] or summary["alive_players"]
++            else None
++        )
+         summary["deaths"] = self._dedupe_texts(summary["deaths"])[:4]
+         summary["sheriff"] = self._dedupe_texts(summary["sheriff"])[:2]
+         summary["claims"] = self._dedupe_texts(summary["claims"])[:4]
+         summary["votes"] = self._dedupe_texts(summary["votes"])[:4]
++        if not summary["sheriff_id"] and summary["sheriff"]:
++            summary["sheriff_id"] = self._extract_head(summary["sheriff"][0])
+         return summary
+ 
+     def _walk_public_packet(self, node: object, summary: dict[str, Any]) -> None:
+@@ -447,8 +736,14 @@
+                 if phase_value:
+                     summary["phase"] = phase_value
+ 
++            for key in ("alive_players", "alive", "living", "survivors"):
++                if key in lower:
++                    self._append_event_labels(
++                        summary["alive_players"], node[lower[key]], kind="roster"
++                    )
+             for key in ("death", "dead", "deaths", "eliminated", "elimination", "out"):
+                 if key in lower:
++                    self._append_event_labels(summary["dead_players"], node[lower[key]], kind="roster")
+                     self._append_event_labels(summary["deaths"], node[lower[key]], kind="death")
+             for key in ("sheriff", "police", "badge", "captain", "leader"):
+                 if key in lower:
+@@ -473,6 +768,8 @@
+             labels = self._extract_claim_labels(value)
+         elif kind == "sheriff":
+             labels = self._extract_sheriff_labels(value)
++        elif kind == "roster":
++            labels = self._extract_roster_labels(value)
+         else:
+             labels = self._extract_death_labels(value)
+         for label in labels:
+@@ -511,6 +808,30 @@
+         elif isinstance(value, str):
+             text = self._compact_text(value, 80)
+             if text:
++                labels.append(text)
++        return labels
++
++    def _extract_roster_labels(self, value: object) -> list[str]:
++        labels: list[str] = []
++        if isinstance(value, Mapping):
++            player = self._first_key_text(
++                value, ("player_id", "player", "id", "name", "speaker", "speaker_id", "target_id", "target")
++            )
++            if player:
++                labels.append(player)
++            else:
++                for item in value.values():
++                    labels.extend(self._extract_roster_labels(item))
++        elif isinstance(value, list):
++            for item in value:
++                labels.extend(self._extract_roster_labels(item))
++        elif isinstance(value, str):
++            for token in _PLAYER_TOKEN.findall(value):
++                token = token.lower()
++                if token not in labels:
++                    labels.append(token)
++            text = self._compact_text(value, 24)
++            if text and not labels:
+                 labels.append(text)
+         return labels
+ 
+@@ -575,10 +896,16 @@
+             parts.append(f"R{self._compact_text(round_value, 12)}")
+         if phase_value is not None:
+             parts.append(self._compact_text(phase_value, 16))
++        alive_count = summary.get("alive_count")
++        dead_count = summary.get("dead_count")
++        if alive_count is not None or dead_count is not None:
++            parts.append(
++                f"存活{alive_count if alive_count is not None else '?'}|出局{dead_count if dead_count is not None else '?'}"
++            )
++        if summary.get("sheriff_id"):
++            parts.append(f"警长:{summary['sheriff_id']}")
+         if summary.get("deaths"):
+             parts.append("死亡:" + "、".join(summary["deaths"]))
+-        if summary.get("sheriff"):
+-            parts.append("警长:" + "、".join(summary["sheriff"]))
+         if summary.get("claims"):
+             parts.append("声明:" + "；".join(summary["claims"]))
+         if summary.get("votes"):
+@@ -591,10 +918,12 @@
+         lines: list[str] = []
+         for item in dialogue[-8:]:
+             if isinstance(item, Mapping):
+-                speaker = self._first_key_text(item, ("player_id", "player", "speaker_id", "speaker", "name", "id"))
++                speaker = self._first_key_text(
++                    item, ("player_id", "player", "speaker_id", "speaker", "name", "id")
++                )
+                 text = self._first_key_text(item, ("text", "content", "message", "say"))
+                 if speaker and text:
+-                    lines.append(f"{speaker}:{self._compact_text(text, 40)}")
++                    lines.append(f"{speaker}:{self._compact_text(text, 60)}")
+                 else:
+                     compact = self._compact_text(item, 60)
+                     if compact:
+@@ -603,7 +932,7 @@
+                 compact = self._compact_text(item, 60)
+                 if compact:
+                     lines.append(compact)
+-        return lines[:4]
++        return lines[-8:]
+ 
+     def _first_matching_value(
+         self, node: Mapping[str, Any], lower: Mapping[str, str], keys: tuple[str, ...]
+@@ -635,6 +964,12 @@
+         if ":" not in claim:
+             return claim, ""
+         head, tail = claim.split(":", 1)
++        return head.strip(), tail.strip()
++
++    def _split_vote(self, vote: str) -> tuple[str, str]:
++        if "->" not in vote:
++            return "", vote.strip()
++        head, tail = vote.split("->", 1)
+         return head.strip(), tail.strip()
+ 
+     def _extract_head(self, text: str) -> str:
+--- villager-n00011/task.md
++++ villager-n00047/task.md
+@@ -2,10 +2,13 @@
+ 
+ 你的任务是帮助好人阵营找出狼人并完成放逐，同时像真实玩家一样参与讨论。
+ 
+-- 早期优先收集并记住公开声明、初始票型、警徽归属和关键死亡信息，尽量给每个重要玩家留下简短标签。
++- 早期优先收集并记住公开声明、预言家对跳、验人链、初始票型、警徽归属和关键死亡信息，尽量给每个重要玩家留下简短标签。
++- 警上或对跳阶段，必须记录每个预言家候选的验人链；发言时要明确区分“谁说了什么”和“这条验人链是否成立”。
++- 任何人如果公开给你发查杀、说你是狼或明显针对你，你都必须正面回应，并默认把对方列为高风险对跳对象，而不是机械站边。
++- 每次投票前，至少比较两个活人候选，并点明一条支持证据和一条反对证据；如果是警徽票，更要优先比较“查杀你的人”和其对立面。
++- 后期发言前，先核算当前存活人数、已出局链、警徽流向和上一轮票型，再给出当前可投的活人目标；不要把已死玩家当作今日归票对象。
++- 只能把可见信息当事实；如果工作记忆里已经有身份声明或投票记录，就不要再说“无身份声明”或“无投票记录”。
+ - 中期重点比较冲突身份、前后说法是否一致、谁的票仓与发言不匹配，并持续更新一个小型怀疑对象列表。
+-- 后期根据剩余人数、出局链路、警徽流向和历史票型做核算，不要只看当前一轮的局部发言。
+-- 每轮发言先区分系统事实、玩家声明和自己的推测；如果信息不足，说明当前最可疑的两到三个候选和下一步要观察什么。
+ - 发言要回应当前局面中的具体人和具体理由，尽量引用票型、身份声明或原话关键词，不要反复输出“没信息”“先听”。
+ - 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实。
+ - 投票前必须比较至少两个候选，并把自己的怀疑对象列表更新到本轮决定里；不要只因为一个模糊印象就机械跟票。

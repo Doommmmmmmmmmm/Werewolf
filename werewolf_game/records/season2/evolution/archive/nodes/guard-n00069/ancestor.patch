@@ -1,0 +1,317 @@
+--- guard-n00035/task_agent.py
++++ guard-n00069/task_agent.py
+@@ -209,11 +209,14 @@
+         self.last_protected_id: str | None = None
+         self.last_protected_round: int | None = None
+         self.alive_player_cache: set[str] = set()
+-        self.recent_public_focus_ids: deque[str] = deque(maxlen=8)
++        # 记录近期公开关注点，按轮次衰减，而不是无限累积热度。
++        self.recent_public_focus_ids: deque[tuple[str, int | None]] = deque(maxlen=12)
+         # 守卫风险画像：只来自当前玩家依法可见的公开状态/当前轮对话。
+         # 分数表示“今晚更可能成为狼刀目标的好人候选”，不是身份事实。
+         self.player_risk_profile: dict[str, int] = {}
+         self._last_observed_round: int | None = None
++        self._last_memory_decay_round: int | None = None
++        self._last_public_state: Mapping[str, Any] | None = None
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+         """接收公开同步，并提取最小守卫记忆。"""
+@@ -333,7 +336,8 @@
+         if self.profile.role == "guard":
+             role_task = role_task + (
+                 "\n\n守卫约束：只从当前 target_ids 里选；默认不要重复上一夜目标；"
+-                "核心目标是保护今晚最可能被狼刀的好人。公开热度只作辅助，"
++                "核心目标是保护今晚最可能被狼刀的好人。若规则允许自守，自守也是正常候选，"
++                "在后期或自守压力更高时可以成为首选。公开热度只作辅助，"
+                 "不要把被讨论多、话多等同于高刀口风险；优先考虑跳身份、被查验、"
+                 "归票/压票焦点、被点名威胁或可能的公开神职/核心好人位。"
+             )
+@@ -356,6 +360,7 @@
+         if self.profile.role == "guard":
+             guard_note = (
+                 "守卫执行要点：只选当前 target_ids；尽量不要重复上一夜守护对象；"
++                "若规则允许，自守是合法且可能最优的选择，尤其在后期或自身更像夜刀目标时。"
+                 "优先守今晚最可能被狼刀的好人。区分高风险位和普通公开热度位："
+                 "跳身份/被查验/被归票压迫/被刀口威胁/可能神职或核心好人位优先，"
+                 "单纯话多或被频繁提及只能作为同分参考。"
+@@ -431,59 +436,54 @@
+             return repaired
+         best_id = candidates[0]
+         if chosen_id != best_id:
+-            chosen_risk = self.player_risk_profile.get(str(chosen_id), 0)
+-            best_risk = self.player_risk_profile.get(best_id, 0)
+-            # 只有风险画像有明显差距时才覆盖模型的合法选择；普通热度不强行改写。
+-            if best_risk >= chosen_risk + 8:
++            candidate_scores = self._guard_candidate_scores(allowed, request)
++            chosen_score = candidate_scores.get(str(chosen_id), 0)
++            best_score = candidate_scores.get(best_id, 0)
++            # 只有综合评分有明显差距时才覆盖模型的合法选择；正常自守或其他合法候选保留。
++            if best_score >= chosen_score + 10:
+                 repaired = dict(action)
+                 repaired["target_id"] = best_id
+                 return repaired
+         return action
+ 
+     def _guard_candidate_targets(self, allowed: Mapping[str, Any], request: Mapping[str, Any]) -> list[str]:
++        scores = self._guard_candidate_scores(allowed, request)
++        if not scores:
++            return []
++        ordered = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
++        repeat_forbidden = self._guard_repeat_forbidden(allowed)
++        if repeat_forbidden and self.last_protected_id:
++            filtered = [candidate for candidate, _ in ordered if candidate != self.last_protected_id]
++            if filtered:
++                return filtered
++        return [candidate for candidate, _ in ordered]
++
++    def _guard_candidate_scores(self, allowed: Mapping[str, Any], request: Mapping[str, Any]) -> dict[str, int]:
+         target_ids = allowed.get("target_ids")
+         if not isinstance(target_ids, list):
+-            return []
++            return {}
+         candidates: list[str] = []
+         for target_id in target_ids:
+             candidate = str(target_id)
+             if candidate and candidate not in candidates:
+                 candidates.append(candidate)
+         if not candidates:
+-            return []
++            return {}
+         round_no = self._extract_round_number(request) or self._last_observed_round
+         repeat_forbidden = self._guard_repeat_forbidden(allowed)
+-        # 以跨轮风险画像为主排序；公开热度只作为近似同分时的次级信号。
+-        current_focus_ids = self._extract_focus_ids(request.get("public_state"))
+-        scored: list[tuple[int, int, int, int, str]] = []
+-        for index, candidate in enumerate(candidates):
+-            risk_score = self.player_risk_profile.get(candidate, 0)
+-            tie_score = 0
+-            if candidate in current_focus_ids:
+-                tie_score += 25
+-            if candidate in self.recent_public_focus_ids:
+-                tie_score += 10
++        structured_scores = self._extract_guard_structured_signals(request)
++        recent_focus_boost = self._recent_guard_focus_boost(round_no)
++        scores: dict[str, int] = {}
++        for candidate in candidates:
++            score = self.player_risk_profile.get(candidate, 0)
++            score += structured_scores.get(candidate, 0)
++            score += recent_focus_boost.get(candidate, 0)
+             if candidate in self.alive_player_cache:
+-                tie_score += 3
+-            if self._looks_publicly_salient(candidate, request):
+-                tie_score += 5
+-
+-            penalty = 0
+-            if candidate == self.player_id:
+-                penalty += 10_000
++                score += 2
+             if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:
+-                penalty += 5_000
+-            if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:
+-                penalty += max(0, 80 - max(0, round_no - self.last_protected_round))
+-            effective_score = risk_score - penalty
+-            scored.append((-effective_score, -risk_score, -tie_score, index, candidate))
+-        scored.sort()
+-        ordered = [candidate for _, _, _, _, candidate in scored]
+-        if repeat_forbidden and self.last_protected_id:
+-            filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]
+-            if filtered:
+-                return filtered
+-        return ordered
++                score -= 3
++            scores[candidate] = score
++        return scores
+ 
+     def _guard_memory_summary(self, request: Mapping[str, Any]) -> dict[str, Any]:
+         allowed = next(
+@@ -501,7 +501,7 @@
+             if self.player_risk_profile.get(player_id, 0) > 0
+         ]
+         return {
+-            "meaning": "risk_score 表示可见公开信号累计出的今晚刀口风险，不是身份确认；公开热度只作次级参考。",
++            "meaning": "risk_score 表示公开信息与近期轮次共同形成的今晚刀口风险，不是身份确认；结构化公开信息优先，热度只作辅助。",
+             "last_protected_id": self.last_protected_id,
+             "recommended_order_by_risk": ordered[:5],
+             "top_risk_scores": top_risks,
+@@ -514,6 +514,19 @@
+             return True
+         return True
+ 
++    def _recent_guard_focus_boost(self, round_no: int | None) -> dict[str, int]:
++        boost: dict[str, int] = {}
++        for candidate, focus_round in self.recent_public_focus_ids:
++            if not candidate or not _PLAYER_ID_PATTERN.fullmatch(candidate):
++                continue
++            if round_no is None or focus_round is None:
++                amount = 4
++            else:
++                gap = max(0, round_no - focus_round)
++                amount = max(1, 8 - gap * 2)
++            boost[candidate] = max(boost.get(candidate, 0), amount)
++        return boost
++
+     def _looks_publicly_salient(self, candidate: str, request: Mapping[str, Any]) -> bool:
+         return candidate in self._extract_focus_ids(request.get("public_state"))
+ 
+@@ -523,6 +536,14 @@
+         round_no = self._extract_round_number(packet)
+         if round_no is not None:
+             self._last_observed_round = round_no
++            if self._last_memory_decay_round is None:
++                self._last_memory_decay_round = round_no
++            elif round_no > self._last_memory_decay_round:
++                self._decay_guard_memory(round_no - self._last_memory_decay_round)
++                self._last_memory_decay_round = round_no
++        public_state = packet.get("public_state")
++        if isinstance(public_state, Mapping):
++            self._last_public_state = public_state
+         alive_ids = self._extract_ids_by_keys(
+             packet,
+             ("alive", "alive_player", "alive_players", "alive_player_ids", "player_ids", "players"),
+@@ -531,15 +552,21 @@
+             self.alive_player_cache.update(alive_ids)
+         focus_ids = self._extract_focus_ids(packet)
+         for focus_id in focus_ids:
+-            if focus_id not in self.recent_public_focus_ids:
+-                self.recent_public_focus_ids.append(focus_id)
+-        self._update_guard_risk_profile(packet, focus_ids)
+-
+-    def _update_guard_risk_profile(self, packet: Mapping[str, Any], focus_ids: set[str]) -> None:
++            focus_entry = (focus_id, round_no)
++            if focus_entry not in self.recent_public_focus_ids:
++                self.recent_public_focus_ids.append(focus_entry)
++        self._update_guard_risk_profile(packet, focus_ids, round_no)
++
++    def _update_guard_risk_profile(
++        self, packet: Mapping[str, Any], focus_ids: set[str], round_no: int | None
++    ) -> None:
+         """从可见公开状态和当前轮对话抽取轻量刀口风险信号。"""
+ 
++        structured_signals = self._extract_guard_structured_signals(packet)
++        for player_id, amount in structured_signals.items():
++            self._bump_guard_risk(player_id, amount)
+         for focus_id in focus_ids:
+-            self._bump_guard_risk(focus_id, 1)
++            self._bump_guard_risk(focus_id, 1 if round_no is None else 2)
+         for speaker_id, text in self._iter_visible_speeches(packet):
+             self._scan_guard_text_signal(speaker_id, text)
+         # 控制本地状态体积和过旧噪声；不是遗忘事实，只是避免热度无限累积。
+@@ -549,12 +576,79 @@
+             elif score > 80:
+                 self.player_risk_profile[player_id] = 80
+ 
++    def _decay_guard_memory(self, round_gap: int) -> None:
++        if round_gap <= 0:
++            return
++        steps = min(round_gap, 3)
++        for _ in range(steps):
++            for player_id, score in list(self.player_risk_profile.items()):
++                if score <= 1:
++                    self.player_risk_profile.pop(player_id, None)
++                else:
++                    self.player_risk_profile[player_id] = max(1, int(score * 0.75))
++            self.recent_public_focus_ids = deque(
++                (
++                    item
++                    for item in self.recent_public_focus_ids
++                    if item[1] is None or self._last_memory_decay_round is None or item[1] >= self._last_memory_decay_round - 1
++                ),
++                maxlen=self.recent_public_focus_ids.maxlen,
++            )
++
+     def _bump_guard_risk(self, player_id: str | None, amount: int) -> None:
+         if not player_id or not _PLAYER_ID_PATTERN.fullmatch(player_id):
+             return
+-        if player_id == self.player_id:
+-            amount = min(amount, 1)
+         self.player_risk_profile[player_id] = self.player_risk_profile.get(player_id, 0) + amount
++
++    def _extract_guard_structured_signals(self, packet: Mapping[str, Any] | Any) -> dict[str, int]:
++        signals: dict[str, int] = {}
++        public_state: Mapping[str, Any] | None = None
++        if isinstance(packet, Mapping) and isinstance(packet.get("public_state"), Mapping):
++            public_state = packet.get("public_state")
++        elif isinstance(self._last_public_state, Mapping):
++            public_state = self._last_public_state
++        elif isinstance(packet, Mapping):
++            state_keys = ("sheriff", "警长", "public_state", "alive", "vote", "claim", "check", "dialogue", "round", "players", "speaker")
++            if any(key in str(item).lower() for item in packet.keys() for key in state_keys):
++                public_state = packet
++        if not isinstance(public_state, Mapping):
++            return signals
++
++        priority_sources: list[tuple[set[str], int]] = []
++        priority_sources.append((self._extract_ids_by_keys(public_state, ("sheriff", "警长", "police", "警徽", "badge")), 26))
++        priority_sources.append((self._extract_ids_by_keys(public_state, ("claim", "claimed", "self_claim", "role_claim", "自证", "跳身份", "跳")), 24))
++        priority_sources.append((self._extract_ids_by_keys(public_state, ("check", "checked", "inspect", "inspection", "查验", "验", "金水", "银水", "查杀")), 22))
++        priority_sources.append((self._extract_ids_by_keys(public_state, ("vote", "voting", "pressure", "归票", "压票", "票型", "焦点", "站边", "抗推")), 16))
++        priority_sources.append((self._extract_ids_by_keys(public_state, ("kill", "night_kill", "刀", "刀口", "威胁", "先刀", "吃刀", "保护", "守一下")), 10))
++
++        for ids, amount in priority_sources:
++            for player_id in ids:
++                self._merge_guard_signal(signals, player_id, amount)
++
++        for speaker_id, text in self._iter_visible_speeches(public_state):
++            if not text:
++                continue
++            ids = list(dict.fromkeys(_PLAYER_ID_PATTERN.findall(text)))
++            if any(pattern in text for pattern in ("我是预言家", "我预言家", "跳预言家", "我是女巫", "跳女巫", "我是猎人", "跳猎人", "我是守卫", "跳守卫", "神职", "报身份", "拍身份")):
++                if speaker_id:
++                    self._merge_guard_signal(signals, speaker_id, 16)
++            if any(pattern in text for pattern in ("查验", "验了", "金水", "银水", "查杀", "警徽流")):
++                for player_id in ids:
++                    self._merge_guard_signal(signals, player_id, 12)
++            if any(pattern in text for pattern in ("票", "投", "归", "出", "压票", "站边", "抗推", "焦点", "怀疑")):
++                for player_id in ids:
++                    self._merge_guard_signal(signals, player_id, 8)
++            if any(pattern in text for pattern in ("先刀", "今晚", "狼刀", "刀口", "吃刀", "保护", "守一下", "威胁")):
++                for player_id in ids:
++                    self._merge_guard_signal(signals, player_id, 10)
++                if speaker_id:
++                    self._merge_guard_signal(signals, speaker_id, 4)
++        return signals
++
++    def _merge_guard_signal(self, signals: dict[str, int], player_id: str | None, amount: int) -> None:
++        if not player_id or not _PLAYER_ID_PATTERN.fullmatch(player_id):
++            return
++        signals[player_id] = signals.get(player_id, 0) + amount
+ 
+     def _scan_guard_text_signal(self, speaker_id: str | None, text: str) -> None:
+         if not text:
+@@ -577,21 +671,21 @@
+         )
+ 
+         if speaker_id and any(pattern in text for pattern in claim_patterns):
+-            self._bump_guard_risk(speaker_id, 10)
++            self._bump_guard_risk(speaker_id, 6)
+         if speaker_id and any(pattern in text for pattern in kill_patterns):
+-            self._bump_guard_risk(speaker_id, 3)
++            self._bump_guard_risk(speaker_id, 2)
+         for target_id in ids:
+             if target_id == speaker_id:
+                 continue
+             amount = 1
+             if any(pattern in text for pattern in pressure_patterns):
+-                amount += 5
++                amount += 2
+             if any(pattern in text for pattern in kill_patterns):
+-                amount += 8
++                amount += 3
+             if any(pattern in text for pattern in ("金水", "银水", "验了", "查验", "警徽流")):
+-                amount += 4
++                amount += 2
+             if any(pattern in text for pattern in ("保护", "守一下", "别死", "核心", "带队")):
+-                amount += 7
++                amount += 3
+             self._bump_guard_risk(target_id, amount)
+ 
+     def _iter_visible_speeches(self, value: Any) -> list[tuple[str | None, str]]:
+--- guard-n00035/task.md
++++ guard-n00069/task.md
+@@ -3,5 +3,6 @@
+ - 先看当前 `target_ids`，只能从里面选。
+ - 记住上一夜守护对象；若规则不允许连守，默认不要重复同一人。
+ - 优先保护今晚最可能被狼刀的好人：公开神职/跳身份者、被查验或警徽流涉及者、被归票/压票压力最高者、被刀口威胁或可能被狼队集火的核心好人位。
++- 若规则允许，自守是合法且可能最优的选择；不要把自守默认视为禁选，尤其在后期或自己更像夜刀目标时。
+ - 不要只看谁最热、谁最会说话；公开热度只能作为同分参考，要优先判断谁更像真实刀口。没有强信息时，也要稳定地做出合法选择，不要猜出列表外目标。
+ - 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。

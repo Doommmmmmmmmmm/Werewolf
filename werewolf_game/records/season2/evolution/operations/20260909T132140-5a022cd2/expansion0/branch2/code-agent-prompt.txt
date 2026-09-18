@@ -1,0 +1,160 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00022 通过了宽筛，但20局胜率仅0.30，低于其父节点 witch-n00001 的0.35；其主要问题不是行动协议或稳定性，而是女巫决策上下文仍不完整，尤其没有可靠地把公开发言、遗言、对跳和当轮票型压缩进夜间决策。下一代应在保留当前低泄露和合法行动校验的基础上，优先修复局间状态、私有药水字段兼容、公开证据提取和毒药证据排序，避免继续堆叠未经验证的硬编码规划器。",
+  "evidence": [
+    {
+      "type": "evaluation",
+      "fact": "witch-n00022完成20局，胜6负14，胜率0.30；焦点角色决策253次，fallback为0，非法行动为0。",
+      "implication": "当前节点的主要瓶颈不是模型调用失败、JSON schema错误或超时，而是策略质量。"
+    },
+    {
+      "type": "comparison",
+      "fact": "父节点 witch-n00001 完成20局，胜7负13，胜率0.35；该比较受随机对局差异影响，不能单独证明回退，但说明n00022的复杂化没有呈现明确收益。",
+      "implication": "下一代修改应小而可验证，不应继续无约束扩展复杂启发式。"
+    },
+    {
+      "type": "replay",
+      "fact": "game7中p2为女巫，首夜狼刀p2，p2合法使用witch_heal自救；之后第2至第5夜均pass，最终解药耗尽、毒药仍可用。",
+      "implication": "自救判断有效，但当前上下文没有把后续公开发言和狼人身份链压缩成足够强的毒药候选。"
+    },
+    {
+      "type": "replay",
+      "fact": "game7中白天依次公开出现p3自称预言家、p4质疑p3、p5和p6多次维护或围绕p3争论；p4、p5随后被放逐且最终身份均为狼。现有n00022的_public_sync摘要主要读取claims、votes、deaths等结构化字段，并未稳定保留发言文本。",
+      "implication": "夜间决策可能看不到最有价值的公开证据，特别是悍跳、反跳、维护链和遗言中的关联。"
+    },
+    {
+      "type": "code",
+      "fact": "当前_rank_witch_candidates主要根据结构化claim和投票目标加分；recent_votes_against对目标统一加分，未区分该目标是被合理归票、被狼队带节奏还是被好人误投。",
+      "implication": "毒药候选分数存在方向性噪声，票数本身不能作为高置信狼人证据。"
+    },
+    {
+      "type": "code",
+      "fact": "当前_private_state更新只直接读取can_heal、can_poison、heal_used、poison_used等有限字段；运行审计状态使用antidote_available和poison_available等别名。后续分支n00095专门增加了字段别名兼容、显式False保留和game_id重置，说明这些是已识别的鲁棒性缺口。",
+      "implication": "应吸收n00095的窄范围修复，而不是重复实现更大的策略系统。"
+    },
+    {
+      "type": "branch_history",
+      "fact": "witch-n00023增加了局间game_id重置和药水字段别名归一化；witch-n00060进一步加入女巫证据账本；但其子节点witch-n00077因smoke出现fallback和error被判代码代理失败。",
+      "implication": "状态隔离和字段归一化值得保留；大型确定性证据账本和强制规划器需要谨慎，必须先保证smoke、合法性和不改变非女巫行为。"
+    },
+    {
+      "type": "replay",
+      "fact": "game7最终村民获胜，且p6狼在最后一轮被放逐；因此不能把女巫未毒药直接认定为该局失败原因。",
+      "implication": "毒药改进目标应是提高期望收益和减少错毒，而不是强制每局使用毒药。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "公开证据管线不完整",
+      "detail": "summarize_public_sync的压缩字段没有稳定保留public_speeches、last_words及其text；witch_decision_summary也主要消费claims、votes、deaths和旧compact_history，无法系统性利用当轮发言中的悍跳、反跳、维护和票型解释。"
+    },
+    {
+      "cause": "毒药排序把弱信号当成强信号",
+      "detail": "_rank_witch_candidates对所有recent_votes_against统一加分，并把文本关键词命中直接转为claim_named_wolf等分数，没有区分公开声明、系统确认、对跳冲突、重复独立支持和单次情绪性怀疑。"
+    },
+    {
+      "cause": "私有状态兼容仍不充分",
+      "detail": "当前节点对antidote_available、poison_available、used_antidote等常见字段没有完整归一化；字段缺失时又可能把资源视为不可用或沿用旧状态。"
+    },
+    {
+      "cause": "局间状态边界不显式",
+      "detail": "n00022当前代码保留compact_history、known_private_state和last_witch_action，但没有看到稳定的game_id切换重置。若同一Task-Agent实例跨局复用，上一局公开摘要或药水状态可能污染下一局。"
+    },
+    {
+      "cause": "决策摘要与模型实际所需证据错位",
+      "detail": "代码已经生成较复杂的witch_decision_summary，但其中的高置信候选依赖字段化claims；模型即使收到摘要，也可能因缺少发言原文和证据等级而无法复核推荐。"
+    },
+    {
+      "cause": "复杂分支存在回归风险",
+      "detail": "n00060/n00077方向试图建立女巫证据账本和确定性planner，但n00077已出现候选smoke fallback=1、errors=1的失败记录。继续扩大硬编码层会增加非法行动、错误目标和提示长度风险。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "增加显式局间状态隔离：在TaskAgent中维护_game_id；从observe和decide收到的packet、game、public_state中读取game_id；检测到新局时清空compact_history、known_private_state、last_witch_action和last_observe_signature。不要在没有game_id的情况下按round或phase猜测新局。",
+      "rationale": "吸收n00023/n00095的有效修复，避免跨局泄露私有资源或公开身份记忆，同时不改变引擎和可见性边界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写_update_private_state的字段归一化，至少支持role/team/status、can_heal/heal_available/antidote_available/has_antidote、can_poison/poison_available/has_poison、heal_used/used_heal/antidote_used/used_antidote、poison_used/used_poison；只有字段明确出现时才更新，保留False，不用bool(None)覆盖已有值。将归一化结果同时存储为canonical字段和简短的审计内部状态。",
+      "rationale": "运行审计明确使用antidote_available和poison_available；字段兼容是低风险、高收益修复，可防止资源判断因命名差异失真。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展_public_sync压缩：支持public_speeches、speeches、public_dialogue、speech_events、last_words及其别名；每个事件只保留player_id、target_id、stage、round、phase、text等必要字段，text截断到约160至240字符，每次最多保留最近8条。同步修改_compact_value，使text被安全截断而不是完全丢弃。",
+      "rationale": "女巫毒药判断依赖悍跳、对跳、维护链和遗言；目前只保留结构化字段会丢失最关键的公开证据。严格截断可控制prompt预算。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在_witch_decision_summary中加入current_round_dialogue的紧凑版本，并明确标注其为公开但未验证的发言；将recent_public_events、public_speeches、last_words、claims、votes、deaths合并为按证据类型分组的输入。只提供事实摘要和来源，不直接把关键词命中写成狼人结论。",
+      "rationale": "当前模型可通过工具读取当轮对话，但确定性summary没有消费它；将其纳入摘要能降低模型遗漏夜前最新证据的概率，同时避免启发式越权下结论。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "收紧_rank_witch_candidates：删除或显著降低recent_votes_against的单独加分；只有在目标同时具有至少两类独立公开信号时才进入高置信候选，例如明确对跳冲突、公开查杀/身份矛盾、连续票型与发言互相支持、或多个独立玩家的可核对指向。将系统确认、玩家自述、推测和关键词命中分开记录。",
+      "rationale": "投票压力单独不能证明狼人；证据分层比简单累计关键词更符合任务规约，也能减少错毒。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "保留当前模型主决策路径，不新增或默认启用强制deterministic planner。仅让_witch_decision_summary提供候选、证据来源、资源状态和合法目标；若保留任何安全fallback，必须只在模型返回非法kind、缺失合法target或明显违反资源状态时触发，并从当前request的allowed_actions中选择pass或合法目标。",
+      "rationale": "n00077的失败表明大型强制planner有smoke回归风险。女巫策略仍应由模型结合完整公开证据判断，代码层只做边界保护。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修正摘要中的阶段判断和药水行动识别：heal_kind同时匹配heal/antidote，poison_kind匹配poison，pass_kind匹配pass/wait/skip；推荐目标必须再次通过_allowed_targets_for_kind和_select_legal_target校验。白天阶段不要生成夜间行动推荐。",
+      "rationale": "不同规则包可能使用witch_heal、antidote或其他合法kind；统一识别可避免提示推荐与实际schema脱节。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充任务规约中的证据层级：系统公开事件和公开票型高于玩家自述；单次怀疑或单一票型不足以毒药；至少两类独立公开证据或强对跳/终局迫切性才进入毒药优先候选。明确公开发言可以被摘要使用，但药水余量、夜刀目标和用药结果仍不得外说。",
+      "rationale": "把代码摘要的设计目标写入角色任务，减少模型把启发式候选误读为事实，也保持信息边界。"
+    },
+    {
+      "file": "task.md",
+      "change": "增加残局重算规则：当存活人数较少、关键神职死亡、警长交接、连续平安夜或强对跳发生时，重新计算救药和毒药的轮次收益；不能因为前几夜pass就继续机械pass，也不能因为出现一个可疑玩家就强制毒。",
+      "rationale": "现有规约已经提到策略切换，但应更明确地要求模型在公开状态突变时重排资源优先级。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加最小单元测试或本地自检覆盖：新game_id清空状态；explicit False资源状态不会被覆盖；antidote_available/poison_available别名可识别；speech text截断；没有合法毒药目标时不会生成poison；推荐target_id必在allowed_actions目标集合中。测试不得修改引擎或工具。",
+      "rationale": "当前焦点角色没有非法行动，但祖先和其他分支频繁出现target_id非法及fallback问题；低成本自检可避免下一候选因smoke失败。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "加入发言文本会增加prompt长度和输入token消耗。",
+      "mitigation": "只保留最近事件、字段白名单和160至240字符截断；不把完整历史自动注入，仍保留受限工具按需读取。"
+    },
+    {
+      "risk": "从自然语言发言中抽取玩家编号和证据类型可能产生误判。",
+      "mitigation": "把抽取结果标记为公开自述或弱信号，不直接视为系统确认；高置信毒药必须要求多源证据。"
+    },
+    {
+      "risk": "删弱投票加分后可能减少毒药使用，错过真实狼。",
+      "mitigation": "仅禁止单一票型直接达到高置信，不禁止票型与对跳、身份冲突、遗言或连续行为共同构成高置信。"
+    },
+    {
+      "risk": "game_id在某些运行包中缺失，状态可能无法自动重置。",
+      "mitigation": "缺失时不猜测新局，不改变现有状态；如Runtime保证提供game_id则正常工作。不能通过round或phase推断以免误清局。"
+    },
+    {
+      "risk": "资源字段别名语义可能在不同规则包中不完全一致。",
+      "mitigation": "只接受明确布尔或明确可用字段；对冲突别名按优先级记录并避免把未知解释成可用，保留原始canonical值供模型查看。"
+    },
+    {
+      "risk": "过度修改现有复杂代码可能引入非女巫角色回归。",
+      "mitigation": "修改集中在witch专用状态、摘要和task.md；不得改变公共normalize_decision、引擎接口、工具执行器或其他角色路径。"
+    },
+    {
+      "risk": "确定性安全层若覆盖模型合法决定，可能损害本来正确的毒药或救药选择。",
+      "mitigation": "下一代不引入默认强制planner；代码只阻止明显非法或不在allowed_actions中的输出，策略推荐仅作为模型上下文。"
+    }
+  ],
+  "code_agent_brief": "请基于witch-n00022当前task_agent.py实施一个小范围、可回滚的下一代修改，不要修改Game Engine、规则、信息可见性、工具实现、行动schema、审计或模型配置。优先完成以下事项：1) 从packet/game/public_state读取game_id，并在新局时清空compact_history、known_private_state、last_witch_action和observe去重状态；2) 将女巫私有资源字段统一归一化，兼容can_heal/heal_available/antidote_available、can_poison/poison_available、heal_used/used_heal/antidote_used、poison_used/used_poison，保留明确False，不用缺失值覆盖旧值；3) 在公开摘要中增加最近public_speeches、speech_events、last_words及text的短截断版本，并在witch_decision_summary中加入current_round_dialogue，但明确这些只是公开自述/弱证据；4) 将毒药候选排序改为证据分层，禁止单一recent_votes_against或单个关键词直接达到高置信，至少需要两类独立公开信号或强对跳/终局压力；5) 保持模型主决策，不实现类似n00077的默认强制deterministic planner；任何fallback只能选择本次allowed_actions中的合法pass或合法目标；6) 保证heal/antidote、poison和pass等kind识别兼容，并对推荐target_id做allowed_actions校验；7) 添加最小smoke/unit自检，覆盖跨局重置、False资源、字段别名、发言截断和非法目标防护。完成后说明修改的确切函数、未修改的边界以及测试结果。"
+}

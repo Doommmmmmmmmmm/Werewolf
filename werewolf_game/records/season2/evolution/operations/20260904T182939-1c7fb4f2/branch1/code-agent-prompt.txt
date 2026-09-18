@@ -1,0 +1,78 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-base 是一个可运行但偏“通用型”的预言家基线：它能完成行动与发言，但几乎没有把查验、竞选警长、对跳处理和后续归票串成一个可复用的 seer 工作流。评测上 20 局仅 30% 胜率，且在给定回放里预言家首夜查验到的真信息没有转化为生存优势或投票优势，最终在首日就被放逐。下一代 Task-Agent 的重点应是“持久化 seer 记忆 + 高收益查验目标选择 + 事实驱动发言/投票”，而不是继续复述通用狼人杀话术。",
+  "evidence": [
+    {
+      "source": "evaluation_summary",
+      "fact": "seer-base 20 局完整评测，win_count=6, loss_count=14, win_rate=0.3；recommended_status=retained。",
+      "interpretation": "基线稳定可用，但策略质量明显不足。"
+    },
+    {
+      "source": "random_game_replay",
+      "fact": "回放中 p3 首夜查验 p7 得到 village，但当天就被票出；其夜间结果没有成为有效的公开压制力。",
+      "interpretation": "查验结果没有被转化为生存和票型优势。"
+    },
+    {
+      "source": "random_game_replay",
+      "fact": "首日 sheriff election 中 p3、p6、p9、p11 对跳，p3 的发言较泛，p6/p11 成功抢走节奏并最终让 p3 在 day_vote 被出。",
+      "interpretation": "缺少对跳应对、身份说服和 coalition 建设。"
+    },
+    {
+      "source": "current_agent",
+      "fact": "observe() 明确不维护跨行动状态；decide() 每次只发当前包，不构建 seer 专用记忆或摘要。",
+      "interpretation": "模型每回合都像“新玩家”，无法沉淀已知查验、嫌疑人和票型。"
+    },
+    {
+      "source": "current_agent",
+      "fact": "prompt 直接塞入完整 turn_packet 和当前轮发言工具结果，没有 seer 视角的压缩摘要。",
+      "interpretation": "上下文冗长而缺少结构化重点，容易让模型输出泛化、模板化内容。"
+    }
+  ],
+  "root_causes": [
+    "跨回合零记忆：当前实现刻意不保存 seer 的查验结果、已排除目标、对跳名单和历史票型，导致后续决策不能建立在前序证据上。",
+    "查验目标选择缺乏信息增益策略：没有围绕 sheriff 候选、强对跳、话术异常者或票型关键位来选目标；回放里首夜验到 p7 village，信息收益偏低。",
+    "公开发言没有把事实转成压力：模板化、泛化的发言无法在 sheriff election 和 day discussion 阶段建立可信度，导致真预言家难以带队、也难以自保。",
+    "没有 phase-aware 的 seer 作战节奏：竞选警长、第一天站边、夜验、被对跳、末局收口应是不同策略，但当前逻辑没有区分这些阶段。",
+    "上下文未压缩：每次决策都把大包原样塞给模型，缺少“seer 摘要卡”，容易让模型关注面过宽、重点过少。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个轻量的 seer 专用持久化状态对象，挂在 TaskAgent 实例上；至少记录 game_id、当前轮次、存活列表、死亡列表、sheriff_id、候选人、已查验结果、已公开过的身份声明、被质疑对象和最近一次票型摘要。observe() 里只更新状态，不再完全丢弃。",
+      "rationale": "seers 的价值高度依赖前序证据；没有跨回合记忆就无法把查验、发言和投票连成链。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "实现 seer 专用的 night inspect 选点函数：优先选择当前最能增量区分阵营的目标，例如 sheriff 候选、对跳者、发言强但立场模糊者、票型关键位；严格避开 self 和已查验目标；在无明显候选时退化为结构化默认规则。",
+      "rationale": "当前回放显示首夜信息价值偏低，说明需要从“能验谁”升级为“验谁最值”。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 day_speech / sheriff election speech / day vote 写分阶段模板生成器：发言必须优先输出已知查验事实，再给出可验证推断；被对跳时要直接对比验人、时间线和动机；投票则按事实优先级和冲票风险选择，不再使用通用村民式表述。",
+      "rationale": "seer 的胜率问题主要不在能不能说话，而在能不能把信息变成可执行的公共压力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 turn_packet 的输入压缩为 seer 视角摘要，只保留与当前决策有关的少量字段，并在需要时用 current_round_dialogue 工具补充关键发言，而不是把整包原文都喂给模型。",
+      "rationale": "减少 token 浪费，提升模型注意力密度，降低模板化和走神风险。"
+    },
+    {
+      "file": "task.md",
+      "change": "把 seer 任务改写成操作型说明：强调‘夜间选高信息目标、白天用查验事实说话、及时记录对跳和票型、不要用同一套发言模板、必要时优先自保’。",
+      "rationale": "当前任务描述太泛，缺少 seer 专属的执行优先级；prompt 层补强可以显著提升模型稳定性。"
+    }
+  ],
+  "risks": [
+    "更激进的公开跳身份或点名会提高被狼优先处理的概率，可能让 seer 更早死亡；需要在自保与带队之间做条件分支。",
+    "目标选择规则如果过度依赖 sheriff 候选或强发言者，可能在静默局里错过潜伏狼，需要保留退化策略。",
+    "持久化状态如果没有按 game_id 或新局正确重置，可能把上一局信息污染到下一局。",
+    "压缩上下文时如果摘要过度，可能丢失关键发言细节，反而降低判断精度。",
+    "task.md 与 task_agent.py 双处修改后，若描述不一致，模型可能在 prompt 层收到冲突指令。"
+  ],
+  "code_agent_brief": "请只改 task_agent.py 和 task.md，为 seer-base 做一个下一代 Task-Agent。目标不是泛化狼人杀套路，而是让预言家具备持久化记忆、基于信息增益的夜验选点、分阶段发言/归票逻辑，以及对跳时的事实对比能力。实现要点：1) 在 TaskAgent 上增加可跨决策保存的 seer 状态，并在新 game_id 时重置；2) 用结构化摘要代替整包原文，把已查验结果、嫌疑人、sheriff 候选、最近票型压缩后送入模型；3) 写 seer 专用的 night/day/sheriff-election 决策函数，夜验优先高收益目标，白天必须输出查验事实+推断+投票理由；4) 保持 action schema 兼容，所有 target_id 必须从 allowed_actions 中选；5) 更新 task.md，把 seer 的执行优先级写成可操作规则。不要改引擎、规则、裁决或工具接口。"
+}

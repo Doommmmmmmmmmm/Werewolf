@@ -1,0 +1,105 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-n00017 已经修复了早期节点最致命的合法性问题：20 局里没有 fallback/invalid，但胜率只有 25%。这说明当前瓶颈不在 schema，而在守护目标选择的质量：它能合法出手，却经常把“有效”误当成“高价值”。",
+  "evidence": [
+    {
+      "type": "evaluation_summary",
+      "fact": "20 局完整评测，5 胜 15 负，win_rate=0.25；fallback_count=0，invalid_decision_count=0。",
+      "implication": "当前节点的主要问题不是非法行动，而是策略层面偏弱。"
+    },
+    {
+      "type": "replay_game1_night1",
+      "fact": "首夜守卫选择了 p7，而场上 p5 已公开跳预言家并报 p3 查杀，随后 p5 在第二夜被狼刀击杀。",
+      "implication": "守卫的优先级没有稳定聚焦到最关键的信息位。"
+    },
+    {
+      "type": "replay_game1_night2_to_4",
+      "fact": "后续守卫转而保护 p10、自己、p7、p6，说明其行为更像被当前话题带着走，而不是持续维护最强好人资产。",
+      "implication": "目标选择缺少可解释、可复用的威胁排序。"
+    },
+    {
+      "type": "code_state",
+      "fact": "当前 agent 已有 public_claims / suspected_wolves / trusted_info_ids / current_sheriff_id 等记忆，但这些信息只进入静态打分，没有明确的“公开预言家 > 其他神职 > 警长 > 平民”的硬分层。",
+      "implication": "模型即使看到了记忆，也可能仍选出语义上合理但价值较低的目标。"
+    },
+    {
+      "type": "code_state",
+      "fact": "当前 _repair_guard_decision 只修正非法 target_id，不修正“合法但低质量”的目标。",
+      "implication": "代码层缺少最后一道守卫质量闸门。"
+    },
+    {
+      "type": "evolution_history",
+      "fact": "base 节点曾因 target_id 越界大量失败；n00017 已把这类错误清零，但没有带来胜率跃升。",
+      "implication": "本轮进化应从“合法性修复”转向“目标质量优化”。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "守卫目标排序过于浅层，过度依赖 sheriff / 泛化 claim 标签，缺少对公开预言家、已公开关键神职和当前威胁位的硬优先级。",
+      "why_it_matters": "会把保护资源投向“看起来中心”但未必最关键的玩家，导致关键回合错保。"
+    },
+    {
+      "cause": "公开发言解析是关键词驱动的，只有 set 型标签，没有时间、来源、真假强度等结构化记忆。",
+      "why_it_matters": "同样被识别为“预言家/守卫/查杀”的信息，可信度和时效性不同，但代码无法区分。"
+    },
+    {
+      "cause": "纠错层只负责把非法行动修成合法行动，没有把模型输出提升到“当前最优合法行动”。",
+      "why_it_matters": "模型只要选了一个合法但次优的 target，系统就会接受，导致策略错误被静默放行。"
+    },
+    {
+      "cause": "task.md 的守卫优先级描述偏原则化，缺少可执行的 tie-break 规则与首夜/残局分歧规则。",
+      "why_it_matters": "模型在有多个合法候选时容易按对话热度而不是按价值排序。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "把 _rank_guard_targets 升级成明确分层的守卫评分器：对公开预言家/明确金水/稳定神职给最高层级；对当前 sheriff 只在不带明显狼嫌时加权；对自守只在残局或高威胁时开放；对上夜守过的人、疑似狼、已死亡或被公开强踩的人继续强降权。",
+      "rationale": "让守卫从“泛中心位偏好”改成“信息价值优先”，减少错保普通位的概率。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 public_claims 从纯标签集合改为结构化记录，至少保存 claim_type、首次出现回合、发言来源和被指向目标；_ingest_text 只负责提取候选线索，真正信任度由后续评分使用。",
+      "rationale": "解决当前只有标签、没有时序和来源的记忆缺陷，提升真假信息区分能力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _repair_guard_decision 中增加“合法但低质量”修正：当模型选中的 target 不在 top-N 候选，或分数显著低于最佳候选时，自动改写为最优候选。",
+      "rationale": "把守卫的最后决策从“只校验合法”升级为“合法且尽量优”。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 guard_memory_snapshot 和 turn instruction 里的提示改成短而硬的规则：明确写出首夜、已有公开预言家、警长不可信、残局自守等分支条件，并把当前 top 候选直接暴露给模型。",
+      "rationale": "降低模型自己在长对话里重建策略的负担，减少被发言噪声带偏。"
+    },
+    {
+      "file": "task.md",
+      "change": "重写守卫行动优先级为可执行的层级规则，补充 tie-break：公开预言家 > 已公开关键神职 > 高可信组织位 > 普通警长 > 平民；若有人对跳守卫或关键好人需要定身份，再考虑公开跳守卫；始终强调“平安夜不等于守中成功”。",
+      "rationale": "让角色约束从原则型描述变成可直接用于决策的策略模板。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "过强的 top-N 修正可能压制模型在特殊局面下的合理反直觉选择。",
+      "mitigation": "只在分数差距明显时覆盖模型输出，保留小幅让步空间。"
+    },
+    {
+      "risk": "结构化 claim 解析仍可能被狼的伪装发言污染。",
+      "mitigation": "把 claim 记录和最终信任度分离，避免单次关键词直接定生死。"
+    },
+    {
+      "risk": "更硬的分层规则在非常规局面下可能显得僵化。",
+      "mitigation": "保留残局自守、低人数阶段和重复保护约束的例外分支。"
+    },
+    {
+      "risk": "task.md 变得过长可能增加 prompt 负担。",
+      "mitigation": "只写最关键的优先级和 tie-break，不扩成通用攻略。"
+    }
+  ],
+  "code_agent_brief": "请只改 task_agent.py 和 task.md，目标是把 guard-n00017 从“只会合法守护”升级为“能稳定守对高价值目标”的下一代 Task-Agent。核心要求：1) 把守卫目标排序改成硬分层策略，公开预言家/明确金水/关键神职必须高于泛化 sheriff 和普通路人；2) 把公开发言解析从 set 标签改成结构化 claim 记忆，至少记录 claim_type、首次出现回合和来源；3) 在 _repair_guard_decision 中加入对“合法但低质量 target”的覆盖逻辑，只在 top 候选明显更优时替换；4) 同步收紧 task.md，把守卫优先级、连续守同一人、自守、跳身份和“平安夜不等于守中”写成可执行规则。不要改引擎、schema、工具或可见性。"
+}

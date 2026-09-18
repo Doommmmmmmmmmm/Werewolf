@@ -1,0 +1,95 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00028 运行上很稳定，但策略表现偏弱：20 局里只赢 7 局，win_rate 0.35，而 869 次重点决策里只有 1 次 invalid 和 1 次 fallback，说明问题主要不是 schema 或工具调用，而是“看得见公开信息，却没有把它持续组织成可用证据链”。当前实现几乎不保留跨回合记忆，也没有把当前轮对话强制压缩进决策上下文，导致它在中后期尤其是残局时缺少稳定的票型/死亡/警徽/查验联动判断。下一代 Task-Agent 应该优先做“有界局内记忆 + 强制对话摘要 + 残局双嫌疑对比”，而不是继续堆泛化口号。",
+  "evidence": [
+    {
+      "type": "metric",
+      "fact": "evaluation_summary 显示 villager-n00028 完整 20 局，win_count=7、loss_count=13、win_rate=0.35；decision_count=869，fallback_count=1，invalid_decision_count=1。",
+      "implication": "策略质量问题远大于执行/格式问题。"
+    },
+    {
+      "type": "code",
+      "fact": "current_agent 的 observe(sync_packet) 明确是 no-op，注释写明“不把它跨行动保存为模型记忆”；同时 _turn_instruction 只注入 public_state_brief、validation_feedback 和 checklist，没有持久化局内状态。",
+      "implication": "模型在后续回合无法复用前序公开证据。"
+    },
+    {
+      "type": "code",
+      "fact": "当前实现把 current_round_dialogue 仅作为工具 read_current_round_dialogue 暴露给模型，决策包里并没有直接携带该轮对话的摘要。",
+      "implication": "如果模型没主动调用工具，就会在最关键的白天发言/投票阶段缺少最新讨论上下文。"
+    },
+    {
+      "type": "replay",
+      "fact": "game9 的公开回放展示了典型的后期复杂局面：p3 警长死亡、警徽转移/销毁、p7 hunter 身份公开、最后进入无警徽残局，存活数一路降到 6 人局以下。",
+      "implication": "这种局面需要持续维护 alive/dead、警徽链、票型和查验链；当前 agent 没有显式的残局重排机制。"
+    },
+    {
+      "type": "branch",
+      "fact": "后续分支 n00046 / n00054 已经朝“bounded working memory + candidate table”方向演化；同时树上有 sibling 分支因 invalid_decisions 过高被弃用。",
+      "implication": "正确方向是补有界记忆与结构化比较，但必须保持 schema 保护和代码简洁，避免把复杂度推高到新的非法行动问题。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "局内记忆缺失",
+      "detail": "每次决策都从当前包重新开始，没有把前几轮的公开死亡、投票、警徽转移、公开自报、last words 组织成可复用的证据账本。"
+    },
+    {
+      "cause": "当前轮对话不是强制上下文",
+      "detail": "关键讨论要靠模型自己决定是否调用工具，缺少“先摘要再判断”的硬性路径，容易漏掉刚发生的发言和站边变化。"
+    },
+    {
+      "cause": "只有口号，没有结构化判别器",
+      "detail": "task 与 checklist 都在强调“比较两个候选”“保护可信链”，但代码里没有把这些原则落成可复用的候选排序、冲突检查、残局双嫌疑排序。"
+    },
+    {
+      "cause": "残局模式没有显式切换",
+      "detail": "当存活人数下降或警徽链断裂时，agent 仍停留在通用提醒层，没有强制转入“活人名单 + 已死名单 + 可信链 + 灰区名单”的决策框架。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "加入有界的局内 working memory：在 observe() 和每次 decide 前后，增量记录并更新 alive/dead、警徽持有与转移、公开查验/自报、vote_log、last_words、当前嫌疑人排序；再把这份 memory 压缩成短摘要注入 prompt。",
+      "rationale": "让 villager 不再只看当前包，而是能跨回合复用公开证据，形成稳定的票型和查验链判断。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 current_round_dialogue 变成强制输入：对当前轮对话做短摘要，按 phase 和相关玩家筛选后放进决策包；在白天发言和投票阶段默认使用该摘要，而不是只提供一个可选工具。",
+      "rationale": "确保模型不会因为没主动调用工具而错过最新讨论，减少对关键发言的遗漏。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加残局专用分支：当 alive_count <= 6、警徽已失或警徽链中断时，强制产出 top-2 嫌疑人排序，并要求依据必须来自存活/死亡名单、票型轨迹、公开查验链和当前自报。",
+      "rationale": "把 task.md 里的残局加严规则落成代码逻辑，避免晚期继续用泛化观望模式。"
+    },
+    {
+      "file": "task.md",
+      "change": "把 villager 任务压缩成更明确的证据协议：系统事实 / 玩家声明 / 自己推测三栏、投票前比较两个候选、残局必须先列两个嫌疑人并排序、警徽链断裂后重新按当前存活证据排序。",
+      "rationale": "让 prompt 与代码里的结构化记忆和残局模式一致，减少模型只读到抽象口号却没有具体执行框架的问题。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "记忆摘要过度依赖关键词匹配会误抓嵌套字段，导致候选排序被噪声污染。",
+      "mitigation": "使用保守的 key 匹配、固定上限和短摘要，不要把所有嵌套对象原样塞回 prompt。"
+    },
+    {
+      "risk": "局内记忆和对话摘要可能增加 prompt 长度，抬高 token 成本。",
+      "mitigation": "只保留最近几轮和 top-k 候选，避免把完整日志回灌给模型。"
+    },
+    {
+      "risk": "残局双嫌疑规则过硬会把可疑的 bluff 或临场翻转误判成安全链。",
+      "mitigation": "保留“硬对跳、明显矛盾、查杀命中、事实错误”作为覆盖规则。"
+    },
+    {
+      "risk": "如果把结构化记忆做得过重，可能再次引入非法行动或输出不稳。",
+      "mitigation": "保持现有 normalize_decision 和 decision_error 不变，只改输入组织，不碰动作 schema。"
+    }
+  ],
+  "code_agent_brief": "请在不改 Game Engine、规则、可见性、动作 schema、模型密钥或审计记录的前提下，把 villager-n00028 升级为“有界局内记忆 + 强制当前轮对话摘要 + 残局双嫌疑对比”的下一代 Task-Agent。重点是 task_agent.py：实现一个小而稳的 working memory，增量保存公开死亡/投票/警徽/自报/last words，并在每次决策时输出 compact snapshot；对白天/投票阶段默认注入 current_round_dialogue 的摘要；在 alive_count<=6 或警徽链断裂时强制比较两个嫌疑人并排序。task.md 只需同步为更明确的证据协议和残局要求。不要做跨局长期记忆，不要扩大工具预算，不要改行动 JSON 校验逻辑。"
+}

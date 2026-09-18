@@ -1,0 +1,54 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00025 的主要问题不是行动合法性，而是“已知查验信息”没有被稳定转成可复盘、可持续施压的公共证据链。评测上它虽然能完整跑完 20 局，但胜率只有 0.30；回放里预言家 p9 明明拿到 p5=wolf 的真查验，却在公开发言中说出“我验过 p5 是狼”这种与当时死活状态冲突的话，立刻给对手送出可回看的破绽，导致预言家很快出局，村阵营节奏崩掉。",
+  "evidence": [
+    "evaluation_summary 显示 seer-n00025：game_count=20、win_count=6、loss_count=14、win_rate=0.3；focus 侧没有明显的非法行动问题，说明核心短板更偏策略与表达而非 schema 兼容。",
+    "随机回放 game1 中，p9 第 2 夜查验 p5 得到 wolf，且第 3 天前后场上已经形成围绕 p5 / p9 的强对跳与票型压力，但 p9 没有把这条真查验持续压成稳定主线。",
+    "回放 seq=261~289：p9 在 day_discussion 说“我验过p5是狼，今天票先集中压他”，而此时 p5 已在 seq=247 死亡；p10、p11 随即抓住“死人不能投票/死人怎么验杀”的时间线矛盾。",
+    "最终 seq=286~289 中 p9 被放逐，之后 last_words 才补救“死人不能投票是我口误”，但已经失去公共可信度；这说明现有代理缺少发言前的事实一致性约束。",
+    "当前 task_agent.py 的 SeerMemory 只保存 inspected、declared_claims、challenged_players、recent_vote_summary 等粗粒度摘要，没有 claim timeline、vote timeline、当前主压目标或‘已死目标不可再当当前查验对象’这类结构化状态。",
+    "当前 _turn_instruction 虽区分 night_inspect / day_speech / vote，但只给软提示，没有强制“事实→矛盾→单一投票目标”的固定骨架，也没有对高压局面下的最小事实集模板。",
+    "当前 _rank_inspect_targets 主要按警长、对跳、公开声明和近期票型打分，启发式合理，但没有显式使用‘未解决的公共矛盾链’来决定夜验目标，因此夜验与白天施压之间的联动偏弱。"
+  ],
+  "root_causes": [
+    "结构化记忆过浅：只能记碎片摘要，不能表示“谁先声明、谁后对跳、哪条查验链已经被验证/被击穿”，导致预言家很难持续输出一致的证据链。",
+    "缺少发言一致性防线：代码没有在生成 day_speech / sheriff_election_speech 前，强制核对查验目标是否仍可被当前语境合理提及，容易出现‘把已死目标当当前票口’或‘把旧查验说成新查验’。",
+    "输出骨架不够硬：现有 prompt 只是提示先说事实再说推断，但没有把“已知事实、唯一主矛盾、单一票口、备选方案”变成固定结构，模型在高压局会自然散掉。",
+    "夜验决策与白天对跳处理脱节：目标排序只看静态标签，没有把当前最值得验证的公共矛盾、最可能形成第二天投票优势的对象作为第一优先级。",
+    "自保模式虽存在，但只是降长度，没有把‘被集火时先保可信度、少说而准’转成显式可执行模板，因此在被追打时仍可能输出自相矛盾或过度展开的话术。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "扩展 SeerMemory，新增 claim_timeline、vote_timeline、current_pressure_target、last_public_fact、alive_inspection_map 等结构化字段；在 _update_claims_from_dialogue / _update_claims_and_challenges_from_packet / _update_inspection_records 中记录轮次、发言者、声明对象、投票对象、以及每条查验是否仍指向活人。",
+      "rationale": "让代理不再只记‘摘要’，而是能维护可回看验证的时间线，避免后续发言丢失上下文或把旧目标说成当前目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增一个发言前一致性整理层，例如 _build_safe_public_facts / _validate_speech_context：从 inspected、alive、declared_claims 中生成只能公开说的事实列表，并在 day_speech、sheriff_election_speech、last_words 的 instruction 里强制固定骨架为‘已知事实 -> 当前唯一矛盾点 -> 单一投票目标’；高压时只允许输出 1 个事实 + 1 个票口。",
+      "rationale": "把‘事实先行、单点施压、可回看验证’从软建议变成硬模板，减少回放里那种一句话里同时混入过期目标、模糊推断和多个出票方向的问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _rank_inspect_targets，让评分显式考虑 unresolved claimants、当前 pressure_target、历史查验与票型是否冲突，以及‘下一天最能形成公共压力’的对象；继续保留对 sheriff、对跳和发言密度的加分，但把静态标签从主导项降为次级项。",
+      "rationale": "让夜验真正服务于第二天的公共施压，而不是只挑‘看起来热闹’的人，提升查验结果向投票优势的转化率。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充预言家任务约束：公开发言不得把已死亡目标写成当前查验对象；如果引用旧查验，必须明确标记为‘上一轮/此前查验’；被集火时优先使用最小事实集，不要一次抛出多个互斥票口；每轮维护一个当前主压目标。",
+      "rationale": "用任务文本把一致性和最小事实集要求前置，降低模型在新会话下自行散文化、模板化漂移的概率。"
+    }
+  ],
+  "risks": [
+    "更强的一致性检查可能让发言更保守，若过度收缩，预言家会变得像“只报事实”的机器，压票力度下降。",
+    "新增结构化记忆和更长的事实整理层，可能增加 prompt 体积，若压缩不好，会抬高 token 成本并放大超时风险。",
+    "夜验排序更依赖结构化状态后，如果初始 claim_timeline 解析不稳，可能把少量噪声放大成错误的主压目标。",
+    "任务文本约束过细时，模型在复杂局面下可能因为模板过硬而失去灵活性，尤其是在需要快速自保或处理多重对跳时。"
+  ],
+  "code_agent_brief": "请在不改动游戏引擎、规则、可见性或行动 schema 的前提下，升级 seer-n00025 的 Task-Agent，使它从“会记碎片”变成“会维护查验时间线并稳定施压”的预言家。重点做四件事：1) 在 task_agent.py 中扩展 SeerMemory，记录 claim_timeline、vote_timeline、current_pressure_target 和 alive_inspection_map；2) 增加发言前一致性整理与校验，确保公开发言不会把已死亡目标当作当前查验对象，也不会把旧查验说成新查验；3) 把 day_speech / sheriff_election_speech / last_words 的 prompt 改成固定骨架：已知事实 -> 当前唯一矛盾点 -> 单一投票目标，高压时只允许最小事实集；4) 让 _rank_inspect_targets 显式利用未解决对跳链和下一日公共压力来选夜验目标。task.md 里同步写清楚这些行为约束。"
+}

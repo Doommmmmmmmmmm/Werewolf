@@ -1,0 +1,395 @@
+--- villager-n00012/task_agent.py
++++ villager-n00028/task_agent.py
+@@ -42,7 +42,315 @@
+ }
+ 
+ 
+-def render_villager_decision_checklist(request: Mapping[str, Any]) -> str:
++def _search_public_values(root: Any, target_keys: tuple[str, ...], *, max_results: int = 3, max_depth: int = 4) -> list[Any]:
++    lowered_targets = tuple(key.lower() for key in target_keys)
++    results: list[Any] = []
++    queue: list[tuple[Any, int]] = [(root, 0)]
++    seen: set[int] = set()
++
++    while queue and len(results) < max_results:
++        node, depth = queue.pop(0)
++        if depth > max_depth:
++            continue
++        if isinstance(node, Mapping):
++            node_id = id(node)
++            if node_id in seen:
++                continue
++            seen.add(node_id)
++            for key, value in node.items():
++                key_text = str(key).lower()
++                if any(
++                    target == key_text or target in key_text or key_text in target
++                    for target in lowered_targets
++                ):
++                    results.append(value)
++                    if len(results) >= max_results:
++                        break
++                if isinstance(value, (Mapping, list, tuple, set)) and depth < max_depth:
++                    queue.append((value, depth + 1))
++        elif isinstance(node, (list, tuple, set)):
++            for item in node:
++                if isinstance(item, (Mapping, list, tuple, set)) and depth < max_depth:
++                    queue.append((item, depth + 1))
++    return results
++
++
++def _player_label(value: Any) -> str | None:
++    if isinstance(value, bool):
++        return None
++    if isinstance(value, (str, int)):
++        text = str(value).strip()
++        return text or None
++    if isinstance(value, Mapping):
++        for key in (
++            "player_id",
++            "playerId",
++            "id",
++            "name",
++            "target_id",
++            "targetId",
++            "holder",
++            "holder_id",
++            "badge_holder",
++            "badgeHolder",
++            "sheriff_id",
++        ):
++            item = value.get(key)
++            if isinstance(item, (str, int)):
++                text = str(item).strip()
++                if text:
++                    return text
++        role = value.get("role")
++        player_id = value.get("player_id") or value.get("playerId") or value.get("id")
++        if isinstance(role, str) and isinstance(player_id, (str, int)):
++            pid = str(player_id).strip()
++            if pid:
++                return f"{pid}({role})"
++    return None
++
++
++def _collect_compact_labels(value: Any, *, limit: int = 6) -> list[str]:
++    labels: list[str] = []
++    seen: set[str] = set()
++
++    def add(label: str | None) -> None:
++        if not label:
++            return
++        cleaned = str(label).strip()
++        if not cleaned or cleaned in seen:
++            return
++        seen.add(cleaned)
++        labels.append(cleaned)
++
++    def visit(node: Any) -> None:
++        if len(labels) >= limit:
++            return
++        label = _player_label(node)
++        if label is not None:
++            add(label)
++            return
++        if isinstance(node, Mapping):
++            direct_label = _player_label(node)
++            if direct_label is not None:
++                add(direct_label)
++                return
++            for key, item in node.items():
++                if len(labels) >= limit:
++                    break
++                key_label = _player_label(key)
++                if key_label is not None and not isinstance(item, (Mapping, list, tuple, set)):
++                    if isinstance(item, bool):
++                        if item:
++                            add(key_label)
++                    elif isinstance(item, (int, float)):
++                        if item:
++                            add(f"{key_label}:{item}")
++                    elif isinstance(item, str):
++                        text = item.strip()
++                        if text:
++                            add(f"{key_label}:{text}")
++                    else:
++                        add(key_label)
++                else:
++                    visit(item)
++        elif isinstance(node, (list, tuple, set)):
++            for item in node:
++                if len(labels) >= limit:
++                    break
++                visit(item)
++
++    visit(value)
++    return labels
++
++
++def _format_compact_value(value: Any, *, limit: int = 6) -> str:
++    if value is None:
++        return ""
++    if isinstance(value, bool):
++        return "是" if value else "否"
++    if isinstance(value, (str, int, float)):
++        return str(value).strip()
++    if isinstance(value, Mapping):
++        parts: list[str] = []
++        for key, item in value.items():
++            if len(parts) >= limit:
++                break
++            key_text = _player_label(key) or str(key).strip()
++            if not key_text:
++                continue
++            if isinstance(item, bool):
++                if item:
++                    parts.append(key_text)
++                continue
++            if isinstance(item, (str, int, float)):
++                item_text = str(item).strip()
++                if item_text:
++                    parts.append(f"{key_text}:{item_text}")
++                continue
++            nested = _format_compact_value(item, limit=2)
++            if nested:
++                parts.append(f"{key_text}:{nested}")
++        if not parts:
++            parts = _collect_compact_labels(value, limit=limit)
++        return "、".join(parts[:limit])
++    if isinstance(value, (list, tuple, set)):
++        return "、".join(_collect_compact_labels(value, limit=limit))
++    return str(value).strip()
++
++
++_FALSELIKE_COMPACT_TEXTS = {"", "否", "false", "False", "0", "无", "none", "None"}
++
++
++def _is_meaningful_compact_text(text: str) -> bool:
++    return str(text).strip() not in _FALSELIKE_COMPACT_TEXTS
++
++
++def _format_vote_snapshot(value: Any) -> str:
++    if isinstance(value, Mapping):
++        parts: list[str] = []
++        for key, item in value.items():
++            if len(parts) >= 5:
++                break
++            key_text = _player_label(key) or str(key).strip()
++            if not key_text:
++                continue
++            if isinstance(item, (int, float)):
++                parts.append(f"{key_text}×{item}")
++            elif isinstance(item, bool):
++                if item:
++                    parts.append(key_text)
++            else:
++                item_text = _format_compact_value(item, limit=2)
++                if item_text:
++                    parts.append(f"{key_text}:{item_text}")
++        if parts:
++            return "、".join(parts)
++    if isinstance(value, (list, tuple, set)):
++        recent_targets: list[str] = []
++        counts: dict[str, int] = {}
++        for item in list(value)[-10:]:
++            if isinstance(item, Mapping):
++                target = (
++                    item.get("target_id")
++                    or item.get("targetId")
++                    or item.get("target")
++                    or item.get("vote_target")
++                )
++                label = _player_label(target)
++                if label is None and target is not None:
++                    label = str(target).strip() or None
++                if label:
++                    recent_targets.append(label)
++                    counts[label] = counts.get(label, 0) + 1
++        if counts:
++            ranked = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
++            return "、".join(f"{name}×{count}" for name, count in ranked[:5])
++        if recent_targets:
++            return "、".join(recent_targets[-5:])
++    return _format_compact_value(value, limit=6)
++
++
++def _extract_first_public_count(public_state: Any, target_keys: tuple[str, ...]) -> int | None:
++    for value in _search_public_values(public_state, target_keys, max_results=4):
++        if isinstance(value, bool):
++            continue
++        if isinstance(value, (int, float)):
++            normalized = int(value)
++            if normalized >= 0:
++                return normalized
++        if isinstance(value, (list, tuple, set)):
++            return len(value)
++        if isinstance(value, Mapping):
++            truthy_count = 0
++            seen_simple_status = False
++            for item in value.values():
++                if isinstance(item, bool):
++                    seen_simple_status = True
++                    if item:
++                        truthy_count += 1
++                elif isinstance(item, (int, float)):
++                    seen_simple_status = True
++                    if item > 0:
++                        truthy_count += 1
++                elif isinstance(item, str):
++                    seen_simple_status = True
++                    if item.strip().lower() not in {"", "0", "false", "dead", "eliminated", "out", "none", "null"}:
++                        truthy_count += 1
++                else:
++                    seen_simple_status = False
++                    truthy_count = 0
++                    break
++            if seen_simple_status and truthy_count >= 0:
++                return truthy_count
++    return None
++
++
++def _collect_allowed_targets(request: Mapping[str, Any]) -> list[str]:
++    allowed_actions = request.get("allowed_actions")
++    targets: list[str] = []
++    if not isinstance(allowed_actions, list):
++        return targets
++    for action in allowed_actions:
++        if not isinstance(action, Mapping):
++            continue
++        raw_targets = action.get("target_ids")
++        if not isinstance(raw_targets, list):
++            continue
++        for target_id in raw_targets:
++            label = _player_label(target_id)
++            if label is None:
++                label = str(target_id).strip()
++            if label and label not in targets:
++                targets.append(label)
++    return targets
++
++
++def render_public_state_brief(public_state: Any, request: Mapping[str, Any]) -> str:
++    phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "unknown")
++    lines = [f"【当前公开态势】阶段：{phase}。"]
++
++    alive_count = _extract_first_public_count(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living"))
++    if alive_count is not None:
++        lines.append(f"存活人数：{alive_count}。")
++
++    alive_values = _search_public_values(public_state, ("alive_players", "living_players", "survivors", "live_players", "living"), max_results=1)
++    if alive_values:
++        text = _format_compact_value(alive_values[0], limit=8)
++        if _is_meaningful_compact_text(text):
++            lines.append(f"存活名单：{text}。")
++
++    dead_values = _search_public_values(public_state, ("dead_players", "eliminated_players", "dead", "graveyard", "death_list"), max_results=1)
++    if dead_values:
++        text = _format_compact_value(dead_values[0], limit=8)
++        if _is_meaningful_compact_text(text):
++            lines.append(f"已死名单：{text}。")
++
++    sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=2)
++    if sheriff_values:
++        text = _format_compact_value(sheriff_values[0], limit=4)
++        if _is_meaningful_compact_text(text):
++            lines.append(f"警长/警徽：{text}。")
++
++    claim_values = _search_public_values(public_state, ("public_claims", "claims", "claims", "revealed_roles", "role_claims", "check_log", "checks"), max_results=1)
++    if claim_values:
++        text = _format_compact_value(claim_values[0], limit=6)
++        if _is_meaningful_compact_text(text):
++            lines.append(f"公开查验/自报：{text}。")
++
++    vote_values = _search_public_values(public_state, ("vote_history", "votes", "ballots", "vote_matrix", "voting"), max_results=1)
++    if vote_values:
++        text = _format_vote_snapshot(vote_values[0])
++        if _is_meaningful_compact_text(text):
++            lines.append(f"近期票型：{text}。")
++
++    targets = _collect_allowed_targets(request)
++    if targets:
++        lines.append(f"本次可选目标：{'、'.join(targets[:6])}。")
++
++    return "\n".join(lines[:7])
++
++
++def render_villager_decision_checklist(request: Mapping[str, Any], public_state: Any | None = None) -> str:
+     """给平民用的短决策清单，只作为提示文本，不引入任何隐藏状态。"""
+ 
+     phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "")
+@@ -62,8 +370,16 @@
+     has_sheriff = any(key in phase_lower for key in ("sheriff", "警长", "警徽")) or any(
+         key in allowed_kinds for key in ("sheriff_vote", "sheriff")
+     )
++    alive_count = _extract_first_public_count(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living")) if public_state is not None else None
++    sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain"), max_results=2) if public_state is not None else []
++    sheriff_text = _format_compact_value(sheriff_values[0], limit=4) if sheriff_values else ""
++    if not _is_meaningful_compact_text(sheriff_text):
++        sheriff_text = ""
++    claim_values = _search_public_values(public_state, ("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks"), max_results=1) if public_state is not None else []
++    vote_values = _search_public_values(public_state, ("vote_history", "votes", "ballots", "vote_matrix", "voting"), max_results=1) if public_state is not None else []
++
+     if has_vote:
+-        lines.append("投票时优先保护可信金水、持续报验且查杀被支持的预言家、强神声明者和警徽传递链；只有硬对跳、明显矛盾、查杀命中或事实错误时才推翻。")
++        lines.append("投票时优先保护可信金水、持续报验且查杀被票型或发言支持的预言家、强神声明者和警徽传递链；只有硬对跳、明显矛盾、查杀命中或事实错误时才推翻。")
+         lines.append("优先找未被金水覆盖且存在票型异常、事实错误、被查杀或爆狼线索指向的人。")
+     if has_speak:
+         lines.append("发言至少点出一个关注对象和一个暂不投对象，并说明依据哪条公开信息。")
+@@ -71,6 +387,15 @@
+         lines.append("遗言只留公开事实、票型、查验链和怀疑对象，不把推测说成系统事实。")
+     if has_sheriff:
+         lines.append("警长/警徽相关回合优先看报验链是否清晰一致；接徽时继承公开遗产但不要把它当系统确认。")
++    if alive_count is not None and alive_count <= 6:
++        lines.append("残局强制规则：先在当前存活者里排出两个嫌疑人，并明确说明谁更像狼、为什么；不能只复读旧链或只保守跟票。")
++        lines.append("比较时优先用存活/死亡顺序、投票轨迹、公开查验链和当前矛盾来重排嫌疑，不要让已死或无徽的旧权威自动保留高权重。")
++    if sheriff_text:
++        lines.append("若警长已死、失徽、转移或其身份链被公开打断，就按当前存活证据重新排序，不再默认跟随旧警徽链。")
++    if claim_values and not sheriff_text:
++        lines.append("公开查验链若只剩单一路径，也必须拿它和一个基于票型/死亡/矛盾的替代嫌疑直接对比后再投。")
++    if vote_values:
++        lines.append("投票比较时优先看谁更像被跟票、谁的死亡顺序与公开声明冲突、谁在当前存活集里更难自洽。")
+     lines.append("残局或持警徽时，额外复盘存活名单、已死名单、可信查验链和灰区名单，再决定出谁。")
+     return "\n".join(lines)
+ 
+@@ -241,6 +566,7 @@
+             "self": turn_packet["self"],
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
++            "public_state_brief": render_public_state_brief(turn_packet["public_state"], turn_packet["request"]),
+             "request": turn_packet["request"],
+             "history_policy": {
+                 "default_context": "current_state_only",
+@@ -269,7 +595,7 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], feedback),
++                "instruction": self._turn_instruction(turn_packet["request"], turn_packet["public_state"], feedback),
+                 "packet": prompt,
+             }
+             try:
+@@ -345,11 +671,12 @@
+         )
+ 
+     @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
+-        checklist = render_villager_decision_checklist(request)
++    def _turn_instruction(request: Mapping[str, Any], public_state: Any, feedback: str) -> str:
++        checklist = render_villager_decision_checklist(request, public_state)
++        public_brief = render_public_state_brief(public_state, request)
+         feedback_text = f"上一次输出未通过校验：{feedback}" if feedback else ""
+         validation_feedback = "\n".join(
+-            part for part in (feedback_text, checklist) if part
++            part for part in (public_brief, feedback_text, checklist) if part
+         )
+         return render_prompt(
+             "player_turn_instruction.txt",
+--- villager-n00012/task.md
++++ villager-n00028/task.md
+@@ -13,3 +13,6 @@
+ - 当存活人数较少，或你自己持有警徽时，先复盘四件事：**存活名单、已死名单、可信查验链、灰区名单**；优先找**未被金水覆盖**且存在**事实错误、票型异常、被查杀/爆狼线索**的人。
+ - 少弃票：只有在候选几乎无差异且继续投票会明显误伤强神时才考虑 pass；否则尽量给出当前证据最强的票。
+ - 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实，也不能把猜测说成事实。
++- 终局加严：当存活人数 <= 6 时，必须先点名**两个当前嫌疑人**并给出排序；明确说明谁更像狼、为什么更像狼，依据必须来自**存活/死亡名单、投票轨迹、公开查验链、警徽转移/失徽状态、当前公开自报**。
++- 终局时不要继续把**已死的**或**已经无徽/被打断链条的**公开持证者当作默认高权重；只有当前存活证据仍支持时才保留优势。
++- 如果场上只剩一条公开链，也要把它和一个基于票型、死亡顺序、事实矛盾推出来的第二嫌疑直接对比，再决定投谁。

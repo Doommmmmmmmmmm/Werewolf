@@ -1,0 +1,175 @@
+--- seer-base/task_agent.py
++++ seer-n00015/task_agent.py
+@@ -216,6 +216,9 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
++        seer_known_results = self._extract_seer_known_results(private)
++        if seer_known_results:
++            prompt["seer_known_results"] = seer_known_results
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+@@ -236,7 +239,7 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], feedback),
++                "instruction": self._turn_instruction(turn_packet["request"], private, feedback),
+                 "packet": prompt,
+             }
+             try:
+@@ -312,12 +315,34 @@
+         )
+ 
+     @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
+-        return render_prompt(
++    def _turn_instruction(request: Mapping[str, Any], private: Mapping[str, Any], feedback: str) -> str:
++        instruction = render_prompt(
+             "player_turn_instruction.txt",
+             action_contract=render_action_contract(request),
+             validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
+         )
++        seer_hint = TaskAgent._seer_phase_hint(request, private)
++        if seer_hint:
++            instruction = instruction + "\n\n" + seer_hint
++        return instruction
++
++    @staticmethod
++    def _seer_phase_hint(request: Mapping[str, Any], private: Mapping[str, Any]) -> str:
++        if str(private.get("role")) != "seer":
++            return ""
++        raw_actions = request.get("allowed_actions")
++        allowed_actions = raw_actions if isinstance(raw_actions, list) else []
++        kinds = {str(item.get("kind") or "") for item in allowed_actions if isinstance(item, Mapping)}
++        hints: list[str] = []
++        if "seer_inspect" in kinds:
++            hints.append("预言家夜验：只从 target_ids 选，避开已验位，优先验证能改变明日放逐的冲突核心或票仓。")
++        if kinds & {"sheriff_candidate", "sheriff_election_speech", "speak", "last_words"}:
++            hints.append("首日/警上若已拿到查验，先公开查验事实，再给两个警徽流、验人理由和当日主票；若已暴露且可能夜死，也要把下一验顺序和不同结果下的处置说完。")
++        if "day_vote" in kinds:
++            hints.append("白天投票优先执行自己公开的归票，保护金水，不投已验好人，除非有更高可信的公开事实。")
++        if kinds & {"sheriff_badge_transfer", "destroy"}:
++            hints.append("警徽处置优先传给已公开金水或最可信带队好人；若没有可信接徽者，再考虑撕徽。")
++        return " ".join(hints)
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+         if self.request_coordinator is not None:
+@@ -348,6 +373,90 @@
+                 self._model_token_usage[key] += value
+ 
+     @staticmethod
++    def _extract_seer_known_results(private: Mapping[str, Any]) -> list[dict[str, str]]:
++        if str(private.get("role")) != "seer":
++            return []
++
++        results: list[dict[str, str]] = []
++        seen_targets: set[str] = set()
++
++        def normalize_team(value: object) -> str | None:
++            if value is None:
++                return None
++            text = str(value).strip()
++            if not text:
++                return None
++            lowered = text.lower()
++            aliases = {
++                "village": "village",
++                "villager": "village",
++                "good": "village",
++                "goodish": "village",
++                "town": "village",
++                "wolf": "wolf",
++                "werewolf": "wolf",
++                "evil": "wolf",
++                "mafia": "wolf",
++            }
++            return aliases.get(lowered, text)
++
++        def add_entry(target: object, team: object) -> None:
++            if target is None:
++                return
++            target_id = str(target).strip()
++            team_name = normalize_team(team)
++            if not target_id or not team_name or target_id in seen_targets:
++                return
++            seen_targets.add(target_id)
++            results.append({"target_id": target_id, "team": team_name})
++
++        def walk(value: object) -> None:
++            if isinstance(value, Mapping):
++                target = None
++                for key in ("target_id", "target", "player_id", "player", "subject", "checked_player"):
++                    if key in value:
++                        target = value.get(key)
++                        break
++                team = None
++                for key in ("team", "result", "alignment", "side", "check_result", "reveal"):
++                    if key in value:
++                        team = value.get(key)
++                        break
++                if target is not None and team is not None:
++                    add_entry(target, team)
++                for nested_key in (
++                    "inspection_results",
++                    "inspections",
++                    "checks",
++                    "check_results",
++                    "results",
++                    "history",
++                    "data",
++                ):
++                    nested = value.get(nested_key)
++                    if nested is not None:
++                        walk(nested)
++            elif isinstance(value, list):
++                for item in value:
++                    walk(item)
++
++        for key in (
++            "inspection_results",
++            "inspections",
++            "checks",
++            "check_results",
++            "seer_inspections",
++            "seer_checks",
++            "known_results",
++            "memory",
++        ):
++            value = private.get(key)
++            if value is not None:
++                walk(value)
++
++        return results[:6]
++
++    @staticmethod
+     def _nonnegative_int(value: object, *, fallback: int | None) -> int | None:
+         if isinstance(value, bool):
+             return fallback
+--- seer-base/task.md
++++ seer-n00015/task.md
+@@ -1,8 +1,23 @@
+ # 预言家最小任务
+ 
+ 你的任务是利用查验信息帮助好人获胜，并让公开发言符合真实预言家的节奏。
++
++## 基本原则
+ 
+ - 夜间优先选择能最大化信息价值且当前行动包允许的查验目标，并记录已知结果。
+ - 白天把查验结果、公开发言和票型结合起来；发言时清楚区分查验事实与推测。
+ - 是否立即跳身份、如何安排查验顺序，要结合存活情况和信息暴露风险决定。
+ - 不要编造没有收到的查验结果，也不要用同一套发言模板应对所有局面。
++
++## 预言家阶段化执行清单
++
++- 首个白天或警上若已经拿到查验，优先公开身份；发言至少包含：昨夜查验目标与结果、验人理由、两个警徽流目标及为什么验、当日主票或主压目标、对金水的保护声明。
++- 若当选警长，白天发言必须给出唯一优先票口和备选票口；投票阶段原则上执行自己公开的归票，不要只说“听完再定”。
++- 夜间查验优先验证会改变明日放逐结果的对象：对跳者、投/踩自己金水的人、上一轮主导错误放逐的人、关键票仓、警徽候选、发言强势但身份未定者；低优先级是已公开金水、基本坐实好人、已死亡或已验过者。
++- 若自己已经暴露且可能夜死，白天必须提前留下下一验顺序，以及不同查验结果下的处置，不要把关键信息留到夜里再说。
++
++## 信息可信度与发言结构
++
++- 发言按【查验事实】【公开事实】【推断】【行动】四段组织。
++- 不得把推断、玩家自述、遗言、平安夜解释或投票推断写成已确认身份。
++- 可以并且应该明确说“这是推测”或“这是基于当前公开信息的判断”。

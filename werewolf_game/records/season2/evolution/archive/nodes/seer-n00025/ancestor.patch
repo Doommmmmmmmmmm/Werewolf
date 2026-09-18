@@ -1,0 +1,386 @@
+--- seer-n00014/task_agent.py
++++ seer-n00025/task_agent.py
+@@ -22,6 +22,7 @@
+ 
+ _CHINESE_CHARACTER = re.compile(r"[\u3400-\u9fff]")
+ _PLAYER_ID_PATTERN = re.compile(r"\bp\d+\b", re.IGNORECASE)
++_SEAT_REFERENCE_PATTERN = re.compile(r"(?:第\s*)?(\d{1,2})(?:\s*(?:号|位))")
+ _CURRENT_DIALOGUE_TEXT_LIMIT = 120
+ _CURRENT_DIALOGUE_ITEM_LIMIT = 6
+ _SUMMARY_TEXT_LIMIT = 160
+@@ -60,6 +61,8 @@
+     inspected: list[dict[str, str]] = field(default_factory=list)
+     declared_claims: list[dict[str, str]] = field(default_factory=list)
+     challenged_players: list[str] = field(default_factory=list)
++    seat_to_player_id: dict[str, str] = field(default_factory=dict)
++    player_to_seat: dict[str, str] = field(default_factory=dict)
+     recent_vote_summary: str = ""
+     recent_vote_detail: dict[str, Any] = field(default_factory=dict)
+     dialogue_digest: list[str] = field(default_factory=list)
+@@ -75,6 +78,8 @@
+         self.inspected.clear()
+         self.declared_claims.clear()
+         self.challenged_players.clear()
++        self.seat_to_player_id.clear()
++        self.player_to_seat.clear()
+         self.recent_vote_summary = ""
+         self.recent_vote_detail.clear()
+         self.dialogue_digest.clear()
+@@ -363,6 +368,8 @@
+         seer_brief: dict[str, Any],
+     ) -> str:
+         pieces = [render_action_contract(request)]
++        risk_mode = seer_brief.get("risk_mode") if isinstance(seer_brief, Mapping) else None
++        risk_active = bool(isinstance(risk_mode, Mapping) and risk_mode.get("active"))
+         if mode == "night_inspect":
+             pieces.append(
+                 "夜间优先验信息增益最高的目标：优先 sheriff 候选、强对跳、发言强但立场模糊者、票型关键位；"
+@@ -387,10 +394,17 @@
+             pieces.append(
+                 "保持 seer 视角：任何发言都要尽量围绕查验、对跳、票型和可验证推断，不要套通用狼人杀模板。"
+             )
++        if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
++            pieces.append(
++                "风险发言模式：只输出 1 个已知事实 + 1 个可验证投票方向；不要一次性摊开全部查验、全部名单或完整推理链。"
++            )
+         if seer_brief.get("facts"):
+-            pieces.append("事实摘要：" + "；".join(seer_brief["facts"]))
++            facts = seer_brief["facts"]
++            if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
++                facts = facts[:1]
++            pieces.append("事实摘要：" + ";".join(facts))
+         if seer_brief.get("pressure_points"):
+-            pieces.append("当前压力点：" + "；".join(seer_brief["pressure_points"]))
++            pieces.append("当前压力点：" + ";".join(seer_brief["pressure_points"]))
+         if seer_brief.get("self_risk"):
+             pieces.append("自保判断：" + str(seer_brief["self_risk"]))
+         if feedback:
+@@ -460,6 +474,7 @@
+             )
+         )
+         self._seer_memory.phase = self._stringify(self._extract_phase(packet))
++        self._refresh_player_aliases(packet)
+ 
+         alive = self._extract_player_ids(
+             self._first_present(
+@@ -579,15 +594,13 @@
+         if value is None:
+             return result
+         if isinstance(value, str):
+-            ids = _PLAYER_ID_PATTERN.findall(value)
+-            if ids:
+-                return self._unique_stable(ids)
+-            return [value] if value.strip() else []
++            result.extend(self._extract_player_ids_from_text(value))
++            return self._unique_stable(result)
+         if isinstance(value, Mapping):
+             for key in ("player_id", "id", "target_id", "speaker", "name"):
+                 nested = value.get(key)
+                 if isinstance(nested, str) and nested:
+-                    result.append(nested)
++                    result.extend(self._extract_player_ids_from_text(nested))
+             for nested in value.values():
+                 result.extend(self._extract_player_ids(nested))
+             return self._unique_stable(result)
+@@ -596,23 +609,133 @@
+                 if isinstance(item, Mapping):
+                     result.extend(self._extract_player_ids(item))
+                 elif isinstance(item, str):
+-                    ids = _PLAYER_ID_PATTERN.findall(item)
+-                    result.extend(ids or ([item] if item.strip() else []))
++                    result.extend(self._extract_player_ids_from_text(item))
+                 else:
+                     text = self._stringify(item)
+                     if text:
+-                        ids = _PLAYER_ID_PATTERN.findall(text)
+-                        result.extend(ids or [text])
++                        result.extend(self._extract_player_ids_from_text(text))
+             return self._unique_stable(result)
+         text = self._stringify(value)
+         if text:
+-            ids = _PLAYER_ID_PATTERN.findall(text)
+-            return self._unique_stable(ids or [text])
+-        return result
++            result.extend(self._extract_player_ids_from_text(text))
++        return self._unique_stable(result)
+ 
+     def _extract_single_player_id(self, value: Any) -> str:
+         ids = self._extract_player_ids(value)
+         return ids[0] if ids else ""
++
++    def _refresh_player_aliases(self, packet: Mapping[str, Any]) -> None:
++        public_state = self._first_present(packet, (("public_state",),))
++        if not isinstance(public_state, Mapping):
++            return
++        players = public_state.get("players")
++        if players is None:
++            return
++        seat_to_player_id: dict[str, str] = {}
++        player_to_seat: dict[str, str] = {}
++        alias_to_player_id: dict[str, str] = {}
++
++        def register_alias(alias: str, player_id: str) -> None:
++            alias = self._stringify(alias).strip()
++            if not alias or not player_id:
++                return
++            alias_to_player_id[alias.lower()] = player_id
++            if alias.startswith("p"):
++                alias_to_player_id[alias] = player_id
++
++        entries: list[tuple[Any, Any]]
++        if isinstance(players, Mapping):
++            entries = list(players.items())
++        elif isinstance(players, Sequence) and not isinstance(players, (str, bytes, bytearray)):
++            entries = [(index, item) for index, item in enumerate(list(players), start=1)]
++        else:
++            return
++
++        for seat_hint, item in entries:
++            player_id = ""
++            seat_value: Any = seat_hint
++            if isinstance(item, Mapping):
++                player_id = self._extract_single_player_id(
++                    item.get("player_id")
++                    or item.get("playerId")
++                    or item.get("id")
++                    or item.get("player")
++                    or item.get("name")
++                )
++                seat_value = item.get("seat") or item.get("seat_id") or item.get("seatId") or item.get("position") or item.get("index") or seat_hint
++            else:
++                player_id = self._extract_single_player_id(item)
++            if not player_id:
++                continue
++            seat_text = self._normalize_seat_text(seat_value)
++            if seat_text:
++                seat_to_player_id[seat_text] = player_id
++                player_to_seat[player_id] = seat_text
++                for alias in self._seat_alias_variants(seat_text):
++                    register_alias(alias, player_id)
++            register_alias(player_id, player_id)
++            register_alias(player_id.lower(), player_id)
++
++        if seat_to_player_id:
++            self._seer_memory.seat_to_player_id = seat_to_player_id
++        if player_to_seat:
++            self._seer_memory.player_to_seat = player_to_seat
++        if alias_to_player_id:
++            self._seer_memory.seat_to_player_id.update(alias_to_player_id)
++
++    def _extract_player_ids_from_text(self, text: str) -> list[str]:
++        text = self._stringify(text)
++        if not text:
++            return []
++        result = list(_PLAYER_ID_PATTERN.findall(text))
++        alias_map = self._seer_memory.seat_to_player_id
++        if alias_map:
++            lowered = text.lower()
++            matches: list[tuple[int, str]] = []
++            for alias, player_id in alias_map.items():
++                if not alias or not player_id:
++                    continue
++                pattern = self._alias_pattern(alias)
++                for match in pattern.finditer(lowered):
++                    matches.append((match.start(), player_id))
++            if matches:
++                matches.sort(key=lambda item: item[0])
++                result.extend(player_id for _, player_id in matches)
++        return self._unique_stable(result)
++
++    def _alias_pattern(self, alias: str) -> re.Pattern[str]:
++        escaped = re.escape(alias.lower())
++        if re.fullmatch(r"p\d+", alias.lower()) or re.fullmatch(r"\d+", alias):
++            return re.compile(rf"(?<!\d){escaped}(?!\d)", re.IGNORECASE)
++        return re.compile(rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])", re.IGNORECASE)
++
++    def _seat_alias_variants(self, seat_text: str) -> list[str]:
++        normalized = self._normalize_seat_text(seat_text)
++        if not normalized:
++            return []
++        aliases: list[str] = []
++        if normalized.isdigit():
++            aliases.extend([f"{normalized}号", f"{normalized}位", f"第{normalized}位", f"第{normalized}号"])
++        else:
++            aliases.append(normalized)
++        return self._unique_stable(aliases)
++
++    def _normalize_seat_text(self, seat_value: Any) -> str:
++        text = self._stringify(seat_value).strip()
++        if not text:
++            return ""
++        lowered = text.lower()
++        if lowered.startswith("第"):
++            lowered = lowered[1:]
++        lowered = lowered.replace(" ", "")
++        if lowered.endswith("号") or lowered.endswith("位"):
++            lowered = lowered[:-1]
++        if lowered.isdigit():
++            return lowered
++        match = _SEAT_REFERENCE_PATTERN.search(text)
++        if match:
++            return match.group(1)
++        return text
+ 
+     def _summarize_vote_info(self, packet: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+         vote_value = self._first_present(
+@@ -736,21 +859,50 @@
+             text = line
+             if ":" in line:
+                 speaker, text = line.split(":", 1)
+-                speaker = speaker.strip()
++                speaker = self._extract_single_player_id(speaker.strip()) or speaker.strip()
+                 text = text.strip()
+-            claim_keywords = ("我是", "我跳", "我真", "预言家", "对跳", "查验", "警长", "竞选", "验了", "验过")
+-            if any(keyword in text for keyword in claim_keywords):
+-                entry = {"speaker": speaker or self._speaker_from_text(text), "claim": self._truncate_text(text, _SUMMARY_TEXT_LIMIT)}
++            claim_text = self._extract_explicit_claim_text(text)
++            if claim_text:
++                entry = {
++                    "speaker": speaker or self._speaker_from_text(text),
++                    "claim": self._truncate_text(claim_text, _SUMMARY_TEXT_LIMIT),
++                }
+                 if entry["speaker"] or entry["claim"]:
+                     self._seer_memory.declared_claims.append(entry)
+-            if any(keyword in text for keyword in ("对跳", "质疑", "假", "狼", "冲票", "先出", "出他", "票他")):
+-                ids = self._extract_player_ids(text)
++            challenge_targets = self._extract_explicit_challenge_targets(text)
++            if challenge_targets:
+                 if speaker:
+-                    ids.append(speaker)
++                    challenge_targets.append(self._extract_single_player_id(speaker) or speaker)
+                 self._seer_memory.challenged_players = self._unique_stable(
+-                    list(self._seer_memory.challenged_players) + ids
++                    list(self._seer_memory.challenged_players) + challenge_targets
+                 )
+         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
++
++    def _extract_explicit_claim_text(self, text: str) -> str:
++        text = self._stringify(text).strip()
++        if not text:
++            return ""
++        claim_markers = ("我是", "我跳", "我自称", "自报", "我认", "报身份", "亮身份")
++        role_markers = ("预言家", "女巫", "猎人", "守卫", "警长", "村民", "平民", "狼人", "好人", "坏人")
++        if any(marker in text for marker in claim_markers) and any(role in text for role in role_markers):
++            return text
++        if any(phrase in text for phrase in ("我验", "我查", "验了", "验过", "查验")) and any(
++            role in text for role in ("查杀", "金水", "银水", "狼", "好人", "坏人")
++        ):
++            return text
++        return ""
++
++    def _extract_explicit_challenge_targets(self, text: str) -> list[str]:
++        text = self._stringify(text).strip()
++        if not text:
++            return []
++        challenge_markers = ("对跳", "质疑", "查杀", "抗推", "冲票", "归票", "出票", "先出", "先票", "出他", "票他")
++        if not any(marker in text for marker in challenge_markers):
++            return []
++        targets = self._extract_player_ids(text)
++        if targets:
++            return targets
++        return []
+ 
+     def _update_claims_and_challenges_from_packet(self, packet: Mapping[str, Any]) -> None:
+         claims = self._first_present(
+@@ -863,12 +1015,14 @@
+         facts = self._seer_facts_summary()
+         pressure_points = self._pressure_points_summary(turn_packet)
+         self_risk = self._self_risk_summary(turn_packet)
++        risk_mode = self._risk_mode_summary(turn_packet, mode, self_risk)
+         brief: dict[str, Any] = {
+             "mode": mode,
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+             "facts": facts,
+             "pressure_points": pressure_points,
+             "self_risk": self_risk,
++            "risk_mode": risk_mode,
+         }
+         if preferred_targets:
+             brief["preferred_targets"] = preferred_targets[:_SUMMARY_LIST_LIMIT]
+@@ -911,19 +1065,55 @@
+         ranked, _ = self._rank_inspect_targets(turn_packet, allowed_targets)
+         if ranked:
+             points.append("夜验优先：" + "、".join(ranked[:_SUMMARY_LIST_LIMIT]))
++        if self._self_is_under_pressure(turn_packet):
++            points.append("当前处于高暴露/高集火风险")
+         return points[:_SUMMARY_LIST_LIMIT]
+ 
+     def _self_risk_summary(self, turn_packet: Mapping[str, Any]) -> str:
+-        self_seen = self.player_id in self._seer_memory.challenged_players
+-        other_claims = len(self._seer_memory.declared_claims)
++        if self._self_is_under_pressure(turn_packet):
++            return "自保压力高：已被公开质疑/集火或处于高暴露阶段，发言宜先简后实。"
+         phase = self._extract_phase(turn_packet).lower()
+-        if self_seen:
+-            return "自保压力高：已在公开内容中被质疑，发言宜先简后实。"
+         if "elect" in phase or "sheriff" in phase or "警长" in phase or "竞选" in phase:
+             return "身份暴露风险中等：竞选期要先立可信事实，再给投票方向。"
+-        if other_claims >= 3:
++        if len(self._seer_memory.declared_claims) >= 3:
+             return "信息竞争激烈：要把查验事实尽快转成压票点。"
+         return "常规风险：优先保留信息优势，不要过度展开。"
++
++    def _self_is_under_pressure(self, turn_packet: Mapping[str, Any]) -> bool:
++        phase = self._extract_phase(turn_packet).lower()
++        channel = str((turn_packet.get("request") or {}).get("channel") or "").lower()
++        pressure_tokens = ("elect", "sheriff", "竞选", "警长")
++        election_context = any(token in phase for token in pressure_tokens) or any(token in channel for token in pressure_tokens)
++        self_seen = self.player_id in self._seer_memory.challenged_players
++        exposed_claims = len(self._seer_memory.declared_claims) >= 4
++        return self_seen or election_context or exposed_claims
++
++    def _risk_mode_summary(
++        self, turn_packet: Mapping[str, Any], mode: str, self_risk: str
++    ) -> dict[str, Any]:
++        under_pressure = self._self_is_under_pressure(turn_packet)
++        if not under_pressure:
++            return {
++                "active": False,
++                "level": "normal",
++                "mode": mode,
++                "rule": "可正常展开事实链，但仍优先使用可回看验证的证据。",
++            }
++        if mode in {"sheriff_election_speech", "day_speech", "general"}:
++            return {
++                "active": True,
++                "level": "high",
++                "mode": mode,
++                "rule": "只说 1 个已知事实 + 1 个可验证投票方向；不要一次性公开全部查验。",
++                "self_risk": self_risk,
++            }
++        return {
++            "active": True,
++            "level": "medium",
++            "mode": mode,
++            "rule": "保持发言克制，优先用最小事实集推动投票。",
++            "self_risk": self_risk,
++        }
+ 
+     def _decide_mode(self, turn_packet: Mapping[str, Any]) -> str:
+         request = turn_packet.get("request") or {}
+@@ -1041,7 +1231,7 @@
+     def _speaks_a_lot(self, target_id: str) -> bool:
+         count = 0
+         for line in self._seer_memory.dialogue_digest:
+-            if target_id in line:
++            if target_id in self._extract_player_ids(line):
+                 count += 1
+         return count >= 2
+ 
+@@ -1145,7 +1335,7 @@
+         return deduped
+ 
+     def _speaker_from_text(self, text: str) -> str:
+-        ids = _PLAYER_ID_PATTERN.findall(text)
++        ids = self._extract_player_ids(text)
+         return ids[0] if ids else ""
+ 
+     @staticmethod
+--- seer-n00014/task.md
++++ seer-n00025/task.md
+@@ -30,4 +30,5 @@
+ 
+ - 不要编造没有收到的查验结果。
+ - 不要忽视生存风险；必要时先短发言、后补证据。
++- 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先短发言并只释放足够推动投票的最小事实集，而不是一次性展开全部查验。
+ - 预言家的价值在于把真信息变成公共压力，而不是单纯报身份。

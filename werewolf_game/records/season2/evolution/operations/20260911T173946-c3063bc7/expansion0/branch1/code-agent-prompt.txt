@@ -1,0 +1,148 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00043 是一个高胜率且基本稳定的节点（20局15胜，胜率0.75），现有公开记忆、夜间共识解析、夜刀锁定和发言约束已经有效，不建议重写框架。下一代应做最小增量：补齐“当前公开状态/警徽链”在 prompt 中的缺失，给白天投票和警长投票等非发言 target 行动增加狼队策略层，并降低非法 target 的残余风险。抽样胜局虽然狼人获胜，但多次出现围绕警徽归属、已死亡玩家、查验链的事实错误，说明当前压缩输入没有把 turn_packet 的最新 public_state 直接呈现给模型；同时 day_vote、sheriff_vote 等关键动作落入 stage=other，模型缺少可执行的狼队投票计划。",
+  "evidence": [
+    {
+      "source": "read_evaluation_summary",
+      "fact": "wolf-n00043 最近评测 game_count=20、complete_game_count=20、win_count=15、loss_count=5、win_rate=0.75；focus_role_only 下 decision_count=1421、fallback_count=4、invalid_decision_count=4、fallback_rate≈0.0028。",
+      "interpretation": "节点整体强，不应大改；但仍有少量 focus 非法行动和 fallback，可通过更严格的合法目标约束与投票策略降低。"
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "_build_compact_turn_prompt 没有把 turn_packet['public_state'] 的当前 sheriff、players alive 状态、当前公开投票/警徽状态直接放入 prompt；state_digest 主要来自 memory_snapshot。",
+      "interpretation": "当警徽在夜间/白天中途转移、死亡状态快速变化时，模型可能依据过期记忆发言，尤其在警徽链上产生事实错误。"
+    },
+    {
+      "source": "random_game_replay game19 seq147-183, seq189-200",
+      "fact": "公开事件显示 seq147 警徽从 p12 转给 p3，seq179-183 p3 夜死后警徽转给 p1；但第2天发言中 p6、p8、p11、p2 等狼人围绕 p3/p1 警徽链出现大量互相矛盾叙述，例如 p8 说‘让p1、p3把交接讲完’，p11 说‘系统记录是第2轮警徽转到p3’并要求持徽人解释。",
+      "interpretation": "狼人发言有效制造混乱并最终赢局，但其中包含对当前持徽人和死亡状态的错误引用；这种错误在其他对局中可能直接暴露狼面。"
+    },
+    {
+      "source": "random_game_replay game19 seq328-333",
+      "fact": "第4天 p6 称‘警徽从p1转到p5’并要求 p5 报查验，但当时 p5 已在 seq317 死亡，seq320 警徽已转给 p7；随后 p7、p9、p10、p4 都抓住 p6 的警徽链错误，p6 当天被 5.5 票出局。",
+      "interpretation": "这是当前节点最清晰的失败模式：没有可靠使用最新 public_state，导致公开发言锚定已死亡或非持徽玩家。"
+    },
+    {
+      "source": "random_game_replay game19 seq379-382",
+      "fact": "残局时 p11 说‘系统里r5徽已经交给p7’并想听 p7 解释，但 seq367-371 显示 p7 已死亡并把警徽转给 p4；p4 立刻指出‘p7已经死了啊’。",
+      "interpretation": "即便最终 p11 获胜，这种事实错误会在更强对手或不同票型下导致最后一狼被抓。"
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "_build_wolf_strategy 仅在夜间 target_actions 分支构建 night strategy，在 speech_actions 分支构建 day_focus；day_vote、sheriff_vote、sheriff_candidacy 等无发言的关键政治动作会返回 stage='other'。",
+      "interpretation": "白天投票、警长投票和上警决策缺少狼队专用推荐目标、规避目标、队友保护/牺牲阈值。"
+    },
+    {
+      "source": "random_game_replay game19 seq117-128, seq202-211, seq272-279",
+      "fact": "多轮 day_vote 中狼人投票有时成功集火好人，有时连续卖队友：第2天 p2/p6/p8/p11 集中或半集中导致 p8 出局；第3天 p6、p11 跟票 p2，p2 出局；第4天 p11 跟票 p6，p6 出局。",
+      "interpretation": "牺牲队友在该胜局中可接受，但当前代码没有明确阈值区分‘必要倒钩’与‘无计划连续卖狼’，在失败局中可能导致四狼逐个出局。"
+    },
+    {
+      "source": "read_other_branch wolf-n00044 / wolf-n00063",
+      "fact": "旁支 wolf-n00044 在 n00043 祖先基础上增加 resolved_night_memory 和夜刀失败/空刀降权；wolf-n00063 进一步压缩历史并加入夜间阶段 profile。",
+      "interpretation": "可借鉴旁支的轻量夜间结果记忆，但 n00043 当前胜率更高，优先修复公开状态与白天政治动作，不宜照搬大规模改动。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "最新 public_state 没有直接进入模型可见决策摘要",
+      "details": "当前 prompt 的 state_digest 主要来自 observe 后的 memory_snapshot，而 observe 同步粒度有限；turn_packet 内的最新 public_state 虽被部分 helper 用于打分，但没有以明确、可信的 current_state_digest 形式呈现给模型，导致警徽、存活状态、死亡顺序在发言中被误用。"
+    },
+    {
+      "cause": "警徽链事件提取和校验不足",
+      "details": "_update_public_ledger 记录 sheriff_changes 依赖 summary['sheriff_id'] 的变化，但 prompt 没有同时给出当前 sheriff 与最近 transfer 事件的强约束；当玩家死亡后转徽，模型容易混淆‘曾经持徽’与‘当前持徽’。"
+    },
+    {
+      "cause": "白天非发言 target 行动缺少狼队策略",
+      "details": "day_vote、sheriff_vote、sheriff_candidacy 等关键行动没有 _build_vote_strategy/_build_sheriff_strategy，导致模型在投票阶段只依赖通用任务和压缩包，缺少‘优先压非狼焦点、何时倒钩、何时分票、何时避开真预言家候选’等具体指令。"
+    },
+    {
+      "cause": "队友信息没有系统性参与白天目标选择",
+      "details": "当前 _select_day_focus 和投票目标推荐都主要基于 public_state records、票型、claim、提及次数；没有统一抽取 private_information 中的 wolf_ids/alive_wolf_ids，也没有在白天发言/投票中对队友设置保护、软切割或牺牲阈值。"
+    },
+    {
+      "cause": "非法 target 残余风险仍存在",
+      "details": "评测中 focus invalid_decision_count=4，错误类型包括 wolf_kill_vote/day_vote target_id 不在 target_ids 中。虽然 render_action_contract 已列出合法模板，但策略层可能仍给出过期或非法候选，模型重试后仍可能失败。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_compact_turn_prompt 中新增 current_public_state_digest，直接从 turn_packet['public_state'] 和 turn_packet['game'] 提取：current_sheriff_id、alive_player_ids、dead_player_ids、recent_death_order、players_alive_map、当前 round/phase。将它放在 decision_state.state_digest 内，并在 case_summary 中优先引用 current_sheriff_id 而不是 memory_snapshot 的旧 sheriff_id。",
+      "rationale": "修复警徽链/死亡状态过期导致的公开事实错误。此修改只压缩当前行动包已有公开信息，不增加外部状态，不绕过可见性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 helper：_current_public_state_digest(turn_packet, memory_snapshot)、_current_sheriff_id(public_state, game, memory_snapshot)、_current_alive_dead(public_state, game, memory_snapshot)。要求这些 helper 能处理 public_state['sheriff'] 为 mapping、public_state['players'] 为 list、game['alive_players']/['dead_players'] 为 list 或 mapping 的情况。",
+      "rationale": "当前代码已有零散提取函数，但 prompt 层没有统一的‘最新事实源’。集中 helper 能减少错误并便于后续策略使用。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _select_day_evidence 和 _day_pressure_points 中优先使用 current_public_state_digest：若目标已死亡，则不得生成‘要求其发言/报查验/解释’这类下一步动作；若目标是当前 sheriff，则明确写‘当前持徽人’，若只是历史持徽人则写‘曾持徽/警徽链相关’。",
+      "rationale": "避免 p6/p11 这类要求死人解释、要求已死亡持徽人报查验的高暴露发言。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增私有狼队抽取 helper：_wolf_team_ids(private_information) 和 _alive_wolf_ids(private_information, current_public_state_digest)。支持常见字段 wolf_ids、wolves、teammates、known_wolves、team_members；过滤 None，返回字符串列表。不要把‘这是狼队友’写入公开发言文本，只作为策略约束。",
+      "rationale": "为白天投票、发言对象和倒钩阈值提供基础，减少无计划连续卖队友；读取的仅是狼人行动包内已有私有信息。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_wolf_strategy 中增加白天 target_actions 分支，识别 kind 包含 day_vote、sheriff_vote、sheriff_candidate/pass 等非夜间目标行动，调用 _build_day_target_strategy(turn_packet, memory_snapshot, current_dialogue, target_actions, current_digest)。返回 stage='day_vote' 或 'sheriff_vote'，包含 recommended_target_id、backup_target_id、avoid_target_ids、mode、reason、teammate_risk。",
+      "rationale": "补齐当前 stage='other' 的关键策略空洞，让模型在投票阶段收到明确狼队计划，而不是只靠泛化 prompt。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "实现 _build_day_vote_strategy：候选合法目标来自 allowed_actions.target_ids；优先选择非狼、存活、当前公共压力高的玩家。若最高压力目标是狼队友，则根据阈值决定：只有队友被明确查杀/被多数票压死/牺牲可换叙事时 mode='bus_teammate'；否则 mode='deflect'，推荐第二高非狼目标或合法 pass。输出 reason 时使用公开证据（票型、死亡、警徽链），不得泄露队友身份。",
+      "rationale": "保持必要倒钩能力，同时减少无计划跟风卖狼。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "实现 _build_sheriff_vote_strategy：若候选人在 current_dialogue 或 recent_public_texts 中跳预言家、报查杀 self 或 alive_wolf_id，则将其加入 avoid_target_ids 并大幅降权；优先投非该候选、可疑好人候选或狼队指定候选。若可合法 pass 且所有候选高风险，推荐 pass。",
+      "rationale": "警长票权和发言顺序影响很大；需要避免把警徽送给查杀狼队的预言家或强势好人。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 normalize_decision/decision_error 重试失败路径前新增轻量安全兜底函数 _repair_illegal_target(action, request, wolf_strategy)：当 kind 合法但 target_id 不在当前 target_ids 中时，优先改为 wolf_strategy.recommended_target_id 中的合法值，其次 backup_target_id，其次该 kind 的第一个合法 target；若 kind 是可 pass 的投票阶段且目标非法，可改为 pass。只在最终抛 RuleViolationError 前使用一次，并记录 self action。",
+      "rationale": "降低 focus invalid_decision_count，避免模型因策略中旧目标或幻觉目标导致整局 fallback。兜底仍严格使用 allowed_actions，不改变 schema 或规则。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "借鉴 wolf-n00044 的小部分 night resolution 记忆，但保持最小：observe 时在夜转昼且 dead_players 变化后记录上一晚 locked_plan.primary_target_id、backup_target_id、dawn_deaths、outcome。_rank_targets 对上一晚 no_death 的同一主刀轻微降权，对已死亡目标强制排除。",
+      "rationale": "n00043 夜刀已经不错，不需要大改；只需避免空刀后重复撞守/救，并进一步避免非法或已死亡目标。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充两条任务约束：1）白天发言以当前公开状态为准，当前持徽人、死亡玩家、警徽转移不得凭记忆猜；不能要求已死亡玩家继续解释或报查验。2）投票前先区分目标是否狼队友：除非队友已被硬查杀或票势不可逆，否则优先把票压向非狼公共焦点；若牺牲队友，下一轮必须能用公开票型自然解释。",
+      "rationale": "让模型在 prompt 层理解代码策略意图，减少事实错误和无计划卖队友。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "过度保护队友可能导致狼人抱团暴露",
+      "mitigation": "投票策略不要绝对禁止投队友；保留 bus_teammate 模式，并以‘被查杀、票势不可逆、多数公共压力’作为触发条件。"
+    },
+    {
+      "risk": "current_public_state_digest 增加 prompt 长度",
+      "mitigation": "只放 player_id/alive/sheriff/death_order 最近几项，不注入完整 public_state 或完整历史，保持在 12000 字符预算内。"
+    },
+    {
+      "risk": "本地 repair_illegal_target 可能选择低质量但合法目标",
+      "mitigation": "仅在模型多次重试后仍非法时启用，优先使用策略推荐的合法目标；宁可合法低质量，也避免整局 fallback。"
+    },
+    {
+      "risk": "警长链修正会减少当前节点在抽样胜局中利用混乱取胜的能力",
+      "mitigation": "允许策略继续质疑警徽链，但必须基于当前公开事实；从‘事实错误式混乱’改为‘解释分歧式混乱’。"
+    },
+    {
+      "risk": "借鉴旁支 night resolution 可能引入复杂状态 bug",
+      "mitigation": "只实现最小夜间 outcome 记录，不照搬大段 n00044/n00063；若时间不足，优先完成 public_state_digest 和 day_vote_strategy。"
+    }
+  ],
+  "code_agent_brief": "请在 wolf-n00043 的 task_agent.py/task.md 上做小范围增量修改，不要重写框架。核心目标：1）把 turn_packet 当前 public_state 压缩进 decision_state，明确 current_sheriff_id、alive/dead、最近死亡，避免模型用过期警徽链发言；2）新增狼队友抽取和白天 target 行动策略，让 day_vote/sheriff_vote/sheriff_candidacy 不再落入 stage='other'；3）对非法 target 做一次严格基于 allowed_actions 的最终修复；4）task.md 补充当前公开事实优先、不要要求死人解释、投票时保护/牺牲队友阈值。实现时只能改 task_agent.py 和 task.md，不访问外部文件/网络，不修改引擎、规则、schema 或工具。优先修改 _build_compact_turn_prompt、_build_wolf_strategy、_select_day_evidence/_day_pressure_points，并新增 helper：_current_public_state_digest、_wolf_team_ids、_alive_wolf_ids、_build_day_target_strategy、_build_day_vote_strategy、_build_sheriff_vote_strategy、_repair_illegal_target。所有推荐目标必须从当前 allowed_actions.target_ids 中选择；公开发言不得泄露狼队友信息。"
+}

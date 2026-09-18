@@ -1,0 +1,451 @@
+--- hunter-n00076/task_agent.py
++++ hunter-n00106/task_agent.py
+@@ -36,6 +36,9 @@
+ _PUBLIC_MEMORY_MAX_ROUNDS = 8
+ _PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY = 4
+ _PUBLIC_MEMORY_MAX_SCAN_DEPTH = 3
++_PUBLIC_SUSPICION_MAX_PLAYERS = 32
++_PUBLIC_SUSPICION_MAX_REASONS = 3
++_PUBLIC_SUSPICION_MAX_SEEN = 96
+ 
+ _MEMORY_KEYS = {
+     "round",
+@@ -268,6 +271,9 @@
+             "total_tokens": 0,
+         }
+         self._recent_public_events: deque[dict[str, Any]] = deque(maxlen=_PUBLIC_MEMORY_MAX_ROUNDS)
++        # 只保存由公开同步/当前轮公开发言压缩出的玩家画像；不保存完整历史。
++        self._public_suspicion: dict[str, dict[str, Any]] = {}
++        self._public_suspicion_seen: deque[str] = deque(maxlen=_PUBLIC_SUSPICION_MAX_SEEN)
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+         """接收公开同步，并压缩保存为按轮次组织的短记忆。"""
+@@ -275,6 +281,7 @@
+         entry = self._build_public_memory_entry(sync_packet)
+         if entry is None:
+             return
++        self._update_public_suspicion_from_records(entry.get("records"), sync_packet)
+         if self._recent_public_events:
+             last = self._recent_public_events[-1]
+             if self._public_memory_key(last) == self._public_memory_key(entry):
+@@ -446,7 +453,6 @@
+         request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
+         public_state = turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {}
+         memory_entries = list(self._recent_public_events)
+-        ranking = self._rank_hunter_targets(request, public_state, memory_entries)
+         phase = str(
+             turn_packet.get("game", {}).get(
+                 "public_phase",
+@@ -454,8 +460,16 @@
+             )
+         )
+         mode = self._infer_hunter_decision_mode(request, phase)
++        # 当前轮对话是公开可见的增量证据；画像只接收压缩后的事件，不接收完整历史。
++        self._update_public_suspicion_from_dialogue(
++            (turn_packet.get("tool_context") or {}).get("current_round_dialogue"),
++            public_state,
++        )
++        self._update_public_suspicion_from_public_state(public_state)
++        ranking = self._rank_hunter_targets(request, public_state, memory_entries, mode=mode)
+         pressure = self._rank_public_pressure(memory_entries, public_state)
+         dialogue_preview = self._summarize_current_dialogue(turn_packet.get("tool_context"))
++        counts = self._public_state_counts(public_state)
+ 
+         lines = [f"模式：{mode}；阶段：{phase}"]
+         recent_memory = ranking.get("recent_memory") or []
+@@ -473,6 +487,13 @@
+         ordered = ranking.get("target_ranking") or []
+         if mode == "hunter_reaction":
+             legal_targets = ranking.get("legal_targets") or []
++            lines.append(
++                "死亡反应计数：合法目标 %d 个，场上存活 %d 人，已死亡 %d 人；若为低容错残局，应优先开枪最高嫌疑而非默认 pass。"
++                % (len(legal_targets), counts["alive_count"], counts["dead_count"])
++            )
++            revealed = ranking.get("revealed_roles") or []
++            if revealed:
++                lines.append("公开身份：" + "、".join(revealed[:5]))
+             if legal_targets:
+                 lines.append("合法目标：" + "、".join(legal_targets[:6]))
+             if ordered:
+@@ -482,10 +503,12 @@
+                     top_bits.append(f"{item.get('target_id')}({item.get('score')}:{reason})")
+                 lines.append("目标排序：" + " > ".join(top_bits))
+             if ranking.get("pass_recommended"):
+-                lines.append("证据不足或连锁风险高时优先跳过")
++                lines.append("当前仍可 pass：没有足够可区分证据，避免把枪交给诱导；但不要因习惯机械跳过。")
+             elif ranking.get("best_target"):
+-                lines.append(f"优先目标：{ranking['best_target']}")
++                lines.append(f"残局/证据阈值允许开枪，优先目标：{ranking['best_target']}")
+         elif mode == "day_vote":
++            if self._single_seer_kill_without_counterclaim(memory_entries, public_state, dialogue_preview):
++                lines.append("一致性提醒：当前像是单预言家查杀且无可信对跳；发言先承认查杀的执行优先级，再提出可验证疑点，避免口头强烈稀释却投票跟随。")
+             if pressure.get("top_names"):
+                 lines.append("重点怀疑：" + "、".join(pressure["top_names"]))
+             if ordered:
+@@ -496,43 +519,63 @@
+                 lines.append("若需跟票优先看：" + " > ".join(top_bits))
+             lines.append("发言时要点出当前票型与具体冲突，不要只说泛化站边。")
+         else:
++            if self._single_seer_kill_without_counterclaim(memory_entries, public_state, dialogue_preview):
++                lines.append("一致性提醒：先承认单预言家查杀的执行优先级，再说待验证疑点；不要一边强烈稀释查杀、一边投票跟查杀。")
+             if pressure.get("top_names"):
+                 lines.append("重点人名：" + "、".join(pressure["top_names"]))
+             lines.append("发言要求：必须引用最近1-2条公开证据，点名1个具体玩家，并给出1个具体理由；优先说票型、对跳、金水/查杀冲突，不要空泛套话。")
+-        return self._truncate_text("\n".join(lines), 900)
++        return self._truncate_text("\n".join(lines), 1100)
+ 
+     def _infer_hunter_decision_mode(self, request: Mapping[str, Any], phase: str) -> str:
+         raw_actions = request.get("allowed_actions") if isinstance(request.get("allowed_actions"), list) else []
+         kinds = [str(item.get("kind") or "").lower() for item in raw_actions if isinstance(item, Mapping)]
+-        if any(kind in _SPEECH_ACTION_KINDS for kind in kinds):
+-            return "speak"
+         phase_text = f"{phase} {request.get('phase', '')}".lower()
+         if any(token in phase_text for token in ("hunter", "last_words", "遗言", "反应", "开枪", "被击杀", "被刀", "death")):
+             return "hunter_reaction"
++        if "last_words" in kinds and any(kind in _PASS_KIND_ALIASES or "shoot" in kind or "fire" in kind for kind in kinds):
++            return "hunter_reaction"
++        if any(kind in _SPEECH_ACTION_KINDS for kind in kinds):
++            return "speak"
+         return "day_vote"
+ 
+     def _summarize_current_dialogue(self, tool_context: Any) -> str:
++        """把当前轮全部可见发言压成猎人可用的事件摘要，而非只给末三条。"""
+         if not isinstance(tool_context, Mapping):
+             return ""
+         dialogue = tool_context.get("current_round_dialogue")
+         if not isinstance(dialogue, list):
+             return ""
+         bits: list[str] = []
+-        for item in dialogue[-3:]:
++        for item in dialogue:
+             if isinstance(item, Mapping):
+                 speaker = self._first_compact(item, ("speaker", "speaker_id", "player", "player_id", "name"))
+                 text = self._first_compact(item, ("text", "message", "content", "reason"))
+-                if speaker and text:
+-                    bits.append(self._truncate_text(f"{speaker}:{text}", 72))
+-                elif text:
+-                    bits.append(self._truncate_text(text, 72))
+-                elif speaker:
+-                    bits.append(self._truncate_text(speaker, 24))
+             elif isinstance(item, str):
+-                compact = self._truncate_text(self._compact_text(item, 72), 72)
+-                if compact:
+-                    bits.append(compact)
+-        return " | ".join(bits[:3])
++                speaker, text = "", self._compact_text(item, 180)
++            else:
++                continue
++            if not text and not speaker:
++                continue
++            lower = text.lower()
++            tags: list[str] = []
++            tag_words = (
++                ("查杀", "查杀"), ("金水", "金水"), ("对跳", "对跳"),
++                ("假死", "假死"), ("死亡", "死亡"), ("投票", "投票"),
++                ("平票", "平票"), ("别推", "别推"), ("带节奏", "带节奏"),
++            )
++            for needle, label in tag_words:
++                if needle in lower:
++                    tags.append(label)
++            mentioned = self._dedupe_preserve_order(_PLAYER_ID_TEXT.findall(text))
++            tag_text = "/".join(tags[:4]) or "普通"
++            names = ",".join(mentioned[:4]) if mentioned else "无点名"
++            left = f"{speaker or '未知'}[{tag_text};点名:{names}]"
++            if text:
++                left += ":" + self._compact_text(text, 72)
++            bits.append(left)
++        # 允许全轮扫描，但始终把注入简报限制在约 300-400 字。
++        result = " | ".join(bits)
++        return self._truncate_text(result, 380)
+ 
+     def _rank_public_pressure(self, memory_entries: list[dict[str, Any]], public_state: Mapping[str, Any]) -> dict[str, Any]:
+         candidate_scores: dict[str, dict[str, Any]] = {}
+@@ -598,6 +641,8 @@
+         request: Mapping[str, Any],
+         public_state: Mapping[str, Any],
+         memory_entries: list[dict[str, Any]],
++        *,
++        mode: str | None = None,
+     ) -> dict[str, Any]:
+         legal_targets = self._collect_target_ids(request)
+         recent_memory = [
+@@ -611,6 +656,7 @@
+                 "target_ranking": [],
+                 "pass_recommended": True,
+                 "best_target": None,
++                "revealed_roles": [],
+             }
+ 
+         target_ranking: list[dict[str, Any]] = []
+@@ -628,13 +674,30 @@
+         second = target_ranking[1] if len(target_ranking) > 1 else None
+         best_score = int(best["score"]) if best else 0
+         second_score = int(second["score"]) if second else 0
+-        pass_recommended = best is None or best_score < 4 or (best_score - second_score < 2 and best_score < 6)
++        inferred_mode = mode or self._infer_hunter_decision_mode(request, str(request.get("phase", "")))
++        counts = self._public_state_counts(public_state)
++        alive_count, dead_count = counts["alive_count"], counts["dead_count"]
++        low_tolerance = inferred_mode == "hunter_reaction" and (alive_count <= 6 or len(legal_targets) <= 5)
++        if low_tolerance:
++            # 残局仍要求有证据，但不再沿用早期 best>=4 且领先两分的门槛。
++            pass_recommended = best is None or best_score < 2 or (best_score < 3 and best_score < second_score)
++        else:
++            pass_recommended = best is None or best_score < 4 or (best_score - second_score < 2 and best_score < 6)
++        revealed_roles = []
++        for target_id in legal_targets:
++            role = self._revealed_role(public_state, target_id)
++            if role:
++                revealed_roles.append(f"{target_id}={role}")
+         return {
+             "legal_targets": legal_targets,
+             "recent_memory": recent_memory,
+             "target_ranking": target_ranking,
+             "pass_recommended": pass_recommended,
+             "best_target": best["target_id"] if best and not pass_recommended else None,
++            "revealed_roles": revealed_roles,
++            "alive_count": alive_count,
++            "dead_count": dead_count,
++            "low_tolerance": low_tolerance,
+         }
+ 
+     def _score_hunter_target(self, target_id: str, memory_entries: list[dict[str, Any]], public_state: Mapping[str, Any]) -> tuple[int, list[str]]:
+@@ -707,10 +770,219 @@
+                 reasons.append("public_state出现该目标")
+         if _text_mentions_token(" ".join(self._public_memory_label(entry) for entry in memory_entries), target_token):
+             score += 1
++        # 玩家级画像是跨轮行为链的短摘要，权重有限，避免把悍跳自述当成事实。
++        profile = self._public_suspicion.get(target_token)
++        if isinstance(profile, Mapping):
++            profile_score = max(-6, min(8, self._safe_int(profile.get("score"))))
++            score += profile_score
++            for reason in profile.get("reasons", []):
++                if len(reasons) >= 3:
++                    break
++                if reason and reason not in reasons:
++                    reasons.append(self._truncate_text(str(reason), 72))
++        revealed_role = self._revealed_role(public_state, target_token)
++        if revealed_role:
++            normalized_role = revealed_role.lower()
++            if normalized_role in {"guard", "seer", "witch", "hunter", "守卫", "预言家", "女巫", "猎人"}:
++                score -= 8
++                reasons.append(f"公开身份为{revealed_role}")
++            elif normalized_role in {"villager", "村民", "好人", "民"}:
++                score -= 2
++                reasons.append(f"公开翻牌为{revealed_role}")
++        if self._publicly_confirmed_good(target_token, memory_entries):
++            score -= 5
++            reasons.append("被公开金水/强好人链保护")
+         score = max(score, 0)
+         if not reasons:
+             reasons.append("公开记忆里缺少强关联")
+         return score, reasons[:3]
++
++    def _safe_int(self, value: Any) -> int:
++        try:
++            return int(value)
++        except (TypeError, ValueError):
++            return 0
++
++    def _public_state_players(self, public_state: Mapping[str, Any]) -> list[Mapping[str, Any]]:
++        raw = None
++        for key in ("players", "player_states", "participants", "users"):
++            candidate = public_state.get(key)
++            if isinstance(candidate, (list, Mapping)):
++                raw = candidate
++                break
++        if isinstance(raw, list):
++            return [item for item in raw if isinstance(item, Mapping)]
++        if isinstance(raw, Mapping):
++            result: list[Mapping[str, Any]] = []
++            for player_id, item in raw.items():
++                if isinstance(item, Mapping):
++                    merged = dict(item)
++                    merged.setdefault("player_id", str(player_id))
++                    result.append(merged)
++            return result
++        return []
++
++    def _public_state_counts(self, public_state: Mapping[str, Any]) -> dict[str, int]:
++        players = self._public_state_players(public_state)
++        alive = 0
++        dead = 0
++        for player in players:
++            value = player.get("alive", player.get("is_alive", player.get("living")))
++            if isinstance(value, bool):
++                alive += int(value)
++                dead += int(not value)
++            elif str(player.get("status", "")).lower() in {"dead", "死亡", "eliminated", "out"}:
++                dead += 1
++            else:
++                # 没有 alive 字段的公开玩家不能被擅自算入任一方。
++                continue
++        return {"alive_count": alive, "dead_count": dead}
++
++    def _revealed_role(self, public_state: Mapping[str, Any], player_id: str) -> str:
++        token = str(player_id).strip()
++        for player in self._public_state_players(public_state):
++            candidate = self._first_compact(player, ("player_id", "id", "name", "user_id"))
++            if candidate != token:
++                continue
++            for key in ("revealed_role", "public_role", "revealed_identity", "flipped_role"):
++                role = self._compact_value(player.get(key))
++                if role and role.lower() not in {"false", "none", "unknown", "null"}:
++                    return role
++        return ""
++
++    def _add_public_suspicion(self, player_id: str, delta: int, reason: str, signature: str) -> None:
++        player_id = self._compact_text(player_id, 32)
++        if not player_id or player_id == self.player_id or not delta:
++            return
++        if signature in self._public_suspicion_seen:
++            return
++        self._public_suspicion_seen.append(signature)
++        profile = self._public_suspicion.setdefault(player_id, {"score": 0, "reasons": []})
++        profile["score"] = max(-8, min(12, self._safe_int(profile.get("score")) + delta))
++        reasons = profile.setdefault("reasons", [])
++        if reason and reason not in reasons:
++            reasons.append(self._truncate_text(reason, 90))
++            del reasons[:-_PUBLIC_SUSPICION_MAX_REASONS]
++        # 防止异常公开 ID 令画像无限增长。
++        if len(self._public_suspicion) > _PUBLIC_SUSPICION_MAX_PLAYERS:
++            oldest = next(iter(self._public_suspicion))
++            if oldest != player_id:
++                self._public_suspicion.pop(oldest, None)
++
++    def _update_public_suspicion_from_records(self, records: Any, source: Any = None) -> None:
++        if not isinstance(records, list):
++            return
++        public_state = source if isinstance(source, Mapping) else {}
++        if isinstance(public_state.get("public_state"), Mapping):
++            public_state = public_state["public_state"]
++        for record in records[:12]:
++            if not isinstance(record, Mapping):
++                continue
++            speaker = self._first_compact(record, ("speaker", "voter", "player"))
++            text = self._first_compact(record, ("text", "reason", "claim"))
++            target = self._first_compact(record, ("target", "vote", "target_id"))
++            if not target:
++                mentioned_ids = self._dedupe_preserve_order(_PLAYER_ID_TEXT.findall(text))
++                if mentioned_ids and any(word in text.lower() for word in ("投", "票", "推", "出局", "查杀", "点")):
++                    target = mentioned_ids[0]
++            if not text:
++                text = self._public_record_text(record)
++            lower = text.lower()
++            if not speaker:
++                continue
++            tag = self._compact_text(text, 70)
++            signature_base = f"{speaker}|{target}|{tag}"
++            anti_seer = ("查杀" in lower or "预言家" in lower) and any(
++                word in lower for word in ("质疑", "不信", "反打", "太顺", "稀释", "别急", "别推", "假", "悍跳")
++            )
++            if anti_seer:
++                self._add_public_suspicion(speaker, 2, f"反打/稀释公开预言家信息：{tag}", signature_base + "|seer")
++            stall = any(word in lower for word in ("平票", "别推", "不出", "信息不足", "先等等", "再听听"))
++            has_alternative = bool(_PLAYER_ID_TEXT.search(text)) or bool(target)
++            if stall and not has_alternative:
++                self._add_public_suspicion(speaker, 1, f"持续劝停但不给替代狼坑：{tag}", signature_base + "|stall")
++            if any(word in lower for word in ("带节奏", "冲票", "带票")):
++                self._add_public_suspicion(speaker, 2, f"被指带节奏/冲票：{tag}", signature_base + "|bandwagon")
++            if target and any(word in lower for word in ("投", "票", "推", "出局", "归票")):
++                revealed = self._revealed_role(public_state, target)
++                if revealed.lower() in {"villager", "村民", "好人", "民"}:
++                    self._add_public_suspicion(speaker, 3, f"推动已翻好人的{target}出局：{tag}", signature_base + "|good-push")
++            mentioned = self._dedupe_preserve_order(_PLAYER_ID_TEXT.findall(text))
++            if any(word in lower for word in ("死亡", "死了", "已死", "警徽")) and mentioned:
++                for mentioned_id in mentioned[:2]:
++                    for player in self._public_state_players(public_state):
++                        pid = self._first_compact(player, ("player_id", "id", "name"))
++                        alive = player.get("alive", player.get("is_alive"))
++                        if pid == mentioned_id and alive is True and ("死" in lower):
++                            self._add_public_suspicion(speaker, 2, f"公开陈述与存活状态冲突：{tag}", signature_base + "|false-fact|" + mentioned_id)
++                badge_holder = self._public_badge_holder(public_state)
++                if badge_holder and any(word in lower for word in ("给", "传", "归属", "在")) and badge_holder not in mentioned:
++                    self._add_public_suspicion(speaker, 2, f"警徽归属陈述与公开状态冲突：{tag}", signature_base + "|false-badge")
++
++    def _public_badge_holder(self, public_state: Mapping[str, Any]) -> str:
++        for player in self._public_state_players(public_state):
++            pid = self._first_compact(player, ("player_id", "id", "name"))
++            if not pid:
++                continue
++            for key in ("badge_holder", "is_badge_holder", "has_badge", "sheriff"):
++                value = player.get(key)
++                if value is True or (isinstance(value, str) and value.lower() in {"true", "yes", "1"}):
++                    return pid
++        for key in ("badge_holder", "sheriff_id", "警长"):
++            holder = self._compact_value(public_state.get(key))
++            if holder:
++                return holder
++        return ""
++
++    def _update_public_suspicion_from_dialogue(self, dialogue: Any, public_state: Mapping[str, Any]) -> None:
++        if not isinstance(dialogue, list):
++            return
++        records: list[dict[str, Any]] = []
++        for item in dialogue:
++            if isinstance(item, Mapping):
++                speaker = self._first_compact(item, ("speaker", "speaker_id", "player", "player_id", "name"))
++                text = self._first_compact(item, ("text", "message", "content", "reason"))
++                if speaker or text:
++                    records.append({"speaker": speaker, "text": text})
++            elif isinstance(item, str):
++                records.append({"text": self._compact_text(item, 180)})
++        self._update_public_suspicion_from_records(records, public_state)
++
++    def _update_public_suspicion_from_public_state(self, public_state: Mapping[str, Any]) -> None:
++        for player in self._public_state_players(public_state):
++            pid = self._first_compact(player, ("player_id", "id", "name"))
++            role = self._revealed_role(public_state, pid) if pid else ""
++            if pid and role.lower() in {"guard", "seer", "witch", "hunter", "守卫", "预言家", "女巫", "猎人"}:
++                self._add_public_suspicion(pid, -6, f"公开身份为{role}，避免误射", f"role|{pid}|{role}")
++
++    def _publicly_confirmed_good(self, target_id: str, memory_entries: list[dict[str, Any]]) -> bool:
++        for entry in memory_entries[-8:]:
++            records = entry.get("records") if isinstance(entry.get("records"), list) else []
++            for record in records:
++                if not isinstance(record, Mapping):
++                    continue
++                text = self._public_record_text(record).lower()
++                mentioned = [self._first_compact(record, ("target", "vote", "player"))]
++                mentioned.extend(_PLAYER_ID_TEXT.findall(text))
++                if "金水" in text and any(_text_mentions_token(value, target_id) for value in mentioned if value):
++                    return True
++        return False
++
++    def _single_seer_kill_without_counterclaim(
++        self, memory_entries: list[dict[str, Any]], public_state: Mapping[str, Any], dialogue_preview: str
++    ) -> bool:
++        chunks = [dialogue_preview]
++        for entry in memory_entries[-6:]:
++            for record in entry.get("records", []) if isinstance(entry.get("records"), list) else []:
++                chunks.append(self._public_record_text(record))
++        try:
++            chunks.append(json.dumps(public_state, ensure_ascii=False, separators=(",", ":")))
++        except TypeError:
++            pass
++        blob = " ".join(chunks).lower()
++        return "查杀" in blob and ("预言家" in blob or "seer" in blob) and not any(
++            word in blob for word in ("对跳", "另一预言家", "双预言家", "seer counter")
++        )
+ 
+     def _build_public_memory_entry(self, value: Any) -> dict[str, Any] | None:
+         if not isinstance(value, Mapping):
+--- hunter-n00076/task.md
++++ hunter-n00106/task.md
+@@ -13,5 +13,16 @@
+ - 活着时保持自然的好人视角，回应当下争议，但必须落到具体人名、具体票型或具体身份冲突上。
+ - 不必急于自证身份；如果需要表态，用简短、可信、基于公开信息的话说明立场，并点出你在看谁、为什么。
+ - 禁止把“先听一圈”“普通牌”“没什么花活”“看情况再说”这类空话当作常规发言；它们只能作为过渡，不能作为主要内容。
+-- 猎人反应阶段先列合法目标，再按“身份可信度 / 票型一致性 / 连锁风险”比较；证据不足优先 pass / skip / wait。
++- 若场上已有单预言家查杀且没有可信对跳，先承认该查杀的执行优先级，再提出可验证的疑点；不要口头强烈稀释查杀、投票却又跟随查杀，除非明确说明原因。
+ - 不要把没有发生的猎人反应、开枪结果或身份结论写成系统事实。
++
++## 猎人隐蔽发言
++- 除非当天已濒临放逐、被迫对跳、必须保护高度可信的神职/警长，或已经进入死亡反应，否则不要主动明跳猎人。
++- 活着时用普通好人视角讲具体公开证据，不要用“我是猎人，谁来试试”一类挑衅式威慑换取信任；隐藏身份能保留被狼误判和后续开枪的价值。
++- 隐藏不等于沉默：仍须点名、引用票型或身份冲突，并在需要自救时及时、清楚地说明理由。
++
++## 猎人反应与残局
++- 只有行动包明确允许时才能开枪或 pass；先列出合法目标，绝不使用包外目标。
++- 触发 `hunter_reaction` 时，按“身份可信度 / 票型一致性 / 连锁风险”比较：优先最近推动好人出局、持续质疑高可信预言家/警长、伪造死亡或警徽事实、末位存活且缺乏可信身份的人。
++- 场上 5~6 人及以下、合法目标较少或已有多狼出局时属于低容错残局，不能机械默认 pass；必须在合法目标中比较并优先枪最高嫌疑。只有没有任何可区分证据，且误伤会立即把胜利交给狼队时才跳过。
++- 早期证据不足仍可 pass，避免被狼诱导误伤；残局降低的是开枪门槛，不是取消合法性检查或允许凭空认定身份。

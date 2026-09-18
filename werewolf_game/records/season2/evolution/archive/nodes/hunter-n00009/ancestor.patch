@@ -1,0 +1,506 @@
+--- hunter-base/task_agent.py
++++ hunter-n00009/task_agent.py
+@@ -1,7 +1,7 @@
+ """最小可运行的角色 Task-Agent。
+ 
+-每次行动从一个新的模型会话开始。模型默认只收到当前状态；本轮对话只能通过唯一的
+-受限工具按需读取。这里不包含策略进化、长期记忆、外部检索或其他 Harness。
++每次行动从一个新的模型会话开始。Agent 只维护受限的局内紧凑记忆，当前轮对话只能
++通过唯一的受限工具按需读取。这里不包含策略进化、外部检索或其他 Harness。
+ """
+ 
+ from __future__ import annotations
+@@ -187,12 +187,25 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._game_memory: dict[str, Any] = {
++            "game_id": None,
++            "last_round_key": None,
++            "recent_rounds": [],
++            "clue_bank": {
++                "confirmed": [],
++                "claims": [],
++                "votes": [],
++                "deaths": [],
++                "conflicts": [],
++            },
++            "current_controversy": "",
++            "latest_public_state": "",
++        }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步并维护受限的局内记忆。"""
++
++        self._update_game_memory(sync_packet)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -201,24 +214,27 @@
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+-        system = self._system_prompt(private)
++        self._update_game_memory(turn_packet)
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
++        memory_summary = self._build_memory_summary(turn_packet, current_dialogue)
++        speech_hint = self._build_action_hint(turn_packet["request"], memory_summary, current_dialogue)
++
++        system = self._system_prompt(private, memory_summary)
+         prompt = {
+-            "game": turn_packet["game"],
+-            "public_rules": turn_packet["public_rules"],
+-            "self": turn_packet["self"],
+-            "private_information": private,
+-            "public_state": turn_packet["public_state"],
+-            "request": turn_packet["request"],
++            "game": self._compact_value(turn_packet["game"], max_depth=2, max_items=8, max_chars=220),
++            "public_rules": self._compact_value(turn_packet["public_rules"], max_depth=2, max_items=8, max_chars=320),
++            "self": self._compact_value(turn_packet["self"], max_depth=2, max_items=8, max_chars=220),
++            "private_information": self._compact_value(private, max_depth=2, max_items=8, max_chars=220),
++            "public_state": self._compact_value(turn_packet["public_state"], max_depth=2, max_items=10, max_chars=520),
++            "request": self._compact_value(turn_packet["request"], max_depth=2, max_items=8, max_chars=320),
+             "history_policy": {
+-                "default_context": "current_state_only",
++                "default_context": "current_state_with_compact_memory",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+                 "max_tool_calls": self.max_tool_calls_per_decision,
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
+-
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -236,7 +252,7 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], feedback),
++                "instruction": self._turn_instruction(turn_packet["request"], feedback, memory_summary, speech_hint),
+                 "packet": prompt,
+             }
+             try:
+@@ -296,7 +312,10 @@
+     def model_token_usage_snapshot(self) -> dict[str, int]:
+         return dict(self._model_token_usage)
+ 
+-    def _system_prompt(self, private: Mapping[str, Any]) -> str:
++    def _system_prompt(self, private: Mapping[str, Any], memory_summary: str = "") -> str:
++        role_task = self.profile.task
++        if memory_summary:
++            role_task = f"{role_task}\n\n【局内紧凑记忆】\n{memory_summary}"
+         return render_prompt(
+             "player_system.txt",
+             player_id=self.player_id,
+@@ -304,20 +323,366 @@
+             team=private["team"],
+             persona=self.persona,
+             role_base=self.profile.base,
+-            role_task=self.profile.task,
++            role_task=role_task,
+             tool_name=CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+             max_tool_calls=self.max_tool_calls_per_decision,
+             max_tool_result_tokens=self.max_tool_result_tokens,
+             max_prompt_chars=self.max_prompt_chars,
+         )
+ 
+-    @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
++    def _turn_instruction(
++        self,
++        request: Mapping[str, Any],
++        feedback: str,
++        memory_summary: str,
++        action_hint: str,
++    ) -> str:
++        action_contract = render_action_contract(request)
++        if action_hint:
++            action_contract = f"{action_contract}\n\n【猎人专用决策提示】\n{action_hint}"
++        if memory_summary:
++            action_contract = f"{action_contract}\n\n【当前紧凑记忆】\n{memory_summary}"
+         return render_prompt(
+             "player_turn_instruction.txt",
+-            action_contract=render_action_contract(request),
++            action_contract=action_contract,
+             validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
+         )
++
++    def _reset_game_memory(self, game_id: str | None) -> None:
++        self._game_memory = {
++            "game_id": game_id,
++            "last_round_key": None,
++            "recent_rounds": [],
++            "clue_bank": {
++                "confirmed": [],
++                "claims": [],
++                "votes": [],
++                "deaths": [],
++                "conflicts": [],
++            },
++            "current_controversy": "",
++            "latest_public_state": "",
++        }
++
++    def _update_game_memory(self, packet: Mapping[str, Any]) -> None:
++        game_id = self._extract_game_id(packet)
++        if self._game_memory.get("game_id") != game_id:
++            self._reset_game_memory(game_id)
++
++        round_key = self._extract_round_key(packet)
++        phase = self._extract_phase(packet)
++        public_root = self._public_root(packet)
++        summary_bits: list[str] = []
++        if public_root is not None:
++            state_summary = self._compact_value(public_root, max_depth=1, max_items=8, max_chars=240)
++            self._game_memory["latest_public_state"] = state_summary
++            summary_bits.append(f"state={state_summary}")
++        for label, keys in (
++            ("confirmed", {"confirmed", "confirmed_roles", "revealed", "revealed_roles", "flip", "flipped"}),
++            ("claims", {"claim", "claims", "claimed", "role_claim", "role_claims"}),
++            ("votes", {"vote", "votes", "ballot", "ballots", "voting"}),
++            ("deaths", {"death", "deaths", "dead", "eliminated", "elimination"}),
++            ("conflicts", {"accusation", "accusations", "conflict", "contradiction", "suspect", "suspicion", "pressure", "challenge"}),
++        ):
++            snippets = self._find_signal_snippets(public_root, keys)
++            if not snippets:
++                continue
++            joined = "；".join(snippets[:2])
++            self._remember_clues(label, snippets)
++            summary_bits.append(f"{label}={joined}")
++            if label in {"conflicts", "votes", "deaths"} and joined:
++                self._game_memory["current_controversy"] = f"{label}={joined}"
++
++        round_summary = f"r={round_key} phase={phase}"
++        if summary_bits:
++            round_summary = f"{round_summary} | " + " | ".join(summary_bits[:4])
++        recent_rounds = self._game_memory["recent_rounds"]
++        if recent_rounds and recent_rounds[-1]["round_key"] == round_key:
++            recent_rounds[-1] = {"round_key": round_key, "summary": round_summary}
++        else:
++            recent_rounds.append({"round_key": round_key, "summary": round_summary})
++        del recent_rounds[:-6]
++        self._game_memory["last_round_key"] = round_key
++        if not self._game_memory["current_controversy"] and summary_bits:
++            self._game_memory["current_controversy"] = summary_bits[-1]
++
++    def _build_memory_summary(self, turn_packet: Mapping[str, Any], current_dialogue: Any) -> str:
++        public_root = self._public_root(turn_packet)
++        round_key = self._extract_round_key(turn_packet)
++        phase = self._extract_phase(turn_packet)
++        current_dialogue_summary = self._compact_value(current_dialogue, max_depth=1, max_items=6, max_chars=260)
++        recent_rounds = [item["summary"] for item in self._game_memory.get("recent_rounds", [])[-3:]]
++        clue_bank = self._game_memory.get("clue_bank", {})
++        clue_parts: list[str] = []
++        for label in ("confirmed", "claims", "votes", "deaths", "conflicts"):
++            entries = clue_bank.get(label) or []
++            if entries:
++                clue_parts.append(f"{label}={';'.join(entries[-2:])}")
++        if public_root is not None:
++            state_summary = self._compact_value(public_root, max_depth=1, max_items=8, max_chars=240)
++        else:
++            state_summary = self._game_memory.get("latest_public_state") or ""
++        parts = [
++            f"game={self._game_memory.get('game_id') or self._extract_game_id(turn_packet)}",
++            f"round={round_key}",
++            f"phase={phase}",
++        ]
++        if state_summary:
++            parts.append(f"state={state_summary}")
++        if recent_rounds:
++            parts.append("recent=" + " || ".join(recent_rounds))
++        if clue_parts:
++            parts.append("clues=" + " || ".join(clue_parts[:3]))
++        current_controversy = self._game_memory.get("current_controversy")
++        if current_controversy:
++            parts.append(f"controversy={current_controversy}")
++        if current_dialogue_summary:
++            parts.append(f"dialogue={current_dialogue_summary}")
++        return self._truncate_text("\n".join(parts), min(1200, self.max_prompt_chars // 4))
++
++    def _build_action_hint(
++        self,
++        request: Mapping[str, Any],
++        memory_summary: str,
++        current_dialogue: Any,
++    ) -> str:
++        allowed_actions = request.get("allowed_actions")
++        allowed = [item for item in allowed_actions if isinstance(item, Mapping)] if isinstance(allowed_actions, list) else []
++        kinds = {str(item.get("kind") or "") for item in allowed}
++        has_speak = "speak" in kinds
++        has_last_words = "last_words" in kinds
++        target_ids: list[str] = []
++        for item in allowed:
++            ids = item.get("target_ids")
++            if isinstance(ids, list):
++                for target_id in ids:
++                    target = str(target_id)
++                    if target and target not in target_ids:
++                        target_ids.append(target)
++        if has_speak:
++            evidence = self._select_evidence_line(memory_summary, current_dialogue)
++            controversy = self._extract_controversy(memory_summary)
++            parts = [
++                f"当前争议：{controversy or '从最近票型/矛盾里选一个具体对象'}。",
++                f"具体证据：{evidence or '从最近发言、投票或死亡链里挑 1 条最直接的证据'}。",
++                "明确判断：只能给出支持/怀疑/待观察中的一个态度，先点名对象再下判断。",
++                "禁止使用固定模板，例如“先听一圈/我先观望/带走最像狼的人”。",
++            ]
++            return " ".join(parts)
++        if not has_last_words:
++            return ""
++        candidate_ids = target_ids or self._extract_player_ids(memory_summary + "\n" + self._compact_value(current_dialogue, max_depth=1, max_items=8, max_chars=320))
++        if not candidate_ids:
++            return "最后遗言优先写成低噪音、可复用的判断；证据不足时直接说明不点名。"
++        scored = self._score_hunter_targets(candidate_ids, memory_summary, current_dialogue)
++        ranked = sorted(scored.items(), key=lambda item: (-item[1][0], item[0]))
++        lines = ["最后遗言先按评分器选最匹配的对象，再决定是否点名。", "评分优先级：票型/发言矛盾 > 公开身份声明 > 对关键位的直接威胁。"]
++        for target_id, (score, reasons) in ranked[:4]:
++            reason_text = "、".join(reasons[:3]) if reasons else "证据弱"
++            lines.append(f"{target_id}:{score}({reason_text})")
++        best_score = ranked[0][1][0] if ranked else 0
++        if best_score < 2:
++            lines.append("证据不足时优先写跳过型遗言：不点名、只说明依据不足。")
++        elif ranked:
++            lines.append(f"优先聚焦：{ranked[0][0]}；如果文本里必须点名，只点最强候选。")
++        return " ".join(lines)
++
++    def _score_hunter_targets(
++        self,
++        target_ids: list[str],
++        memory_summary: str,
++        current_dialogue: Any,
++    ) -> dict[str, tuple[int, list[str]]]:
++        text_sources = [memory_summary, self._compact_value(current_dialogue, max_depth=1, max_items=8, max_chars=320)]
++        scores: dict[str, tuple[int, list[str]]] = {}
++        for target_id in target_ids:
++            score = 0
++            reasons: list[str] = []
++            for source in text_sources:
++                if not source:
++                    continue
++                count = source.count(target_id)
++                if count:
++                    score += min(3, count)
++                    if f"{target_id}=" in source or f"{target_id}:" in source:
++                        reasons.append("被多次点名")
++                if target_id in source and any(token in source for token in ("票", "投票", "矛盾", "冲突", "质疑", "怀疑", "指控")):
++                    score += 2
++                    reasons.append("票型/矛盾")
++                if target_id in source and any(token in source for token in ("claim", "claimed", "声称", "自称", "跳身份", "预言家", "女巫", "守卫", "警长")):
++                    score += 2
++                    reasons.append("公开身份线索")
++                if target_id in source and any(token in source for token in ("威胁", "带走", "刀", "夜刀", "关键位", "神职")):
++                    score += 2
++                    reasons.append("关键位威胁")
++                if target_id in source and any(token in source for token in ("支持", "站边", "帮", "护", "保")):
++                    score -= 1
++                    reasons.append("有人在保")
++            if score <= 0:
++                reasons.append("证据弱")
++            scores[target_id] = (score, reasons)
++        return scores
++
++    def _select_evidence_line(self, memory_summary: str, current_dialogue: Any) -> str:
++        candidates = self._extract_evidence_lines(memory_summary)
++        if not candidates:
++            candidates = self._extract_evidence_lines(self._compact_value(current_dialogue, max_depth=1, max_items=6, max_chars=240))
++        return candidates[0] if candidates else ""
++
++    def _extract_controversy(self, memory_summary: str) -> str:
++        for label in ("controversy=", "conflicts=", "votes=", "claims="):
++            index = memory_summary.find(label)
++            if index >= 0:
++                tail = memory_summary[index + len(label):]
++                return tail.split("\n", 1)[0].split(" || ", 1)[0].strip()
++        return ""
++
++    def _extract_evidence_lines(self, text: str) -> list[str]:
++        if not text:
++            return []
++        lines: list[str] = []
++        for line in text.splitlines():
++            stripped = line.strip()
++            if not stripped:
++                continue
++            if any(token in stripped for token in ("votes=", "conflicts=", "deaths=", "claims=", "confirmed=", "票型", "争议", "死亡", "身份")):
++                lines.append(stripped)
++        return lines[:3]
++
++    def _extract_player_ids(self, text: str) -> list[str]:
++        if not text:
++            return []
++        candidates: list[str] = []
++        for match in re.findall(r"\b(?:[pP]\d+|玩家\d+)\b", text):
++            if match not in candidates:
++                candidates.append(match)
++        return candidates[:8]
++
++    def _remember_clues(self, label: str, snippets: list[str]) -> None:
++        bucket = self._game_memory.get("clue_bank", {}).get(label)
++        if bucket is None:
++            return
++        for snippet in snippets[:3]:
++            if snippet and snippet not in bucket:
++                bucket.append(snippet)
++        del bucket[:-6]
++
++    def _public_root(self, packet: Mapping[str, Any]) -> Mapping[str, Any] | None:
++        public_state = packet.get("public_state")
++        if isinstance(public_state, Mapping):
++            return public_state
++        if isinstance(packet, Mapping):
++            return {key: value for key, value in packet.items() if key != "private_information"}
++        return None
++
++    def _extract_game_id(self, packet: Mapping[str, Any]) -> str | None:
++        candidates = [
++            packet.get("game_id"),
++            packet.get("game", {}).get("game_id") if isinstance(packet.get("game"), Mapping) else None,
++            packet.get("public_state", {}).get("game_id") if isinstance(packet.get("public_state"), Mapping) else None,
++        ]
++        for candidate in candidates:
++            if candidate not in (None, ""):
++                return str(candidate)
++        return None
++
++    def _extract_round_key(self, packet: Mapping[str, Any]) -> str:
++        game = packet.get("game") if isinstance(packet.get("game"), Mapping) else {}
++        public_state = packet.get("public_state") if isinstance(packet.get("public_state"), Mapping) else {}
++        round_value = (
++            game.get("round")
++            or packet.get("round")
++            or public_state.get("round")
++            or public_state.get("round_number")
++            or public_state.get("day")
++            or "?"
++        )
++        return str(round_value)
++
++    def _extract_phase(self, packet: Mapping[str, Any]) -> str:
++        game = packet.get("game") if isinstance(packet.get("game"), Mapping) else {}
++        public_state = packet.get("public_state") if isinstance(packet.get("public_state"), Mapping) else {}
++        phase_value = (
++            game.get("public_phase")
++            or game.get("phase")
++            or packet.get("phase")
++            or public_state.get("phase")
++            or public_state.get("public_phase")
++            or "unknown"
++        )
++        return str(phase_value)
++
++    def _find_signal_snippets(self, node: Any, wanted_keys: set[str], *, max_depth: int = 3) -> list[str]:
++        snippets: list[str] = []
++
++        def walk(value: Any, depth: int) -> None:
++            if len(snippets) >= 3 or depth > max_depth:
++                return
++            if isinstance(value, Mapping):
++                for key, child in value.items():
++                    key_text = str(key).lower()
++                    if key_text in wanted_keys or any(token in key_text for token in wanted_keys):
++                        compact = self._compact_value(child, max_depth=1, max_items=4, max_chars=120)
++                        if compact and compact not in snippets:
++                            snippets.append(compact)
++                    if isinstance(child, (Mapping, list, tuple)):
++                        walk(child, depth + 1)
++            elif isinstance(value, (list, tuple)):
++                for item in value[:4]:
++                    if len(snippets) >= 3:
++                        break
++                    walk(item, depth + 1)
++
++        walk(node, 0)
++        return snippets
++
++    def _compact_value(
++        self,
++        value: Any,
++        *,
++        max_depth: int = 2,
++        max_items: int = 6,
++        max_chars: int = 180,
++    ) -> str:
++        text = self._compact_value_inner(value, max_depth=max_depth, max_items=max_items)
++        return self._truncate_text(text, max_chars)
++
++    def _compact_value_inner(self, value: Any, *, max_depth: int, max_items: int) -> str:
++        if value is None:
++            return "null"
++        if isinstance(value, bool):
++            return "true" if value else "false"
++        if isinstance(value, (int, float)):
++            return str(value)
++        if isinstance(value, str):
++            return self._truncate_text(" ".join(value.split()), 120)
++        if max_depth <= 0:
++            return self._truncate_text(type(value).__name__, 60)
++        if isinstance(value, Mapping):
++            parts: list[str] = []
++            for index, (key, child) in enumerate(value.items()):
++                if index >= max_items:
++                    parts.append("...")
++                    break
++                parts.append(f"{key}:{self._compact_value_inner(child, max_depth=max_depth - 1, max_items=max_items)}")
++            return "{" + ",".join(parts) + "}"
++        if isinstance(value, (list, tuple, set)):
++            parts = []
++            for index, item in enumerate(value):
++                if index >= max_items:
++                    parts.append("...")
++                    break
++                parts.append(self._compact_value_inner(item, max_depth=max_depth - 1, max_items=max_items))
++            return "[" + ",".join(parts) + "]"
++        return self._truncate_text(repr(value), 120)
++
++    @staticmethod
++    def _truncate_text(text: str, max_chars: int) -> str:
++        if len(text) <= max_chars:
++            return text
++        if max_chars <= 1:
++            return text[:max_chars]
++        return text[: max_chars - 1] + "…"
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+         if self.request_coordinator is not None:
+--- hunter-base/task.md
++++ hunter-n00009/task.md
+@@ -1,8 +1,25 @@
+ # 猎人最小任务
+ 
+-你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。
++你的目标是帮助好人找狼，并在猎人死亡触发时做出稳健选择。
+ 
+-- 活着时保持自然的好人视角，收集足够证据，不要为了证明身份而过早暴露。
+-- 被要求开枪时比较合法目标的身份线索和连锁风险；证据不足时可以选择跳过。
+-- 不要把尚未发生的猎人反应写成系统事实，也不要忽略当前行动包的目标范围。
+-- 公开发言要回应当下争议，避免每次都用相同的“带走最像狼的人”模板。
++## 操作清单
++
++1. **记忆**
++   - 活着时，持续记录当前争议、最近票型、最近死亡、公开身份声明。
++   - 把信息压成短的可追溯线索：`嫌疑人 / 支持者 / 矛盾点 / 关键位威胁`。
++   - 只保留当前局内、当前轮次能追溯到的公开信息，不要编造历史。
++
++2. **判断**
++   - 每次发言前，先选定一个“当前争议对象”或“当前争议点”。
++   - 只给出 1 条具体证据，再给出 1 个明确态度：支持、怀疑、或待观察。
++   - 证据优先用票型、发言矛盾、死亡链、公开身份声明，不要只说泛化空话。
++
++3. **开枪 / 跳过**
++   - 当你需要做猎人反应或 last_words 行动时，先比较合法目标。
++   - 优先选择：被多人稳定指控、与投票链明显矛盾、对关键位有直接威胁的目标。
++   - 如果证据不足、目标差异不大，优先跳过；不要为了出手而出手。
++
++4. **发言风格**
++   - 发言必须围绕当下争议回应，避免固定模板。
++   - 不要反复使用“先听一圈 / 我先观望 / 带走最像狼的人”这类空话。
++   - 既要自然像好人，也要让你的判断能被后续回合继续复用。

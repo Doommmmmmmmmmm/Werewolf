@@ -1,0 +1,676 @@
+--- villager-base/task_agent.py
++++ villager-n00010/task_agent.py
+@@ -30,6 +30,32 @@
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ 
++_DEATH_KEYWORDS = ("dead", "death", "died", "kill", "eliminat", "lynch", "死亡", "出局")
++_VOTE_KEYWORDS = ("vote", "ballot", "tally", "poll", "票", "归票")
++_CLAIM_KEYWORDS = ("claim", "claimed", "claiming", "identity", "role", "身份", "跳", "自称")
++_SHERIFF_KEYWORDS = ("sheriff", "chief", "mayor", "警长", "警徽")
++_SPEECH_KEYWORDS = ("speech", "dialogue", "message", "content", "text", "utterance", "say", "发言", "说")
++_PLAYER_LABEL_KEYS = (
++    "player_id",
++    "playerid",
++    "player",
++    "name",
++    "nickname",
++    "nick",
++    "speaker_id",
++    "speaker",
++    "author",
++    "user",
++    "target_id",
++    "targetid",
++    "target",
++    "voter_id",
++    "voterid",
++    "voter",
++    "from",
++    "source",
++    "holder",
++)
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+     "name": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -42,112 +68,110 @@
+ }
+ 
+ 
+-def render_action_contract(request: Mapping[str, Any]) -> str:
+-    """把本次 ``allowed_actions`` 转成模型容易遵守的最终 JSON 契约。
+-
+-    行动包本身仍是唯一的规则来源；这个文本只是将其中当前阶段真正可用的
+-    schema 前置，并为每一种合法行动给出一个**当前就合法**的 JSON 示例。这样
+-    ``kind`` / ``target_id`` 等协议字段不再需要模型从很长的 packet 中自行猜测。
+-    """
+-
+-    raw_actions = request.get("allowed_actions")
+-    allowed_actions = (
+-        [item for item in raw_actions if isinstance(item, Mapping)]
+-        if isinstance(raw_actions, list)
+-        else []
+-    )
+-    phase = str(request.get("phase") or "unknown")
+-    channel = str(request.get("channel") or "unknown")
+-    lines = [
+-        "【本次行动的最终 JSON 契约】",
+-        f"当前内部阶段：{phase}；频道：{channel}。",
+-        "最终回答只能是一个 JSON 对象，不能附加 Markdown、解释、代码块或其他字段。",
+-        "只能从以下当前合法模板中选一个；目标类行动只能把 target_id 改为该模板下列出的候选值。",
+-    ]
+-    if not allowed_actions:
+-        lines.append("当前没有可用行动；不要臆造行动。")
+-        return "\n".join(lines)
+-
+-    for allowed in allowed_actions:
+-        kind = str(allowed.get("kind") or "")
+-        if not kind:
+-            continue
+-        example: dict[str, str] = {"kind": kind}
+-        target_ids = allowed.get("target_ids")
+-        valid_targets = (
+-            [str(target_id) for target_id in target_ids]
+-            if isinstance(target_ids, list) and target_ids
+-            else []
+-        )
+-        if kind in _SPEECH_ACTION_KINDS:
+-            # 单个汉字对任意合法的最小 max_chars 都有效，且示例本身通过“必须含中文”的
+-            # 固定规则。实际 text 可以更完整，也可以包含英文或玩家编号。
+-            example["text"] = "好"
+-        elif valid_targets:
+-            example["target_id"] = valid_targets[0]
+-
+-        lines.append(
+-            "- `" + json.dumps(example, ensure_ascii=False, separators=(",", ":")) + "`"
+-        )
+-        if valid_targets:
+-            lines.append("  target_id 候选值：" + "、".join(valid_targets) + "。")
+-        if kind in _SPEECH_ACTION_KINDS:
+-            max_chars = allowed.get("max_chars")
+-            constraints: list[str] = []
+-            if max_chars is not None:
+-                constraints.append(f"text 最多 {max_chars} 个字符")
+-            if allowed.get("require_chinese"):
+-                constraints.append("text 至少包含一个中文字符")
+-            constraints.append("text 可以包含英文、数字和玩家编号")
+-            lines.append("  " + "；".join(constraints) + "。")
+-
+-    lines.append(
+-        "kind 和 target_id 是协议字段，使用英文是合法且必须原样保留；不要把它们翻译成中文。"
+-    )
+-    return "\n".join(lines)
+-
+-
+-def normalize_decision(raw: dict[str, Any] | None, request: dict[str, Any]) -> dict[str, Any]:
+-    """把模型可能使用的 action / targetId 字段规范成引擎格式。"""
+-
+-    source = raw.get("decision", raw) if isinstance(raw, dict) else {}
+-    action = {
+-        "request_id": request["request_id"],
+-        "player_id": request["player_id"],
+-        "kind": str(source.get("kind", source.get("action", ""))),
+-    }
+-    target_id = source.get("target_id", source.get("targetId"))
+-    if target_id:
+-        action["target_id"] = str(target_id)
+-    if isinstance(source.get("text"), str):
+-        action["text"] = source["text"]
+-    return action
+-
+-
+-def decision_error(action: dict[str, Any], request: dict[str, Any]) -> str | None:
+-    """在提交引擎前做一次本地校验，便于让模型重试。"""
+-
+-    allowed = next(
+-        (item for item in request["allowed_actions"] if item["kind"] == action["kind"]),
+-        None,
+-    )
+-    if allowed is None:
+-        return "kind 必须是 allowed_actions 中的一项"
+-    if action["kind"] in _SPEECH_ACTION_KINDS:
+-        text = str(action.get("text", "")).strip()
+-        if not text:
+-            return f"{action['kind']} 必须提供非空 text"
+-        if len(text) > int(allowed["max_chars"]):
+-            return f"发言超过 max_chars={allowed['max_chars']}"
+-        if allowed.get("require_chinese") and not _CHINESE_CHARACTER.search(text):
+-            return "发言必须包含中文"
+-    target_ids = allowed.get("target_ids")
+-    if target_ids:
+-        if action.get("target_id") not in target_ids:
+-            return "target_id 必须是 target_ids 中的一项"
+-    elif action.get("target_id"):
+-        return "该行动不能提供 target_id"
++def _short_text(value: object, limit: int = 120) -> str | None:
++    if value is None:
++        return None
++    if isinstance(value, bool):
++        text = "true" if value else "false"
++    elif isinstance(value, (int, float)):
++        text = str(value)
++    else:
++        text = str(value)
++    text = " ".join(text.split()).strip()
++    if not text:
++        return None
++    return text[:limit]
++
++
++def _append_unique(items: list[str], value: str | None, *, limit: int) -> None:
++    if not value:
++        return
++    value = value.strip()
++    if not value:
++        return
++    if value in items:
++        items.remove(value)
++    items.append(value)
++    if len(items) > limit:
++        del items[:-limit]
++
++
++def _first_scalar(mapping: Mapping[str, Any], keys: tuple[str, ...]) -> str | None:
++    for key in keys:
++        if key in mapping:
++            text = _short_text(mapping.get(key), 80)
++            if text:
++                return text
+     return None
++
++
++def _unique_strings(values: list[str]) -> list[str]:
++    result: list[str] = []
++    for value in values:
++        if value and value not in result:
++            result.append(value)
++    return result
++
++
++def _split_record(record: str, separator: str) -> tuple[str | None, str | None]:
++    if separator not in record:
++        return None, None
++    left, right = record.split(separator, 1)
++    left = left.strip()
++    right = right.strip()
++    return (left or None), (right or None)
++
++
++def _collect_compact_records(value: Any, kind: str, *, depth: int = 0) -> list[str]:
++    if depth > 4 or value is None:
++        return []
++    records: list[str] = []
++    if isinstance(value, Mapping):
++        if kind == "vote":
++            voter = _first_scalar(value, ("voter_id", "voterid", "voter", "speaker_id", "speaker", "player_id", "player", "from", "source"))
++            target = _first_scalar(value, ("target_id", "targetid", "target", "vote_target", "choice", "to"))
++            if voter and target:
++                records.append(f"{voter}->{target}")
++                return records
++        elif kind == "claim":
++            player = _first_scalar(value, ("player_id", "playerid", "player", "speaker_id", "speaker", "author", "name"))
++            claim = _first_scalar(value, ("claimed_role", "claim", "role", "identity", "claimed_identity", "self_claim"))
++            if player and claim:
++                records.append(f"{player}: {claim}")
++                return records
++        elif kind == "death":
++            player = _first_scalar(value, ("player_id", "playerid", "player", "target_id", "targetid", "target", "victim", "dead", "name"))
++            if player:
++                records.append(player)
++                return records
++        elif kind == "sheriff":
++            player = _first_scalar(value, ("sheriff_id", "sheriffid", "player_id", "player", "holder", "name"))
++            if player:
++                records.append(player)
++                return records
++        elif kind == "statement":
++            speaker = _first_scalar(value, ("speaker_id", "speaker", "player_id", "player", "author", "name", "user"))
++            text = _first_scalar(value, ("text", "content", "message", "dialogue", "utterance", "speech"))
++            if speaker and text:
++                records.append(f"{speaker}: {text}")
++                return records
++            if text:
++                records.append(text)
++                return records
++
++        for nested in value.values():
++            records.extend(_collect_compact_records(nested, kind, depth=depth + 1))
++        return records
++
++    if isinstance(value, (list, tuple, set)):
++        for item in list(value)[:8]:
++            records.extend(_collect_compact_records(item, kind, depth=depth + 1))
++        return records
++
++    text = _short_text(value, 160)
++    if text:
++        records.append(text)
++    return records
+ 
+ 
+ class TaskAgent:
+@@ -187,12 +211,23 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        self._public_memory: dict[str, Any] = {
++            "last_round": None,
++            "last_phase": None,
++            "current_sheriff": None,
++            "sheriff_history": [],
++            "dead_players": [],
++            "recent_vote_records": [],
++            "recent_claim_records": [],
++            "recent_public_statements": [],
++            "claims_by_player": {},
++        }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步，并维护一层极轻量的公共记忆。"""
++
++        facts = self._extract_public_facts(sync_packet)
++        self._merge_public_memory(facts)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -202,15 +237,28 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         system = self._system_prompt(private)
++        current_round_dialogue = turn_packet.get("tool_context", {}).get("current_round_dialogue") or []
++        compact_public_state = self._extract_public_facts(turn_packet.get("public_state"))
++        memory_summary = self._memory_snapshot()
++        analysis_hints = self._build_analysis_hints(compact_public_state, current_round_dialogue)
+         prompt = {
+-            "game": turn_packet["game"],
+-            "public_rules": turn_packet["public_rules"],
+-            "self": turn_packet["self"],
+-            "private_information": private,
+-            "public_state": turn_packet["public_state"],
+-            "request": turn_packet["request"],
++            "turn_meta": {
++                "round": turn_packet["game"].get("round"),
++                "phase": turn_packet["game"].get("public_phase", turn_packet["game"].get("phase")),
++            },
++            "request": {
++                "request_id": turn_packet["request"].get("request_id"),
++                "player_id": turn_packet["request"].get("player_id"),
++                "phase": turn_packet["request"].get("phase"),
++                "channel": turn_packet["request"].get("channel"),
++                "allowed_actions": turn_packet["request"].get("allowed_actions"),
++            },
++            "public_state": compact_public_state,
++            "memory_summary": memory_summary,
++            "analysis_hints": analysis_hints,
++            "current_round_dialogue": self._extract_public_facts(current_round_dialogue),
+             "history_policy": {
+-                "default_context": "current_state_only",
++                "default_context": "compact_public_state_and_memory_summary",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+                 "max_tool_calls": self.max_tool_calls_per_decision,
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+@@ -297,7 +345,7 @@
+         return dict(self._model_token_usage)
+ 
+     def _system_prompt(self, private: Mapping[str, Any]) -> str:
+-        return render_prompt(
++        base = render_prompt(
+             "player_system.txt",
+             player_id=self.player_id,
+             role=private["role"],
+@@ -310,6 +358,16 @@
+             max_tool_result_tokens=self.max_tool_result_tokens,
+             max_prompt_chars=self.max_prompt_chars,
+         )
++        role_name = str(private.get("role"))
++        if "villager" in role_name.lower() or role_name == "平民":
++            base += (
++                "\n\n【平民决策模板】\n"
++                "先分事实、玩家声明和猜测。每轮至少比较两个候选。\n"
++                "发言必须点到具体人名，并引用至少一个具体公共事实：票型、死亡顺序、身份声明或当前轮公开发言。\n"
++                "如果出现新死亡或新身份声明，先更新上一轮判断，再给出本轮结论。\n"
++                "投票前必须说明为什么不是另一个候选；不要连续多轮使用同一套空泛话术。\n"
++            )
++        return base
+ 
+     @staticmethod
+     def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
+@@ -356,3 +414,314 @@
+         except (TypeError, ValueError):
+             return fallback
+         return normalized if normalized >= 0 else fallback
++
++    def _merge_public_memory(self, facts: dict[str, Any]) -> None:
++        memory = self._public_memory
++        if facts.get("round") is not None:
++            memory["last_round"] = facts["round"]
++        if facts.get("phase") is not None:
++            memory["last_phase"] = facts["phase"]
++
++        for player in facts.get("dead_players", []):
++            _append_unique(memory["dead_players"], player, limit=12)
++        for record in facts.get("sheriff_records", []):
++            sheriff = self._extract_label_from_record(record)
++            if sheriff:
++                if sheriff != memory.get("current_sheriff"):
++                    _append_unique(memory["sheriff_history"], sheriff, limit=6)
++                memory["current_sheriff"] = sheriff
++        for record in facts.get("vote_records", []):
++            _append_unique(memory["recent_vote_records"], record, limit=8)
++        for record in facts.get("claim_records", []):
++            _append_unique(memory["recent_claim_records"], record, limit=8)
++            player, claim = _split_record(record, ":")
++            if player and claim:
++                claims_by_player = memory["claims_by_player"].setdefault(player, [])
++                _append_unique(claims_by_player, claim, limit=4)
++        for record in facts.get("statement_records", []):
++            _append_unique(memory["recent_public_statements"], record, limit=8)
++
++    def _memory_snapshot(self) -> dict[str, Any]:
++        memory = self._public_memory
++        recent_claim_players: list[str] = []
++        for record in memory["recent_claim_records"][-6:]:
++            player, _ = _split_record(record, ":")
++            if player and player not in recent_claim_players:
++                recent_claim_players.append(player)
++        if not recent_claim_players:
++            recent_claim_players = [
++                player for player in sorted(memory["claims_by_player"].keys())[:4]
++            ]
++        claims_by_player = {
++            player: list(memory["claims_by_player"].get(player, []))
++            for player in recent_claim_players
++            if memory["claims_by_player"].get(player)
++        }
++        return {
++            "last_round": memory["last_round"],
++            "last_phase": memory["last_phase"],
++            "current_sheriff": memory["current_sheriff"],
++            "sheriff_history": memory["sheriff_history"][-4:],
++            "dead_players": memory["dead_players"][-8:],
++            "recent_vote_records": memory["recent_vote_records"][-6:],
++            "recent_claim_records": memory["recent_claim_records"][-6:],
++            "recent_public_statements": memory["recent_public_statements"][-5:],
++            "claims_by_player": claims_by_player,
++        }
++
++    def _build_analysis_hints(
++        self,
++        current_public_facts: dict[str, Any],
++        current_round_dialogue: Any,
++    ) -> dict[str, Any]:
++        memory = self._memory_snapshot()
++        dialogue_facts = self._extract_public_facts(current_round_dialogue)
++        combined_vote_records = _unique_strings(
++            list(memory["recent_vote_records"])
++            + list(current_public_facts.get("vote_records", []))
++            + list(dialogue_facts.get("vote_records", []))
++        )
++        combined_claim_records = _unique_strings(
++            list(memory["recent_claim_records"])
++            + list(current_public_facts.get("claim_records", []))
++            + list(dialogue_facts.get("claim_records", []))
++        )
++        combined_statement_records = _unique_strings(
++            list(memory["recent_public_statements"])
++            + list(current_public_facts.get("statement_records", []))
++            + list(dialogue_facts.get("statement_records", []))
++        )
++        dead_players = _unique_strings(
++            list(memory["dead_players"]) + list(current_public_facts.get("dead_players", []))
++        )
++        suspicious, trusted, contradictions, vote_pressure = self._rank_candidates(
++            dead_players=dead_players,
++            current_sheriff=memory["current_sheriff"],
++            vote_records=combined_vote_records,
++            claim_records=combined_claim_records,
++            statement_records=combined_statement_records,
++        )
++        latest_key_vote = combined_vote_records[-1] if combined_vote_records else None
++        latest_public_claim = combined_claim_records[-1] if combined_claim_records else None
++        return {
++            "current_public_facts": {
++                "round": current_public_facts.get("round"),
++                "phase": current_public_facts.get("phase"),
++                "current_sheriff": memory["current_sheriff"],
++                "dead_players": current_public_facts.get("dead_players", [])[-4:],
++                "sheriff_records": current_public_facts.get("sheriff_records", [])[-2:],
++                "vote_records": current_public_facts.get("vote_records", [])[-4:],
++                "claim_records": current_public_facts.get("claim_records", [])[-4:],
++                "statement_records": current_public_facts.get("statement_records", [])[-4:],
++            },
++            "latest_key_vote": latest_key_vote,
++            "latest_public_claim": latest_public_claim,
++            "suspicious_candidates": suspicious,
++            "trusted_candidates": trusted,
++            "recent_contradictions": contradictions,
++            "vote_pressure": vote_pressure,
++        }
++
++    def _rank_candidates(
++        self,
++        *,
++        dead_players: list[str],
++        current_sheriff: str | None,
++        vote_records: list[str],
++        claim_records: list[str],
++        statement_records: list[str],
++    ) -> tuple[list[str], list[str], list[str], dict[str, int]]:
++        dead_set = set(dead_players)
++        claim_map: dict[str, list[str]] = {}
++        vote_pressure: dict[str, int] = {}
++        statement_mentions: dict[str, int] = {}
++        contradictions: list[str] = []
++
++        for record in claim_records:
++            player, claim = _split_record(record, ":")
++            if player and claim:
++                claims = claim_map.setdefault(player, [])
++                if claim not in claims:
++                    claims.append(claim)
++        for record in vote_records:
++            voter, target = _split_record(record, "->")
++            if target:
++                vote_pressure[target] = vote_pressure.get(target, 0) + 1
++            if voter:
++                statement_mentions[voter] = statement_mentions.get(voter, 0) + 1
++        for record in statement_records:
++            speaker, text = _split_record(record, ":")
++            if speaker and text:
++                statement_mentions[speaker] = statement_mentions.get(speaker, 0) + 1
++
++        suspicious_scores: dict[str, int] = {}
++        trusted_scores: dict[str, int] = {}
++
++        def add_score(scores: dict[str, int], player: str, delta: int) -> None:
++            if not player or player in dead_set:
++                return
++            scores[player] = scores.get(player, 0) + delta
++
++        for player, claims in claim_map.items():
++            unique_claims = _unique_strings(claims)
++            if len(unique_claims) >= 2:
++                add_score(suspicious_scores, player, 3 + len(unique_claims) - 1)
++                contradictions.append(f"{player}: {' / '.join(unique_claims[:3])}")
++            elif len(unique_claims) == 1:
++                add_score(trusted_scores, player, 1)
++
++        for target, count in vote_pressure.items():
++            add_score(suspicious_scores, target, min(3, count))
++
++        for player, count in statement_mentions.items():
++            if player in claim_map and len(_unique_strings(claim_map[player])) == 1:
++                add_score(trusted_scores, player, min(2, count))
++
++        if current_sheriff:
++            add_score(trusted_scores, current_sheriff, 1)
++
++        suspicious = [
++            player
++            for player, _score in sorted(
++                suspicious_scores.items(), key=lambda item: (-item[1], item[0])
++            )[:3]
++        ]
++        trusted = [
++            player
++            for player, _score in sorted(
++                trusted_scores.items(), key=lambda item: (-item[1], item[0])
++            )[:2]
++        ]
++        if not suspicious:
++            suspicious = [
++                player
++                for player, _count in sorted(
++                    vote_pressure.items(), key=lambda item: (-item[1], item[0])
++                )[:3]
++                if player not in dead_set
++            ]
++        if not trusted:
++            trusted = [
++                player
++                for player, claims in sorted(claim_map.items(), key=lambda item: (len(item[1]), item[0]))
++                if player not in dead_set and len(_unique_strings(claims)) == 1
++            ][:2]
++        return suspicious, trusted, contradictions[:4], dict(
++            sorted(vote_pressure.items(), key=lambda item: (-item[1], item[0]))[:5]
++        )
++
++    def _extract_public_facts(self, node: Any) -> dict[str, Any]:
++        summary: dict[str, Any] = {
++            "round": None,
++            "phase": None,
++            "dead_players": [],
++            "sheriff_records": [],
++            "vote_records": [],
++            "claim_records": [],
++            "statement_records": [],
++        }
++
++        def walk(value: Any, depth: int = 0) -> None:
++            if depth > 4 or value is None:
++                return
++            if isinstance(value, Mapping):
++                lower_items = [(str(key).lower(), item) for key, item in value.items()]
++                for key, item in lower_items:
++                    if summary["round"] is None and (
++                        key == "round" or key.endswith("round") or key in {"day", "night"}
++                    ):
++                        text = _short_text(item, 32)
++                        if text:
++                            summary["round"] = text
++                    if summary["phase"] is None and (
++                        "phase" in key or key == "stage" or key == "turn"
++                    ):
++                        text = _short_text(item, 32)
++                        if text:
++                            summary["phase"] = text
++
++                    if any(token in key for token in _DEATH_KEYWORDS):
++                        for record in _collect_compact_records(item, "death", depth=depth + 1):
++                            _append_unique(summary["dead_players"], record, limit=12)
++                    elif any(token in key for token in _SHERIFF_KEYWORDS):
++                        for record in _collect_compact_records(item, "sheriff", depth=depth + 1):
++                            _append_unique(summary["sheriff_records"], record, limit=6)
++                    elif any(token in key for token in _VOTE_KEYWORDS):
++                        for record in _collect_compact_records(item, "vote", depth=depth + 1):
++                            _append_unique(summary["vote_records"], record, limit=8)
++                    elif any(token in key for token in _CLAIM_KEYWORDS):
++                        for record in _collect_compact_records(item, "claim", depth=depth + 1):
++                            _append_unique(summary["claim_records"], record, limit=8)
++                    elif any(token in key for token in _SPEECH_KEYWORDS):
++                        for record in _collect_compact_records(item, "statement", depth=depth + 1):
++                            _append_unique(summary["statement_records"], record, limit=8)
++
++                speaker = _first_scalar(value, (
++                    "speaker",
++                    "speaker_id",
++                    "author",
++                    "user",
++                    "player",
++                    "player_id",
++                    "name",
++                ))
++                text = _first_scalar(value, (
++                    "text",
++                    "content",
++                    "message",
++                    "dialogue",
++                    "utterance",
++                    "speech",
++                ))
++                if speaker and text:
++                    _append_unique(summary["statement_records"], f"{speaker}: {text}", limit=8)
++
++                event_kind = _first_scalar(value, ("kind", "type", "event"))
++                if event_kind:
++                    event_kind_l = event_kind.lower()
++                    if any(token in event_kind_l for token in _DEATH_KEYWORDS):
++                        note = _short_text(event_kind, 80)
++                        if note:
++                            _append_unique(summary["dead_players"], note, limit=12)
++                    elif any(token in event_kind_l for token in _VOTE_KEYWORDS):
++                        note = _short_text(event_kind, 80)
++                        if note:
++                            _append_unique(summary["vote_records"], note, limit=8)
++                    elif any(token in event_kind_l for token in _CLAIM_KEYWORDS):
++                        note = _short_text(event_kind, 80)
++                        if note:
++                            _append_unique(summary["claim_records"], note, limit=8)
++                    elif any(token in event_kind_l for token in _SPEECH_KEYWORDS):
++                        note = _short_text(event_kind, 80)
++                        if note:
++                            _append_unique(summary["statement_records"], note, limit=8)
++
++                for item in value.values():
++                    walk(item, depth + 1)
++                return
++            if isinstance(value, (list, tuple, set)):
++                for item in list(value)[:8]:
++                    walk(item, depth + 1)
++                return
++            text = _short_text(value, 80)
++            if text and depth <= 1:
++                _append_unique(summary["statement_records"], text, limit=8)
++
++        walk(node)
++        return summary
++
++    @staticmethod
++    def _extract_label_from_record(record: str) -> str | None:
++        record = record.strip()
++        if not record:
++            return None
++        if record.startswith("sheriff="):
++            value = record.split("=", 1)[1].strip()
++            return value or None
++        if "->" in record:
++            _, target = _split_record(record, "->")
++            return target
++        if ":" in record:
++            player, _ = _split_record(record, ":")
++            return player
++        return record
+--- villager-base/task.md
++++ villager-n00010/task.md
+@@ -1,8 +1,12 @@
+ # 平民最小任务
+ 
+-你的任务是帮助好人阵营找出狼人并完成放逐，同时像真实玩家一样参与讨论。
++你的目标是帮助好人阵营找出狼人并完成放逐，同时像真实玩家一样参与讨论。
+ 
+-- 先区分系统事实、玩家声明和自己的猜测，再根据发言、票型和死亡信息形成判断。
+-- 发言要回应当前局面中的具体人和具体理由，允许暂时不确定，不要每轮都说同一句话。
+-- 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实。
+-- 投票前比较多个候选，不要只因为一个模糊印象就机械跟票。
++硬规则：
++- 先区分系统事实、玩家声明和自己的猜测，不要把猜测说成已确认事实。
++- 每轮至少比较两个候选；不能只点一个名字就结束。
++- 发言必须包含具体人名，并引用至少一个具体公共事实：票型、死亡顺序、身份声明或当前轮公开发言。
++- 只要出现新死亡、新票型或新的身份声明，就要显式更新上一轮判断。
++- 投票前必须说明为什么不是另一个候选。
++- 不要连续多轮使用同一套空泛话术；如果信息不足，可以明确说暂时不确定，但仍要给出当前更优先排查的对象。
++- 可以在游戏内试探、伪装或编造说法，但不能伪造系统事实。

@@ -1,0 +1,84 @@
+你正在修改狼人杀角色 hunter 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "hunter-n00076 运行稳定但胜率偏低（20局4胜，0 fallback/invalid），主要问题不是合法性，而是猎人专用信息利用不足。当前代码虽然加入了按轮公开记忆、目标排序和 pass 归一化，但它保存的跨回合记忆主要来自 PUBLIC_STATE_SYNC，而没有把猎人自己每次决策时可见的当前轮发言/争议压缩入长期记忆；到夜间猎人反应时，read_current_round_dialogue 往往为空或只含当前夜间内容，导致开枪排序缺少白天警上发言、对跳、归票和票型链。随机回放中 p8 猎人白天曾准确点名 p6 死亡信息错误，但夜间被刀触发反应时选择 pass，错失在 p4/p7/p10 等狼位中带走一人的机会。下一代应最小化修改：保留 schema/预算/工具边界，增加“决策时可见发言的紧凑记忆”和“猎人反应多来源证据评分”，并降低有强证据时的 pass 倾向。",
+  "evidence": [
+    "评测汇总显示 hunter-n00076：game_count=20，complete_game_count=20，win_count=4，loss_count=16，win_rate=0.2；focus_fallback_count=0，focus_error_counts={}，invalid_decision_count=0。说明该节点没有明显输出合法性问题，瓶颈在策略质量。",
+    "祖先/同分支信息显示 hunter-base win_rate=0.25，hunter-n00007 win_rate=0.3；当前 hunter-n00076 相比祖先并未提升，反而下降到 0.2。当前代码是在 hunter-n00032 基础上继续强化结构化记忆和 brief，但效果仍不足。",
+    "随机回放 game14 中，p8 是猎人；seq105 白天发言能引用公开信息并点名 3、4、6、7，说明活着发言并非完全空泛；seq121 白天投 p3，符合当时 p12 预言家查杀链，早期表现可接受。",
+    "同一回放中，round2 p8 在 seq182 指出 p6 把 p3/p5 双死说成平安夜的错误，但 seq193 却跟随 p4/p7/p9/p10 等票到 p1，p1 实为村民；这说明 agent 容易被当轮舆论压力牵引，缺少对票仓收益和金水/警徽链的可靠性分层。",
+    "seq239-244：p8 夜间被狼刀后触发 HUNTER_REACTIONS_QUEUED 与 hunter_reaction，实际提交 {kind: pass}；最终狼队在 seq413 获胜。事后身份显示 p4、p7、p10 都是狼，猎人若在反应阶段依据此前警上对跳、p1 票仓、模糊站边等多来源证据击中任一狼，会显著改变轮次。",
+    "当前代码 _build_decision_brief() 的跨回合依据是 self._recent_public_events；observe() 只处理 sync_packet。runner_events 显示 PUBLIC_STATE_SYNC 发生在每轮开头，如 round3 latest_event_seq=216，而 hunter 反应发生在 seq243；白天大量发言、投票和当轮可见对话不一定被写入 _recent_public_events。",
+    "当前 _summarize_current_dialogue() 只在本次 brief 中读取 tool_context，不会持久化。猎人反应发生在夜间/死亡反应阶段时，当前轮 dialogue 往往无法覆盖上一白天的完整争议，因此目标排序容易退化为 public_state 提及和少量同步摘要。",
+    "当前 _mapping_to_public_record() 会把很多包含 player_id/name/alive 的普通 public_state 节点也变成 record；_score_hunter_target() 又对 public_state 中出现 target_id 加分。这会给所有存活玩家带来噪声分，稀释真正的发言、查验、对跳和票型证据。",
+    "技能卡片 information-reliability、vote-analysis、official-hunter-shoot、official-hunter-anti-bait 都强调：猎人开枪应基于多来源证据、区分引擎事实/角色声称/推断，并把票型与查验、对跳、夜死交叉验证；当前实现仍偏文本关键词搜索，缺少这种分层。"
+  ],
+  "root_causes": [
+    "跨回合记忆来源不完整：只在 observe(sync_packet) 中压缩公开同步，未把猎人自己在 speak/vote/sheriff_vote 等决策时可见的 current_round_dialogue 持久化；猎人反应通常发生在夜间，导致前一白天的核心发言和争议丢失。",
+    "记忆记录噪声偏高：_mapping_to_public_record 会从 public_state 的玩家列表、alive/status 等普通结构中抽取大量低价值 record；public_state 仅出现 target_id 就加分，使目标排序被无意义提及污染。",
+    "信息可信度未分层：代码没有明确区分引擎死亡/警徽/投票事实、预言家/玩家自称、以及发言推断；模型 brief 中也容易把“玩家声称金水/查杀”与事实混在一起。",
+    "票型与对跳链利用不足：当前 _score_hunter_target 主要依靠关键词命中，缺少对“竞选警长但后续不维护身份”“跟随错误票仓推好人”“与已较可信预言家链冲突”“多轮同向投票/抱团”的结构化加权。",
+    "猎人反应过于保守且不看残局收益：pass_recommended 主要按分差和绝对分阈值判断，未结合存活人数、已死亡神职/好人、若不开枪狼队获得的轮次收益；在中后期死亡反应中容易默认 pass。",
+    "task.md 对“证据不足优先跳过”的强调过强，而没有补充“中后期/强证据/屠边临界时应积极用枪换轮次”的条件，可能放大模型保守倾向。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 decide() 中获取 tool_context/current_round_dialogue 后、构建 decision_brief 前，新增一次 _observe_decision_context(turn_packet) 调用；该函数只压缩保存当前 turn_packet 中该玩家依法可见的 current_round_dialogue、request phase、public_state 的死亡/警徽/存活摘要，不读取任何额外文件或网络。",
+      "rationale": "猎人每次白天发言、投票、警长投票前能看到当前轮已有发言；这些是合法可见信息。把它们压缩进受限局内记忆，可以让夜间猎人反应仍保留上一白天的对跳、归票和争议，而不需要修改工具或注入完整历史。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增紧凑的 _dialogue_to_public_records(dialogue, round, phase) 或复用 _mapping_to_public_record，但只为包含 text/message/content 且带 speaker/player_id 的发言建立 record；每轮最多保留最近 6 条发言摘要，每条截断到 100-120 字符，并通过 (round, phase, speaker, text_prefix) 去重。",
+      "rationale": "当前记忆过度依赖 public_state，同步包不会保留完整发言链；持久化少量发言摘要能保留 p4 警上跳预言家、p12 查杀、p6 平安夜错误、p7/p10 同步带票等关键证据，同时仍在 prompt 预算内。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "收紧 _mapping_to_public_record：如果 mapping 只含 player/name/alive/status 这类状态字段且没有 text、voter、target、vote、claim、death、kind 等有效信号，不要生成 record；同时移除或降低 _score_hunter_target 中“public_state 提及 target_id +1”的通用加分，改为仅当 public_state 的死亡、revealed_role、sheriff、vote/counts 等结构与目标有关时加分。",
+      "rationale": "减少所有玩家因出现在 public_state 玩家列表中而被平均加分，避免目标排序被低价值噪声稀释，让发言、投票、对跳和死亡链成为主要证据。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增一个小型 _extract_claim_signals(text, speaker) 解析器：识别“我是预言家/猎人/女巫/守卫”“验/查/金水/查杀 pX”“归票/出/投 pX”“平安夜/死了 pX”等模式，输出 claim records，并标注 source='claim' 而非 fact；在 _rank_public_pressure 和 _score_hunter_target 中对这些 claim 做分层评分。",
+      "rationale": "猎人需要利用警上对跳、查杀、金水和归票，但不能把它们当引擎事实。结构化 claim 可支持信息可靠性分层，也能捕捉当前关键词逻辑遗漏的身份链。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "改造 _score_hunter_target：为猎人反应增加多来源证据加权，例如：被可信警徽/预言家链持续点名 +4；曾跳预言家/神职但后续放弃或与更可信链冲突 +4；参与推动已知/高可信好人出局票仓或多次跟同一可疑人同票 +2~3；发言中制造错误死亡事实且未解释 +2；被金水/公开好人链保护 -3；仅被单人空踩不加或少加。",
+      "rationale": "把官方猎人开枪、防诱导、信息可信度、票型分析转为可执行启发式。目标不是完美识别狼人，而是在猎人死亡反应这种一次性窗口中优先选择能解释更多公开矛盾的玩家。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _rank_hunter_targets 中加入 alive_count/endgame_pressure：从 public_state.players 统计存活人数；若 mode 为 hunter_reaction 且 alive_count <= 8 或已进入第3轮以后，best_score >= 5 且领先第二名 >=1 时不推荐 pass；若 best_score >= 7，即使分差小也给出 best_target；仍保留 best_score 很低或只有单来源证据时 pass。",
+      "rationale": "当前 pass 阈值偏保守。中后期猎人若不开枪，狼人往往多获得一次夜刀；应在强证据或残局压力下更积极地用枪换轮次，同时避免无证据随机开枪。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_decision_brief 的 hunter_reaction 分支中增加明确提示：列出“引擎事实/玩家声称/推断”三类摘要；展示 top 3 目标的证据来源数量和风险；如果 recommended target 存在，写成“若选择开枪，优先 target；若无法确认多来源证据才 pass”。",
+      "rationale": "模型最终仍负责输出 JSON。给它更清晰的分层 brief，可减少把假查杀当事实，也减少在已有强证据时被 task.md 的“证据不足优先跳过”带偏。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充猎人反应的风险偏好条件：证据不足仍可跳过；但若进入第3轮后、存活人数少、或某合法目标同时满足身份冲突+票型异常+死亡/警徽链冲突中的两项以上，应优先考虑开枪，不要机械 pass。强调玩家声称不是事实，必须说明来源。",
+      "rationale": "当前 prompt 对 pass 的保守表述过强。任务文档应给模型一个中后期积极开枪的条件，避免代码排序给出目标后模型仍默认跳过。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "保留 normalize_decision、decision_error、render_action_contract 等合法性逻辑不变；不要扩大 max_tool_calls、max_tool_result_tokens、max_prompt_chars，也不要新增外部数据访问。新增记忆上限建议控制在 8 轮、每轮 6 条 record、每条 120 字以内，最终 decision_brief 仍截断到约 900-1200 字符。",
+      "rationale": "当前节点合法性良好，修改应聚焦信息组织和评分，避免引入 schema/fallback 风险或违反运行预算。"
+    }
+  ],
+  "risks": [
+    "降低 pass 倾向可能提高误射好人的概率，尤其在狼人故意用假查杀/倒钩诱导猎人时；因此必须要求多来源证据，而不是单条挑衅发言。",
+    "解析中文发言的正则启发式可能误读玩家自述，例如把“别投 p6”误当“投 p6”；应只作为 brief 辅助，不应硬编码直接绕过模型决策。",
+    "持久化 current_round_dialogue 虽然是合法可见信息，但如果保存过多会挤占 prompt 预算；必须严格去重、截断和限制轮数，不能注入完整历史。",
+    "公开发言可能撒谎，p4 在回放中的狼遗言自曝属于事后公开文本但不应被未来局当事实模板；评分逻辑应依赖本局内可见链条，不引入跨局身份先验。",
+    "同局其他角色节点质量会影响胜负，hunter-n00076 的 0.2 胜率不能全部归因于猎人；修改目标应是提升猎人在自己发言/投票/反应窗口的边际贡献，而不是保证整体胜率。",
+    "过度依赖警徽/预言家链可能在悍跳狼拿警徽时被利用；brief 必须标注“声称查验”与“引擎事实”的区别，并用后续票型、死亡和站边验证。"
+  ],
+  "code_agent_brief": "请只修改 hunter 候选工作区中的 task_agent.py 和 task.md，不改 Game Engine、规则、工具、schema、预算或任何外部文件。当前 hunter-n00076 合法性稳定但胜率低，关键问题是猎人反应时缺少上一白天发言/票型/对跳记忆，导致中后期常 pass。请在 task_agent.py 中做最小增量改造：1) 在 decide() 里读取 tool_context.current_round_dialogue 后、构建 decision_brief 前调用一个新的 _observe_decision_context(turn_packet)，把本次合法可见的当前轮发言摘要、request phase、public_state 中死亡/警徽/存活/公开身份摘要压缩进 self._recent_public_events 或新的受限记忆结构；每轮最多约6条发言，每条截断100-120字，整体仍保持8轮左右。2) 收紧 public_state record 抽取，避免仅因玩家出现在 players/alive 列表就生成可疑证据；移除“public_state提及目标就+1”的泛化加分，改为只对死亡、revealed_role、sheriff、vote/counts 等有意义结构加分。3) 增加对中文发言的轻量 claim/signal 解析：识别预言家/神职自称、验人金水/查杀、归票/投票目标、平安夜/死亡事实错误，并标注为 claim 或 inference，不当作引擎事实。4) 改造猎人反应评分：多来源证据优先，给身份冲突、与较可信警徽/预言家链冲突、推动好人出局票仓、多轮同票抱团、错误死亡事实未解释等加权；给金水/公开好人链保护降权。5) 在 hunter_reaction 且第3轮后或存活人数<=8时，若最高目标分>=5且至少有两类证据，不要默认 pass；分数很低或只有单来源证据时仍 pass。6) 修改 task.md，补充“证据不足跳过，但中后期强证据/屠边压力下应积极用枪换轮次；所有查验/金水/遗言需标注来源可信度”的提示。保持 normalize_decision、decision_error、render_action_contract 的合法性逻辑和所有构造接口不变，确保语法通过且不新增网络、文件、进程、隐藏状态访问。"
+}

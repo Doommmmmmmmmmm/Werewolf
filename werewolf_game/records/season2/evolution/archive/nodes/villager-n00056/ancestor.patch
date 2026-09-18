@@ -1,0 +1,382 @@
+--- villager-n00028/task_agent.py
++++ villager-n00056/task_agent.py
+@@ -199,10 +199,24 @@
+ 
+ 
+ _FALSELIKE_COMPACT_TEXTS = {"", "否", "false", "False", "0", "无", "none", "None"}
++_PLAYER_TOKEN = re.compile(r"\b[pP]?\d+\b")
+ 
+ 
+ def _is_meaningful_compact_text(text: str) -> bool:
+     return str(text).strip() not in _FALSELIKE_COMPACT_TEXTS
++
++
++def _extract_player_tokens(text: str, *, limit: int = 6) -> list[str]:
++    tokens: list[str] = []
++    seen: set[str] = set()
++    for match in _PLAYER_TOKEN.findall(str(text)):
++        label = match.strip()
++        if label and label not in seen:
++            seen.add(label)
++            tokens.append(label)
++        if len(tokens) >= limit:
++            break
++    return tokens
+ 
+ 
+ def _format_vote_snapshot(value: Any) -> str:
+@@ -537,6 +551,19 @@
+         self.max_tool_calls_per_decision = max(0, int(max_tool_calls_per_decision))
+         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
++        self._working_memory: dict[str, Any] = {
++            "verified_facts": [],
++            "claim_ledger": [],
++            "vote_ledger": [],
++            "recent_deaths": [],
++            "sheriff_chain": [],
++            "suspect_list": [],
++            "last_alive": [],
++            "last_dead": [],
++            "last_alive_count": None,
++            "last_sheriff": "",
++            "sheriff_alive": None,
++        }
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -547,10 +574,9 @@
+         }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """接收公开同步，并维护轻量局内工作记忆。"""
++
++        self._sync_working_memory(sync_packet, sync_packet.get("request") if isinstance(sync_packet, dict) else None)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -559,14 +585,16 @@
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
++        self._sync_working_memory(turn_packet.get("public_state"), turn_packet.get("request"))
+         system = self._system_prompt(private)
++        public_state_brief = render_public_state_brief(turn_packet["public_state"], turn_packet["request"])
+         prompt = {
+             "game": turn_packet["game"],
+             "public_rules": turn_packet["public_rules"],
+             "self": turn_packet["self"],
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+-            "public_state_brief": render_public_state_brief(turn_packet["public_state"], turn_packet["request"]),
++            "public_state_brief": public_state_brief,
+             "request": turn_packet["request"],
+             "history_policy": {
+                 "default_context": "current_state_only",
+@@ -655,6 +683,252 @@
+     def model_token_usage_snapshot(self) -> dict[str, int]:
+         return dict(self._model_token_usage)
+ 
++    def _sync_working_memory(self, public_state: Any, request: Mapping[str, Any] | None) -> None:
++        snapshot = self._snapshot_public_state(public_state)
++        memory = self._working_memory
++        memory["last_alive_count"] = snapshot["alive_count"]
++        if snapshot["alive_labels"]:
++            memory["last_alive"] = snapshot["alive_labels"]
++        if snapshot["dead_labels"]:
++            memory["last_dead"] = snapshot["dead_labels"]
++        if snapshot["sheriff_labels"]:
++            sheriff_text = "、".join(snapshot["sheriff_labels"][:2])
++            if not memory["sheriff_chain"] or memory["sheriff_chain"][-1] != sheriff_text:
++                memory["sheriff_chain"].append(sheriff_text)
++            memory["sheriff_chain"][:] = memory["sheriff_chain"][-5:]
++            memory["last_sheriff"] = snapshot["sheriff_labels"][0]
++            memory["sheriff_alive"] = snapshot["sheriff_labels"][0] in snapshot["alive_labels"]
++        elif memory["last_sheriff"] and snapshot["alive_labels"]:
++            memory["sheriff_alive"] = memory["last_sheriff"] in snapshot["alive_labels"]
++        for key, field in (
++            ("verified_facts", "verified_facts"),
++            ("claim_ledger", "claim_ledger"),
++            ("vote_ledger", "vote_ledger"),
++            ("recent_deaths", "recent_deaths"),
++        ):
++            values = snapshot[field]
++            if values:
++                merged: list[str] = list(memory[key])
++                for item in values:
++                    if item and item not in merged:
++                        merged.append(item)
++                memory[key] = merged[-6:]
++        memory["suspect_list"] = snapshot["suspect_list"]
++        if request is not None:
++            phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "")
++            if phase:
++                memory["last_phase"] = phase
++
++    @staticmethod
++    def _snapshot_public_state(public_state: Any) -> dict[str, Any]:
++        alive_count = _extract_first_public_count(public_state, ("alive_players", "living_players", "alive", "survivors", "live_players", "living"))
++        alive_values = _search_public_values(public_state, ("alive_players", "living_players", "survivors", "live_players", "living"), max_results=1)
++        dead_values = _search_public_values(public_state, ("dead_players", "eliminated_players", "dead", "graveyard", "death_list", "eliminated"), max_results=2)
++        sheriff_values = _search_public_values(public_state, ("sheriff", "sheriff_id", "badge_holder", "badgeHolder", "badge", "police", "captain", "current_sheriff"), max_results=2)
++        claim_values = _search_public_values(public_state, ("public_claims", "claims", "revealed_roles", "role_claims", "check_log", "checks", "claim_log"), max_results=2)
++        vote_values = _search_public_values(public_state, ("vote_history", "votes", "ballots", "vote_matrix", "voting", "vote_records"), max_results=2)
++        death_values = _search_public_values(public_state, ("death_order", "recent_deaths", "night_deaths", "eliminations", "kills", "killed_players", "dead_order"), max_results=2)
++
++        alive_labels = _collect_compact_labels(alive_values[0], limit=8) if alive_values else []
++        dead_labels = _collect_compact_labels(dead_values[0], limit=8) if dead_values else []
++        sheriff_labels = _collect_compact_labels(sheriff_values[0], limit=4) if sheriff_values else []
++        claim_entries = [_format_compact_value(value, limit=5) for value in claim_values]
++        vote_entries = [_format_vote_snapshot(value) for value in vote_values]
++        recent_death_entries = [_format_compact_value(value, limit=5) for value in death_values]
++        claim_labels: list[str] = []
++        for value in claim_values:
++            for label in _collect_compact_labels(value, limit=6):
++                if label not in claim_labels:
++                    claim_labels.append(label)
++            for label in _extract_player_tokens(_format_compact_value(value, limit=6), limit=6):
++                if label not in claim_labels:
++                    claim_labels.append(label)
++        vote_labels: list[str] = []
++        for value in vote_values:
++            for label in _collect_compact_labels(value, limit=6):
++                if label not in vote_labels:
++                    vote_labels.append(label)
++            for label in _extract_player_tokens(_format_vote_snapshot(value), limit=6):
++                if label not in vote_labels:
++                    vote_labels.append(label)
++        death_labels_extra: list[str] = []
++        for value in death_values:
++            for label in _collect_compact_labels(value, limit=6):
++                if label not in death_labels_extra:
++                    death_labels_extra.append(label)
++            for label in _extract_player_tokens(_format_compact_value(value, limit=6), limit=6):
++                if label not in death_labels_extra:
++                    death_labels_extra.append(label)
++
++        verified_facts: list[str] = []
++        if alive_count is not None:
++            verified_facts.append(f"存活{alive_count}")
++        if alive_labels:
++            verified_facts.append(f"活人:{'、'.join(alive_labels[:6])}")
++        if dead_labels:
++            verified_facts.append(f"已死:{'、'.join(dead_labels[:6])}")
++        if sheriff_labels:
++            sheriff_text = sheriff_labels[0]
++            if alive_labels and sheriff_text not in alive_labels:
++                verified_facts.append(f"旧警徽:{sheriff_text}(断链)")
++            else:
++                verified_facts.append(f"警徽:{sheriff_text}")
++        if claim_entries:
++            verified_facts.append(f"查验/自报:{claim_entries[0]}")
++        if vote_entries:
++            verified_facts.append(f"票型:{vote_entries[0]}")
++        if recent_death_entries:
++            verified_facts.append(f"死亡:{recent_death_entries[0]}")
++
++        suspect_list = self._rank_suspects(
++            alive_labels=alive_labels,
++            dead_labels=dead_labels,
++            sheriff_labels=sheriff_labels,
++            claim_entries=claim_entries,
++            vote_entries=vote_entries,
++            recent_death_entries=recent_death_entries,
++            claim_labels=claim_labels,
++            vote_labels=vote_labels,
++            death_labels=death_labels_extra,
++            alive_count=alive_count,
++        )
++
++        return {
++            "alive_count": alive_count,
++            "alive_labels": alive_labels,
++            "dead_labels": dead_labels,
++            "sheriff_labels": sheriff_labels,
++            "claim_entries": claim_entries,
++            "vote_entries": vote_entries,
++            "recent_death_entries": recent_death_entries,
++            "verified_facts": verified_facts,
++            "claim_ledger": claim_entries,
++            "vote_ledger": vote_entries,
++            "recent_deaths": recent_death_entries,
++            "suspect_list": suspect_list,
++        }
++
++    @staticmethod
++    def _rank_suspects(
++        *,
++        alive_labels: list[str],
++        dead_labels: list[str],
++        sheriff_labels: list[str],
++        claim_entries: list[str],
++        vote_entries: list[str],
++        recent_death_entries: list[str],
++        claim_labels: list[str],
++        vote_labels: list[str],
++        death_labels: list[str],
++        alive_count: int | None,
++    ) -> list[str]:
++        candidates: list[str] = []
++        for label in alive_labels + claim_labels + vote_labels + death_labels + sheriff_labels:
++            if label and label not in candidates:
++                candidates.append(label)
++        if alive_count is not None and alive_count <= 6 and len(candidates) < 2:
++            for label in _collect_compact_labels(recent_death_entries, limit=6):
++                if label and label not in candidates:
++                    candidates.append(label)
++        if not candidates:
++            return []
++
++        claim_blob = " | ".join(claim_entries)
++        vote_blob = " | ".join(vote_entries)
++        death_blob = " | ".join(recent_death_entries)
++        sheriff = sheriff_labels[0] if sheriff_labels else ""
++        sheriff_alive = bool(sheriff and sheriff in alive_labels)
++        dead_set = set(dead_labels)
++
++        scored: list[tuple[int, str, str]] = []
++        for label in candidates:
++            if label in dead_set:
++                continue
++            score = 0
++            reasons: list[str] = []
++            if label in claim_labels:
++                if any(token in claim_blob for token in ("查杀", "狼", "狼人", "悍跳", "假", "矛盾", "反水", "爆")):
++                    score += 3
++                    reasons.append("查杀/矛盾")
++                if any(token in claim_blob for token in ("金水", "好人", "真预言家", "可信", "已验", "清白")):
++                    score -= 2
++                    reasons.append("金水/可信")
++            if label in vote_labels:
++                if any(token in vote_blob for token in ("票型", "跟票", "冲票", "集火", "出", "投")):
++                    score += 2
++                    reasons.append("票型")
++            if label in death_labels:
++                if any(token in death_blob for token in ("查杀", "狼", "刀", "死亡顺序", "爆")):
++                    score += 1
++                    reasons.append("死亡链")
++            if label == sheriff:
++                if sheriff_alive:
++                    score -= 2
++                    reasons.append("警徽在身")
++                else:
++                    score += 1
++                    reasons.append("旧权威")
++            if alive_count is not None and alive_count <= 6 and label not in claim_labels and label not in vote_labels:
++                score += 1
++                reasons.append("灰区")
++            reason_text = "/".join(reasons) if reasons else "存活对比"
++            scored.append((score, label, reason_text))
++
++        scored.sort(key=lambda item: (-item[0], item[1]))
++        result: list[str] = []
++        for score, label, reason_text in scored[:5]:
++            suffix = f"({reason_text})" if reason_text else ""
++            result.append(f"{label}{suffix}")
++        if len(result) < 2 and candidates:
++            for label in candidates:
++                if label not in "".join(result):
++                    result.append(label)
++                if len(result) >= 2:
++                    break
++        return result[:5]
++
++    def _working_memory_brief(self, public_state: Any, request: Mapping[str, Any]) -> str:
++        snapshot = self._snapshot_public_state(public_state)
++        memory = self._working_memory
++        alive_count = snapshot["alive_count"] if snapshot["alive_count"] is not None else memory.get("last_alive_count")
++        alive_labels = snapshot["alive_labels"] or memory.get("last_alive", [])
++        dead_labels = snapshot["dead_labels"] or memory.get("last_dead", [])
++        sheriff_labels = snapshot["sheriff_labels"] or ([str(memory.get("last_sheriff"))] if memory.get("last_sheriff") else [])
++        claim_entries = snapshot["claim_entries"] or memory.get("claim_ledger", [])
++        vote_entries = snapshot["vote_entries"] or memory.get("vote_ledger", [])
++        recent_deaths = snapshot["recent_death_entries"] or memory.get("recent_deaths", [])
++        suspects = snapshot["suspect_list"] or memory.get("suspect_list", [])
++
++        lines = ["【局内记忆】"]
++        if alive_count is not None:
++            lines.append(f"事实:存活{alive_count}")
++        if alive_labels:
++            lines.append(f"活:{'、'.join(alive_labels[:5])}")
++        if dead_labels:
++            lines.append(f"死:{'、'.join(dead_labels[:5])}")
++        if sheriff_labels:
++            sheriff_text = sheriff_labels[0]
++            if memory.get("last_sheriff") and memory.get("sheriff_alive") is False:
++                lines.append(f"警徽:旧权威{memory['last_sheriff']}(断链)")
++            elif sheriff_text in alive_labels:
++                lines.append(f"警徽:{sheriff_text}")
++            else:
++                lines.append(f"警徽:旧权威{sheriff_text}")
++        if claim_entries:
++            lines.append(f"查验:{claim_entries[0]}")
++        if vote_entries:
++            lines.append(f"票型:{vote_entries[0]}")
++        if recent_deaths:
++            lines.append(f"死亡:{recent_deaths[0]}")
++        if suspects:
++            lines.append(f"嫌疑Top2:{' > '.join(suspects[:2])}")
++        if alive_count is not None and alive_count <= 6:
++            lines.append("late-mode:先比两个嫌疑人再表态/投票")
++        phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "")
++        if phase:
++            lines.append(f"阶段:{phase}")
++        return "；".join(lines[:8])
++
+     def _system_prompt(self, private: Mapping[str, Any]) -> str:
+         return render_prompt(
+             "player_system.txt",
+@@ -670,13 +944,13 @@
+             max_prompt_chars=self.max_prompt_chars,
+         )
+ 
+-    @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], public_state: Any, feedback: str) -> str:
++    def _turn_instruction(self, request: Mapping[str, Any], public_state: Any, feedback: str) -> str:
+         checklist = render_villager_decision_checklist(request, public_state)
+         public_brief = render_public_state_brief(public_state, request)
++        memory_brief = self._working_memory_brief(public_state, request)
+         feedback_text = f"上一次输出未通过校验：{feedback}" if feedback else ""
+         validation_feedback = "\n".join(
+-            part for part in (public_brief, feedback_text, checklist) if part
++            part for part in (public_brief, memory_brief, feedback_text, checklist) if part
+         )
+         return render_prompt(
+             "player_turn_instruction.txt",
+--- villager-n00028/task.md
++++ villager-n00056/task.md
+@@ -1,18 +1,16 @@
+ # 平民最小任务
+ 
+-你的任务是帮助好人阵营找出狼人并完成放逐，同时像真实玩家一样参与讨论。
++你的目标：帮助好人阵营找狼并完成放逐，同时保持像真实玩家一样发言。
+ 
+-## 闭眼村民可执行清单
++## 决策协议
+ 
+-- 先把信息分成三栏：**系统事实/公开事件**、**玩家声明**、**自己的推测**；只有前两栏能直接当依据。
+-- 白天发言不要空转：至少点出**一个你关注的人**和**一个你暂不投的人**，并说明各自基于哪条公开信息。
+-- 投票前必须先比较**至少两个候选**，再给出最终票；不要只凭模糊印象或跟票习惯决定。
+-- 保护可信公开链：对**持续报验且查杀被票型或发言支持的预言家**、**已公开金水**、**强神声明者**、**警徽传递链**，默认提高保护权重；除非出现**硬对跳、明显矛盾、查杀命中、事实错误**，否则不要优先投他们。
+-- 公开信息权重从高到低通常是：**系统死亡/存活/投票** > **清晰且持续的查验链** > **玩家遗言与自报** > **你的猜测**。
+-- 狼人遗言自爆、点队友或反咬他人都只能算玩家声明，不能当系统事实；但如果它和查杀、票型、发言矛盾一起出现，要纳入高权重候选。
+-- 当存活人数较少，或你自己持有警徽时，先复盘四件事：**存活名单、已死名单、可信查验链、灰区名单**；优先找**未被金水覆盖**且存在**事实错误、票型异常、被查杀/爆狼线索**的人。
+-- 少弃票：只有在候选几乎无差异且继续投票会明显误伤强神时才考虑 pass；否则尽量给出当前证据最强的票。
+-- 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实，也不能把猜测说成事实。
+-- 终局加严：当存活人数 <= 6 时，必须先点名**两个当前嫌疑人**并给出排序；明确说明谁更像狼、为什么更像狼，依据必须来自**存活/死亡名单、投票轨迹、公开查验链、警徽转移/失徽状态、当前公开自报**。
+-- 终局时不要继续把**已死的**或**已经无徽/被打断链条的**公开持证者当作默认高权重；只有当前存活证据仍支持时才保留优势。
+-- 如果场上只剩一条公开链，也要把它和一个基于票型、死亡顺序、事实矛盾推出来的第二嫌疑直接对比，再决定投谁。
++- 先把信息分成三栏：**系统事实 / 公开事件**、**玩家声明**、**自己的推测**；只把前两栏当硬依据。
++- 每次发言都要包含：**一个你关注的人** + **一个你暂不投的人**，并说明各自依据哪条公开信息。
++- 每次投票前必须先比较**至少两个候选**，再给最终票；不要只凭印象或跟票。
++- 保护可信公开链：持续报验且查杀被票型/发言支持的预言家、已公开金水、强神声明者、警徽传递链，默认提高权重。
++- 如果出现**硬对跳、明显矛盾、查杀命中、事实错误**，才推翻上面的可信链。
++- 终局加严：当存活人数 **<= 6** 时，必须先点名**两个当前嫌疑人**并排序，说清谁更像狼、为什么更像狼。
++- 终局比较时优先看：**存活/死亡名单、投票轨迹、公开查验链、警徽转移/失徽状态、当前公开自报**。
++- 已死的、或已经**无徽/断链**的旧权威，不要自动当高权重来源；只有当前存活证据仍支持时才保留优势。
++- 如果场上只剩一条公开链，也要把它和一个基于票型、死亡顺序、事实矛盾推出的第二嫌疑直接对比后再投。
++- 发言风格可以自然，但决策顺序必须守住：**分栏 → 比较两个候选 → 再表态/投票**。

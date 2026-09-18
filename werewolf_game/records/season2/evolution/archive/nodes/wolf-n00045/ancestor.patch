@@ -1,0 +1,335 @@
+--- wolf-n00020/task_agent.py
++++ wolf-n00045/task_agent.py
+@@ -32,6 +32,7 @@
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _MAX_HISTORY_ITEMS = 6
+ _MAX_SNIPPET_LENGTH = 80
++_MAX_RECENT_DIALOGUE_ITEMS = 3
+ _MAX_COMPACT_DEPTH = 2
+ _TEMPLATE_PHRASES = (
+     "先听一圈",
+@@ -433,24 +434,110 @@
+             phase = str(self._game_memory.get("phase") or "")
+             if signature.get("round") != self._game_memory.get("round") or ("night" not in phase.lower() and "夜" not in phase):
+                 night_plan = None
++        recent_public_claims = self._recent_public_claims()
++        recent_vote_turn_summaries = self._recent_vote_turn_summaries()
++        recent_self_summary = self._recent_self_summary()
+         snapshot = {
+             "game": {
+                 key: self._game_memory.get(key)
+                 for key in ("round", "phase", "sheriff_id", "alive_players", "dead_players", "death_order")
+             },
+             "public_ledger": {
+-                "claims": self._public_ledger["claims"][-3:],
++                "claims": recent_public_claims,
+                 "votes": self._public_ledger["votes"][-3:],
+-                "deaths": self._public_ledger["deaths"][-3:],
++                "deaths": self._public_ledger["deaths"][-2:],
+                 "sheriff_changes": self._public_ledger["sheriff_changes"][-2:],
+             },
+-            "recent_vote_summary": self._game_memory.get("recent_votes", [])[-2:],
+-            "recent_public_texts": self._recent_public_texts[-3:],
++            "recent_vote_summary": [item.get("summary") for item in recent_vote_turn_summaries if item.get("summary")],
++            "recent_public_claims": [item.get("summary") for item in recent_public_claims if item.get("summary")],
++            "recent_self_summary": [item.get("summary") for item in recent_self_summary if item.get("summary")],
++            "recent_public_texts": self._recent_public_texts[-2:],
+             "recent_self_texts": self._recent_self_texts[-2:],
+             "night_plan": night_plan,
+             "anti_template_notes": self._anti_template_notes(),
+         }
+         return snapshot
++
++    def _recent_public_claims(self) -> list[dict[str, Any]]:
++        claims: list[dict[str, Any]] = []
++        for entry in self._public_ledger["claims"][-3:]:
++            if not isinstance(entry, Mapping):
++                continue
++            item: dict[str, Any] = {}
++            round_value = entry.get("round")
++            if round_value is not None:
++                item["round"] = round_value
++            player_id = entry.get("player_id")
++            if player_id is not None:
++                item["player_id"] = str(player_id)
++            claim_text = entry.get("claim")
++            if claim_text is not None:
++                clipped = self._clip_text(str(claim_text).strip(), 36)
++                if clipped:
++                    item["claim"] = clipped
++            if item:
++                summary_bits = [str(item.get("player_id") or "")]
++                if item.get("claim"):
++                    summary_bits.append(str(item["claim"]))
++                item["summary"] = ":".join(bit for bit in summary_bits if bit)
++                claims.append(item)
++        return claims[-3:]
++
++    def _recent_vote_turn_summaries(self) -> list[dict[str, Any]]:
++        grouped: dict[str, list[str]] = {}
++        round_order: list[str] = []
++        for entry in reversed(self._public_ledger["votes"]):
++            if not isinstance(entry, Mapping):
++                continue
++            round_value = entry.get("round")
++            round_key = str(round_value) if round_value is not None else ""
++            if round_key not in grouped:
++                grouped[round_key] = []
++                round_order.append(round_key)
++            voter = entry.get("voter") or entry.get("player_id")
++            target = entry.get("target_id") or entry.get("vote")
++            if voter is None and target is None:
++                continue
++            grouped[round_key].append(f"{voter}->{target}")
++        summaries: list[dict[str, Any]] = []
++        for round_key in reversed(round_order[:3]):
++            items = grouped.get(round_key) or []
++            if not items:
++                continue
++            summary = "；".join(items[:3])
++            summaries.append({"round": round_key or None, "summary": summary})
++        return summaries[-3:]
++
++    def _recent_self_summary(self) -> list[dict[str, Any]]:
++        summaries: list[dict[str, Any]] = []
++        for entry in self._self_history[-2:]:
++            if not isinstance(entry, Mapping):
++                continue
++            item: dict[str, Any] = {}
++            round_value = entry.get("round")
++            if round_value is not None:
++                item["round"] = round_value
++            phase_value = entry.get("phase")
++            if phase_value is not None:
++                item["phase"] = phase_value
++            kind = entry.get("kind")
++            if kind is not None:
++                item["kind"] = kind
++            target_id = entry.get("target_id")
++            if target_id is not None:
++                item["target_id"] = str(target_id)
++            text = entry.get("text")
++            if isinstance(text, str) and text.strip():
++                item["text"] = self._clip_text(text, 36)
++            if item:
++                summary_bits = [str(item.get("kind") or "")]
++                if item.get("target_id"):
++                    summary_bits.append(str(item["target_id"]))
++                if item.get("text"):
++                    summary_bits.append(str(item["text"]))
++                item["summary"] = ":".join(bit for bit in summary_bits if bit)
++                summaries.append(item)
++        return summaries[-2:]
+ 
+     def _build_compact_turn_prompt(
+         self,
+@@ -550,15 +637,26 @@
+                 plan = cached_plan.get("strategy")
+                 if isinstance(plan, Mapping):
+                     return dict(plan)
+-            ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions)
++            ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions, phase=phase)
+             primary = ranked_targets[0] if ranked_targets else None
+             backup = ranked_targets[1] if len(ranked_targets) > 1 else None
++            tie_break_rule = self._phase_tie_break_note(phase, memory_snapshot)
++            primary_reason = primary.get("reason") if isinstance(primary, Mapping) else None
+             plan = {
+                 "stage": "night",
+                 "objective": "锁定一个主刀和一个备刀，并在重试时复用同一计划",
+                 "primary_target": primary,
+                 "backup_target": backup,
+-                "tie_break_reason": primary.get("reason") if isinstance(primary, Mapping) else "优先高威胁公共目标，再按座位/ID固定顺序",
++                "switch_conditions": self._night_switch_conditions(primary, backup, phase),
++                "phase_tie_break": {
++                    "phase": phase,
++                    "rule": tie_break_rule,
++                },
++                "tie_break_reason": (
++                    f"{primary_reason}；{tie_break_rule}"
++                    if primary_reason
++                    else f"优先高威胁公共目标，再按座位/ID固定顺序；{tie_break_rule}"
++                ),
+                 "candidate_order": ranked_targets,
+                 "notes": self._night_notes(memory_snapshot, current_dialogue),
+                 "signature": signature,
+@@ -577,6 +675,11 @@
+                 "stage": "day",
+                 "objective": "用具体对象、具体证据和下一步动作维持可解释叙事",
+                 "must_include": ["具体对象", "具体证据", "下一步动作"],
++                "speech_plan": {
++                    "object": day_focus.get("target"),
++                    "evidence": day_focus.get("evidence"),
++                    "next_action": day_focus.get("next_action"),
++                },
+                 "day_focus": day_focus,
+                 "pressure_points": self._day_pressure_points(memory_snapshot),
+                 "dialogue_focus": self._dialogue_focus(current_dialogue),
+@@ -714,6 +817,7 @@
+         turn_packet: Mapping[str, Any],
+         memory_snapshot: Mapping[str, Any],
+         target_actions: list[Mapping[str, Any]],
++        phase: str | None = None,
+     ) -> list[dict[str, Any]]:
+         public_state = turn_packet.get("public_state")
+         players = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
+@@ -726,7 +830,7 @@
+                     continue
+                 seen.add(target)
+                 record = players.get(target, {})
+-                score, reason = self._score_target(target, record, memory_snapshot)
++                score, reason = self._score_target(target, record, memory_snapshot, phase=phase)
+                 candidates.append(
+                     {
+                         "player_id": target,
+@@ -746,12 +850,16 @@
+         target_id: str,
+         record: Mapping[str, Any],
+         memory_snapshot: Mapping[str, Any],
++        phase: str | None = None,
+     ) -> tuple[int, str]:
+         score = 0
+         reasons: list[str] = []
+         if target_id == self.player_id:
+             return -100, "自己不能作为刀口"
+         ledger = memory_snapshot.get("public_ledger") or {}
++        phase_lower = str(phase or "").lower()
++        is_night_phase = any(token in phase_lower for token in ("night", "夜"))
++        is_day_phase = any(token in phase_lower for token in ("day", "白天", "speech"))
+         if record:
+             if record.get("alive") is False or record.get("status") in {"dead", "eliminated"}:
+                 score -= 50
+@@ -773,6 +881,23 @@
+                 score += min(3, max(0, speak_count))
+                 if speak_count:
+                     reasons.append("发言活跃")
++            if is_night_phase:
++                if claim_text:
++                    score += 1
++                    reasons.append("夜间身份链")
++                if isinstance(vote_count, int) and vote_count > 0:
++                    score += 1
++                    reasons.append("夜间票型延续")
++            elif is_day_phase:
++                if claim_text:
++                    score += 2
++                    reasons.append("白天身份链")
++                if isinstance(vote_count, int) and vote_count > 0:
++                    score += 1
++                    reasons.append("白天票型焦点")
++                if record.get("is_sheriff") or record.get("sheriff"):
++                    score += 1
++                    reasons.append("白天警徽链")
+         claim_entries = ledger.get("claims") or []
+         if any(entry.get("player_id") == target_id for entry in claim_entries[-3:]):
+             score += 3
+@@ -918,16 +1043,39 @@
+         sheriff_id = game.get("sheriff_id")
+         if sheriff_id:
+             notes.append(f"优先考虑警长{self._clip_text(str(sheriff_id), 18)}")
+-        public_ledger = memory_snapshot.get("public_ledger") or {}
+-        claims = public_ledger.get("claims") or []
+-        if claims:
++        if memory_snapshot.get("recent_public_claims"):
+             notes.append("优先处理公开身份链")
+-        recent_votes = memory_snapshot.get("recent_vote_summary") or []
+-        if recent_votes:
+-            notes.append("结合最近票型收敛刀口")
++        if memory_snapshot.get("recent_vote_summary"):
++            notes.append("结合最近2-3轮票型收敛刀口")
+         if current_dialogue:
+             notes.append("优先处理夜间讨论中的高威胁公共目标")
+         return notes[:3]
++
++    def _phase_tie_break_note(self, phase: str, memory_snapshot: Mapping[str, Any]) -> str:
++        phase_lower = phase.lower()
++        round_value = memory_snapshot.get("game", {}).get("round")
++        if any(token in phase_lower for token in ("night", "夜")):
++            if round_value == 1:
++                return "首夜优先公开威胁和发言强者；之后再看身份链与票型"
++            return "夜间优先警长/公开身份链，再看近期票型和死亡顺序"
++        if any(token in phase_lower for token in ("day", "白天", "speech")):
++            return "白天优先票型、警徽链和公开身份链；同分时先选更像公共焦点的人"
++        return "同分时固定按公共威胁、警徽链、座位号收敛"
++
++    def _night_switch_conditions(
++        self,
++        primary: Mapping[str, Any] | None,
++        backup: Mapping[str, Any] | None,
++        phase: str,
++    ) -> list[str]:
++        primary_id = str(primary.get("player_id")) if isinstance(primary, Mapping) and primary.get("player_id") is not None else "主刀"
++        backup_id = str(backup.get("player_id")) if isinstance(backup, Mapping) and backup.get("player_id") is not None else "备刀"
++        conditions = [
++            f"若{primary_id}失效、不可选或不在候选中，立刻切到{backup_id}",
++            f"若{phase}的合法候选发生变化，只在候选变化后重新排序一次",
++            "重试时优先复用本夜已锁定的主刀/备刀，不在同一夜反复摇摆",
++        ]
++        return conditions
+ 
+     def _day_pressure_points(self, memory_snapshot: Mapping[str, Any]) -> list[str]:
+         points: list[str] = []
+@@ -943,7 +1091,9 @@
+                 points.append(f"警徽变化：{last.get('from')}→{last.get('to')}")
+         recent_votes = memory_snapshot.get("recent_vote_summary") or []
+         if recent_votes:
+-            points.append("根据上一轮票型调整站边")
++            points.append("根据最近2-3轮票型调整站边")
++        if memory_snapshot.get("recent_public_claims"):
++            points.append("优先引用最近身份链")
+         return points[:3]
+ 
+     def _dialogue_focus(self, current_dialogue: list[dict[str, Any]]) -> list[str]:
+@@ -981,7 +1131,7 @@
+     def _extract_current_round_dialogue(self, turn_packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+         tool_context = turn_packet.get("tool_context") or {}
+         raw_dialogue = tool_context.get("current_round_dialogue") or []
+-        return self._summarize_dialogue(raw_dialogue)
++        return self._summarize_dialogue(raw_dialogue)[-_MAX_RECENT_DIALOGUE_ITEMS:]
+ 
+     def _summarize_sync_packet(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
+         if not isinstance(sync_packet, Mapping):
+@@ -1067,7 +1217,8 @@
+             return []
+         items = dialogue if isinstance(dialogue, list) else [dialogue]
+         snippets: list[dict[str, Any]] = []
+-        for item in items[-_MAX_HISTORY_ITEMS:]:
++        limit = min(_MAX_HISTORY_ITEMS, _MAX_RECENT_DIALOGUE_ITEMS)
++        for item in items[-limit:]:
+             if isinstance(item, Mapping):
+                 speaker = self._first_value(item, ("speaker", "speaker_id", "player_id", "from", "by"))
+                 text = self._first_value(item, ("text", "content", "utterance", "speech", "message"))
+@@ -1085,7 +1236,7 @@
+                 snippets.append({"text": self._clip_text(item, _MAX_SNIPPET_LENGTH)})
+             else:
+                 snippets.append({"text": self._clip_text(str(item), _MAX_SNIPPET_LENGTH)})
+-        return snippets[-_MAX_HISTORY_ITEMS:]
++        return snippets[-limit:]
+ 
+     def _extract_text_snippets(self, value: Any) -> list[str]:
+         snippets: list[str] = []
+@@ -1219,8 +1370,6 @@
+                 "chairman",
+                 "chairman_id",
+                 "death_order",
+-                "dialogue",
+-                "public_dialogue",
+             ),
+         )
+ 
+--- wolf-n00020/task.md
++++ wolf-n00045/task.md
+@@ -5,12 +5,14 @@
+ ## 夜间
+ - 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标。
+ - 每次夜间决策都要显式锁定主刀与备刀；同一夜重试时优先复用上一次锁定结果，只有候选合法性变化时再重新排序。
++- 如果重新排序，必须说明是哪个候选失效、哪个候选顶上，以及为什么切换。
+ - 首夜优先处理公开威胁高、发言强、容易带队的人。
+ - 如果有人已经明显暴露身份、对跳、被查杀或成为票型焦点，优先把这些信息纳入刀口判断。
+ - 队友意见不一致时，按“高威胁公共目标 > 警长/神职概率高 > 更难被队友解释 > 固定座位/最后一致目标”收敛。
+ 
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序和警徽变化再表态，不要只讲泛泛原则。
++- 每次公开发言优先引用最近 1 条身份链或票型链，必须先写当前对象、对应证据、以及下一步动作。
+ - 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。

@@ -1,0 +1,44 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00020 已经是可用且通过宽筛的版本：20 局 13 胜 / 7 负，且自身仅 1 次 fallback、1 次非法行动。当前主要瓶颈不是规则合法性，而是提示组织与证据压缩：它在局面结构清晰时能稳定执行夜刀和白天叙事，但面对更长的对跳、票型和警徽链时，仍偏依赖泛化模板与较宽的记忆输入。",
+  "evidence": [
+    "评测汇总显示 game_count=20, win_count=13, loss_count=7, win_rate=0.65, fallback_count=1, invalid_decision_count=1, recommended_status=retained。",
+    "随机回放 game9 中，wolf-n00020 在第 1 轮刀 p2、第 2 轮刀 p4、第 3 轮刀 p12、第 4 轮刀 p10，并能跟着警徽转移把白天叙事集中到 p11/p10，说明在结构化信息明确时执行力是足够的。",
+    "当前代码已经有 `_game_memory`、`_public_ledger`、`wolf_plan` 缓存、`_rank_targets` 和 `_select_day_focus`，但 `_build_compact_turn_prompt` 仍把较宽的 `memory_snapshot` 和 `current_round_dialogue` 送入模型，说明记忆压缩还不够激进。",
+    "同系兄弟分支 wolf-n00021 已经在做更强压缩与结构化输出：recent_public_claims、recent_vote_turn_summaries、recent_self_summary、只保留最近 3 条 dialogue、以及更明确的 speech_plan / switch_conditions，这说明当前节点的下一步优化方向已经相对明确。"
+  ],
+  "root_causes": [
+    "白天发言缺少显式的“发言脚手架”。当前 `wolf_strategy` 只给对象和证据，没有把“对象—证据—下一步动作”固化成可直接执行的 speech plan，模型容易退回到泛化模板。",
+    "记忆输入仍偏重。虽然已有压缩，但 `current_round_dialogue`、历史 public/self 片段和宽字段 public_state 仍会一起进入 prompt，导致注意力分散和 token 成本偏高。",
+    "夜刀策略对“何时切主刀/备刀”的条件表达不够显式。缓存能保证同夜稳定，但跨回合的切换条件仍主要靠隐式排序，复杂局面里适应不够快。",
+    "票型、身份链、警徽链的摘要粒度还不够短，不足以在长局里形成稳定锚点；这会让模型在对跳局里更容易使用同义句或重复论述。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "把 `_memory_snapshot` 和 `_build_compact_turn_prompt` 改成更强压缩：只保留最近 2~3 轮的票型摘要、最近 3 条公开身份声明、最近 2 条自发言摘要；将 `current_round_dialogue` 截断到最近 3 条，并新增 `_recent_vote_turn_summaries()`、`_recent_public_claims()`、`_recent_self_summary()` 等辅助函数。",
+      "rationale": "降低 prompt 噪声和输入 token 压力，让模型更聚焦当前轮次的关键链条，而不是被整段历史淹没。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 `_build_wolf_strategy` 的输出升级为显式计划对象：白天增加 `speech_plan`（对象 / 证据 / 下一步动作），夜间增加 `switch_conditions` 和 phase-aware tie-break 说明，并让 `_rank_targets` 接收 phase 信息以便不同阶段使用不同权重。",
+      "rationale": "把“该说什么、该怎么换刀”显式化，减少模型自行发挥导致的模板化、含糊化和切换迟缓。"
+    },
+    {
+      "file": "task.md",
+      "change": "补一段更具体的局内约束：每次白天发言优先引用最近 1 条身份链或票型链，必须写出当前对象、对应证据、以及下一步动作；夜间必须先锁主刀/备刀，再说明若候选变化如何切换。",
+      "rationale": "把代码侧的结构化摘要转成任务层硬约束，增强模型在长局和对跳局里的稳定性。"
+    }
+  ],
+  "risks": [
+    "过度压缩可能丢失少数关键长链信息，尤其是在多轮对跳、警徽转移频繁的局面里。",
+    "更强的 speech plan 可能让发言更稳定，但如果写得过于模板化，会和现有反模板逻辑冲突，需要保留少量可变槽位。",
+    "对 phase 依赖更强的 ranking / switching 需要谨慎校验，避免在夜间、复盘或死亡后阶段误用过期记忆。"
+  ],
+  "code_agent_brief": "请在不改 Game Engine、规则、schema、可见性、验证逻辑和模型网关的前提下，强化 wolf Task-Agent 的“结构化记忆 + 发言脚手架”能力。优先 backport wolf-n00021 的思路：压缩最近票型/身份链/自发言摘要，截断当前轮对话，只保留最相关的短锚点；同时让白天输出明确的 speech_plan，夜间输出明确的主刀/备刀切换条件。目标是降低输入 token、减少泛泛发言、提升对复杂对跳局的稳定性。"
+}

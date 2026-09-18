@@ -1,0 +1,51 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00044 已经是稳定可运行的版本：20 局全跑完，focus 侧 0 fallback、0 非法行动，胜率 70%。下一代改造不该再盯 schema 稳定性，而应解决两个更高层问题：一是决策提示太臃肿、重复信息过多，二是“夜刀锁定/白天发言结构”更多靠模型自觉而不是代码硬约束。",
+  "evidence": [
+    "评测汇总显示：game_count=20、complete_game_count=20、win_count=14、loss_count=6、focus_fallback_count=0、focus_invalid=0；说明当前实现已经稳定，但还有明显提升空间。",
+    "当前 task_agent.py 的 `decide()` 仍把 `game`、`public_rules`、`self`、`private_information`、`public_state`、`request`、`memory`、`wolf_strategy`、`current_round_dialogue` 一起塞进单次提示；同时 `_game_memory`、`_public_ledger`、`_public_history`、`_self_history` 等多层记忆并存，和 886,971 input tokens / 176 次成功响应的体量一致，说明 prompt 负载偏重。",
+    "`_build_wolf_strategy()` 虽然缓存了 `wolf_plan`，但主要是“给模型看”，没有把主刀/备刀做成更硬的执行约束；这与任务里“同一夜重试优先复用上次锁定结果”的要求还不够一致。",
+    "现有白天分支已经计算了 `day_focus`、`evidence`、`next_action`、`mode_reason`，但代码层并没有把这些字段收敛成一个更强的 `case_summary`，也没有做发言结构的最小校验，所以模型仍可能产出合规但偏泛的公开话术。",
+    "兄弟分支 n00043 的 patch 方向很明确：它把原始大包改成 `decision_state` / `state_digest` / `locked_plan` / `case_summary`，说明当前这条进化线的正确方向是“更强压缩、更强锁定”，不是继续堆更多原始上下文。"
+  ],
+  "root_causes": [
+    "决策输入过大且冗余，导致同类信息被重复编码，浪费 token，也稀释了模型对真正关键字段的注意力。",
+    "夜间计划虽有缓存，但没有被做成足够硬的“锁定计划”，重试和同夜复用仍主要依赖模型遵守提示，而不是代码保证。",
+    "白天发言的目标字段已经被计算出来，但缺少一个紧凑、可复用的结构化 case summary，导致“对象-证据-下一步动作-发言目的”更多是软约束。",
+    "当前记忆层以文本历史为主，缺少对最新票型/身份链的显式压缩摘要，容易让模型重复旧证据而不是围绕新证据修正判断。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "把 `_build_compact_turn_prompt()` 改成只输出 `decision_state`：包含 `state_digest`、`recent_dialogue`、`case_summary` 和必要的 `request/self/private_information`，移除原始 `public_rules`、完整 `public_state`、重复的 `memory` 大包。",
+      "rationale": "先压缩输入体积，降低 token 成本和上下文噪音，让模型每次决策看到的是“可行动的摘要”而不是整包原始状态。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 `_build_wolf_strategy()` 里把 `primary_target` / `backup_target` / `discussion_signal` 固化成 `locked_plan`，并在相同 signature 的重试中优先复用该锁定结果；只有候选合法性变化时才允许重排。",
+      "rationale": "把任务要求里的“夜刀主备锁定、重试复用”从提示语升级为显式结构，减少同夜漂移。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增一个轻量 `_decision_case_summary()` 或同类 helper，把 `day_focus` 统一整理成 `object`、`evidence_type`、`next_action`、`purpose` 四个字段，并让白天分支直接引用它。",
+      "rationale": "让公开发言的结构约束落到代码里，而不是只写在 prompt 里；这能减少泛话术和重复模板。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "补一个更强的“证据新鲜度”选择规则：`_select_day_evidence()` 优先返回最近一轮未使用过的票型/身份链/死亡链证据，并在连续两轮命中同类证据时主动切换证据类型。",
+      "rationale": "避免白天叙事反复围绕同一条旧线索打转，提升对局势变化的响应能力。"
+    }
+  ],
+  "risks": [
+    "提示压缩过度可能丢掉少数关键边缘信息，尤其是后期人数较少、单个票型细节很重要的局面。",
+    "把夜刀锁定做得太硬，可能在临时出现更优公共目标时缺少灵活性；需要保留“合法性变化才重排”的出口。",
+    "白天发言结构约束过强，可能让输出变得机械，需要避免把 case summary 写成固定模板。",
+    "如果 state_digest 设计不当，可能把有用的警徽链或死亡顺序摘要裁掉，导致某些局面判断反而变差。"
+  ],
+  "code_agent_brief": "请只改 wolf-n00044 的 task_agent.py：把 turn prompt 从“大而全的原始包”改成 compact 的 decision_state；加入 state_digest、locked_plan、case_summary 三层摘要；让夜间主刀/备刀在同 signature 重试时硬复用，只有候选合法性变化才重排；让白天发言直接基于对象/证据类型/下一步动作/目的四元组生成，并优先使用新证据。不要改 Game Engine、规则、schema 或密钥，保持现有 JSON 行动校验不变。"
+}

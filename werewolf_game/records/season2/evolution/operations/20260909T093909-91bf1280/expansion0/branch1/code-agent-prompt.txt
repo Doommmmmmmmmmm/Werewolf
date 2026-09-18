@@ -1,0 +1,79 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00013 的主要问题不是动作合法性，而是把预言家查验信息转化为可持续公共节奏的能力不足。当前代码新增了 seer_context、发言自检和投票/警徽移交安全覆盖，能减少“票死人/徽给非金水”等低级错误；但它仍基本依赖单次 LLM 从当前包和有限当前轮发言中临场判断，没有跨轮结构化记忆，也没有对“对跳预言家、警徽流、遗产发布、夜验目标优先级”做足够强的程序化约束。随机回放中，预言家 p6 前期拿警徽并查到 p8、p3 金水，后续第 3 夜查到 p7 狼但当夜死亡，查杀没有公开；同时第 2 夜选择查验对跳狼 p5 给出的金水 p3，而不是优先查验/压制对跳链或关键冲票位，导致 p3 白天被推出，好人阵营失去关键轮次并最终狼胜。下一代应在 task_agent.py 中加入轻量、局内可见的结构化记忆和更明确的预言家状态机：记录公开 claims/votes/deaths/inspection ledger，夜验优先直接处理对跳与冲票矛盾，白天发言强制给出单一票口和警徽流遗产，投票覆盖从“仅 known_live_wolves”扩展到“直接对跳/冲票链优先”。",
+  "evidence": [
+    "评测汇总显示 seer-n00013：20 局全完成，focus 角色 win_count=6、loss_count=14、win_rate=0.3；focus_fallback_count=0、focus_error_counts={}，说明失败主要来自策略质量而非预言家自身 schema 非法。",
+    "当前代码已为 seer 增加 _seer_context、_seer_instruction_text 和 _apply_seer_safety_overrides，但 _seer_context 只从当次 turn_packet/private_information/public_state 抽取 inspection、alive、sheriff 等静态信息；observe 明确丢弃 sync_packet，没有保存跨行动公共状态。",
+    "随机回放 game19 中，p6 是预言家：第 1 夜查 p8=village，竞选发言 seq65 正确公开“验了8号，金水”，并成功当选警长 seq95。",
+    "同局第 1 天游说 seq110，p6 报 p8 金水但选择“今天先不强行归票”；最终投票 seq123 投 p2，p2 狼被推出 seq142-144，这是正向结果，但 p5 作为上警阶段明确对跳预言家的狼没有被持续压成唯一主线。",
+    "第 2 夜 p6 查验 p3=village（seq166-167）。p3 正是狼 p5 在上警 seq64 声称的“3号金水”，查 p3等于验证悍跳狼给出的金水，信息增益偏低；更高价值目标应是直接对跳者 p5，或对跳/投票链上的 p7、p12 等强冲突位。",
+    "第 2 天游说 seq186，p6 公开 p8、p3 双金水，但仍说“今天没有查杀可推，我不乱归票”，没有把 p5 的对跳、p7/p12 的站边与票型矛盾组织成单一票口。当天 p6 虽投中 p7 狼（seq198），但全场票型分散，p3 这个已公开金水反被放逐 seq216-218。",
+    "第 3 夜 p6 查验 p7=wolf（seq239-240），但同夜被狼刀死亡 seq246-249。因为夜死无遗言，查杀 p7 没有公开，p6 只能把警徽转给 p8 seq251-252，导致最关键的查杀信息断链。",
+    "当前 _apply_seer_safety_overrides 只在 vote 阶段优先 known_live_wolves，在没有已知活狼时不干预；它不会优先投直接对跳预言家、推过金水的人、或上一轮集中冲掉金水的人。",
+    "当前 _seer_instruction_text 虽提示“已跳预言家/持警徽应公开查验并说明下一验目标与警徽流”，但只是自然语言提示，没有从代码层生成候选夜验优先级、对跳名单、遗产名单或强制发言骨架。回放 seq186 显示模型没有明确留下“今晚主验谁、若我倒牌好人如何解读票型”的可执行遗产。"
+  ],
+  "root_causes": [
+    "缺少跨行动结构化公共记忆。TaskAgent.observe 丢弃同步包，每次决策虽有当前 public_state 和当前轮工具，但没有累计公开发言、候选人、对跳声明、票型和死亡事件的轻量账本，导致预言家无法稳定追踪 p5 这种早期对跳者及其后续关系链。",
+    "夜验目标选择几乎完全交给 LLM 临场判断。当前代码只提示“优先查验存活且未查验的人”和“查杀链强保/强踩”等原则，没有程序化排序 allowed target，因此模型会选择验证悍跳狼给出的金水 p3，而不是直接查验对跳预言家 p5或关键冲票位。",
+    "发言约束缺少强制模板。当前提示要求公开查验、区分事实与推测，但没有强制每次白天发言包含：查验时间线、对跳/冲票矛盾、唯一主票口、备票口、今晚主验和警徽流。结果在无查杀日容易说“先听一圈/不乱归票”，把警长号召力让给其他玩家。",
+    "预言家死亡风险处理不足。持警徽真预言家在已暴露身份后极易夜死；代码虽提示不要长期隐藏金水，但没有要求在白天提前留下明确遗产：若夜死，场上应优先盘哪些人、今晚计划验谁、哪些人因票型/对跳进入狼坑。第 3 夜查到 p7 狼后死亡，查杀完全丢失。",
+    "投票安全覆盖过窄。只有 known_live_wolves 时才覆盖投票；但很多关键白天并没有查杀，预言家仍应按对跳者、推金水者、冲票金水者和假预言家链路形成优先票口。当前覆盖无法防止无查杀日票型被带散。",
+    "seer_context 的 alive_order 构造存在轻微语义问题：当 public_state.players 是全体玩家列表时，alive_order 实际包含所有玩家，再通过 uninspected_alive_ids 过滤 alive_ids；字段名 alive_player_ids 却返回 alive_order，可能让模型误以为其中均为活人。虽然本回放未直接暴露非法投票，但会增加提示噪声。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 TaskAgent 中新增仅来自可见信息的轻量局内记忆 self._seer_memory，并在 observe(sync_packet) 与 decide(turn_packet) 开头更新。记忆字段建议包括：public_claims_by_player、seer_claimants、inspection_claims_public、vote_history、eliminated_ids、dawn_dead_ids、last_sheriff_id、last_pressure_targets。只记录公开同步包和当前可见 packet/tool_context 中已有内容，不读取外部文件或隐藏审计信息。",
+      "rationale": "解决每次新会话导致的跨轮公共信息断裂，使预言家能持续追踪对跳者、谁推过金水、谁跟票冲票，而不是依赖模型从当前状态临场回忆。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _extract_public_signals(turn_packet, memory, seer_context) -> dict，汇总给模型的结构化信号：direct_seer_counterclaims、public_gold_targets、players_pushing_known_villagers、players_voting_known_villagers、players_voting_self_or_gold、recent_elimination_voters、unresolved_pressure_targets、suggested_inspect_targets、suggested_vote_targets。将该结果加入 prompt['role_context']['seer']['public_signals']。",
+      "rationale": "把发言/票型碎片转成预言家可用的决策状态，帮助 LLM 在 12000 字预算内聚焦关键矛盾。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "实现 _rank_seer_inspection_targets(request, seer_context, public_signals)，在夜间 seer_inspect 行动且 allowed target 存在时，对模型输出做温和覆盖或在提示中明确排序。优先级：1）存活直接对跳预言家且未验；2）上一轮投/推已知金水的人；3）对跳者给出的金水或查杀链中的关键保/踩位，但低于直接对跳者；4）连续带票、分票、划水但处在核心争议的人；5）普通未验活人。避免查验已死、已验、低信息金水。",
+      "rationale": "防止第 2 夜查 p3 这类低收益行为，优先把查验用于解决 p5 对跳、p7/p12 冲突等能直接改变白天票型的矛盾。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展 _apply_seer_safety_overrides：vote 阶段仍第一优先 known_live_wolves；若无已知活狼，则按 public_signals.suggested_vote_targets 选择合法目标，优先存活对跳预言家、推/票已知金水者、上一轮造成金水出局的集中票型核心。若模型投向 known_live_villagers，应强制改到候选压力目标或 pass/合法备选。",
+      "rationale": "无查杀日也要形成可解释的预言家票口，避免警长预言家说不归票后票型发散，甚至让金水被推出。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _seer_instruction_text 的白天/竞选部分，生成短而强的固定发言骨架：『查验事实：N1 x=...；N2 y=...。公开矛盾：谁对跳/谁推金水/谁票型异常。今天主票：A，备票：B，理由是推测不是查验。今晚主验：C，备验：D。若我夜死且无遗言，警徽给金水E；请优先盘A/C及其票型链。』要求最多一个主票口，不再输出“先听一圈不归票”除非第一轮且完全无对跳/无已知金水受压。",
+      "rationale": "让公开发言从泛泛复盘变成可执行的带队信号，尤其在持警徽或已跳预言家后，必须留下能被好人继承的遗产。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _seer_context 中修正 alive_player_ids：返回真正存活列表而非全体玩家顺序；另保留 player_order 字段表示座位顺序。同步更新提示中的字段名，减少模型误解。",
+      "rationale": "降低提示噪声，避免模型把已死玩家当作候选讨论或警徽流对象。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 sheriff_speech_order 增加简单偏好：如果自己是警长且当天有已知查杀/强压力目标，倾向选择让自己靠后或最后收口的方向；若只允许 next/prev，则根据 alive player order 估算哪一方向让自己发言更靠后。不能改变 schema，只在合法 target_ids 内选择。",
+      "rationale": "当前回放中 p6 经常在中段发言后无法收束后置位；警长预言家更适合听完更多发言后统一票口。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充角色任务的可执行优先级：已跳预言家后，无查杀日也必须给出单一主票口；夜验优先解决直接对跳和推金水票型；若预计夜死，白天必须公开完整查验账本、下一验/备验、警徽流和遗产盘法。强调不能把“验证悍跳者给出的金水”排在“验证悍跳者本人”之前。",
+      "rationale": "让策略意图在 prompt 层和代码层一致，减少 LLM 被通用发言模板带偏。"
+    }
+  ],
+  "risks": [
+    "程序化覆盖夜验和投票可能在少数局面中过度机械，例如直接对跳者其实是好人诈身份或普通玩家误报；因此建议把覆盖限定为明确出现“预言家/验人/查杀/金水”等关键词的强信号，并保留模型在提示中解释例外的空间。",
+    "新增跨行动记忆必须只使用公开同步和本角色私有查验，不能解析审计信息、最终 roles、wolf team 等隐藏字段；实现时应避免从 replay/audit 风格字段读取不可见内容。",
+    "固定发言骨架可能增加发言长度，需控制在 max_day_speech_chars=200 以内。建议生成提示要求短句格式，并在代码侧不要自动拼接长文本到最终 action，只作为模型提示。",
+    "当前轮工具返回上限 1000，若依赖工具读取完整对话仍可能遗漏早期发言；因此记忆更新应优先来自 observe 的公开同步包和 turn_packet 中已有 public_state/tool_context，不能要求自动注入完整历史。",
+    "sheriff_speech_order 的方向优化依赖 allowed target_ids 和座位顺序，若估算错误不应产生非法 target_id；必须始终通过 decision_error 校验并只选合法 target。",
+    "如果候选代码加入复杂中文 NLP 正则，可能引入误识别和维护负担；建议采用保守关键词和可解释列表，不追求完整语义解析。"
+  ],
+  "code_agent_brief": "请只修改 task_agent.py 和 task.md，目标是在 seer-n00013 基础上做最小可执行升级。不要访问网络、文件、环境变量或隐藏审计信息，不要修改引擎/规则/schema。具体实现：1）在 TaskAgent 内增加 seer 专用轻量内存 self._seer_memory，observe(sync_packet) 不再直接丢弃全部内容，而是在 role==seer 时从公开可见 sync_packet 中提取玩家死亡、警长、公开发言、公开投票等简要事件；decide(turn_packet) 开头也用当前 packet/tool_context 更新一次。2）新增公共信号提取函数，识别公开发言里的预言家/金水/查杀/对跳声明、直接 seer counterclaim、推或票已知金水的人、近期放逐票型核心，并把 public_signals 放进 prompt['role_context']['seer']。3）新增夜验目标排序：合法 seer_inspect 目标中优先未验且存活的直接对跳预言家，其次推/票已知金水者，再其次关键保踩/带票/分票位，最后普通未验活人；避免已死、已验、低信息金水。可选择只强化提示，也可在模型输出后对 seer_inspect 做安全覆盖，但必须只从 allowed_actions.target_ids 中选。4）扩展投票覆盖：known_live_wolves 仍最高优先；无已知活狼时，若模型投到已知金水或分散无关目标，则改投 public_signals 中的首个合法强压力目标（对跳者、推金水者、冲票金水者）。5）重写 seer 白天发言提示为 200 字内骨架：查验事实时间线、公开矛盾、唯一主票口、备票口、今晚主验/备验、若夜死警徽流和遗产盘法；禁止已跳/持警徽后长期说“先听一圈不归票”，除非没有对跳且没有金水受压。6）修正 _seer_context 中 alive_player_ids 语义，返回真实存活玩家；如需座位顺序另设 player_order。7）task.md 同步写入这些预言家任务优先级，尤其说明直接对跳者优先于验证对跳者给出的金水。完成后自行做 Python 语法检查，保持 TaskAgent 构造接口不变。"
+}

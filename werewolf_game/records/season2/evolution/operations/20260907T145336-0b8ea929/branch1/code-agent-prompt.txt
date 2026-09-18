@@ -1,0 +1,61 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00003 的主要问题不是规则或 schema 违规，而是决策层太依赖浅层摘要与关键词启发式，缺少可复用的结构化局势记忆。评测上它能通过广泛筛选，但 20 局仅 30% 胜率；随机回放里女巫虽有一次正确毒掉悍跳预言家/关键神位的动作，但整体仍无法把公开票型、死亡、警徽流和身份链转成稳定的资源节奏。下一代 Task-Agent 应从“文本摘要 + 低置信 pass”升级为“结构化局势状态 + 显式救/毒评分 + 更强的隐私约束”。",
+  "evidence": [
+    "read_evaluation_summary 显示 witch-n00003：game_count=20，win_count=6，loss_count=14，win_rate=0.3；recommended_status=retained，但只是 passed_broad_filter。",
+    "该节点 focus_role_only 下没有明显 schema/非法行动问题：focus_fallback_count=0、focus_invalid=0；说明核心瓶颈更偏策略质量而非动作格式。",
+    "随机回放 game14 中，女巫在夜2毒掉 p9，且 p9 当夜已公开确认自己是预言家并报出 p1 狼，这说明当前 agent 不是完全不会做对，但依赖明显的公开定锤场景。",
+    "同一回放里，女巫后续因资源耗尽只能 pass，最终好人仍输；问题更像是没有把前几夜的票型、警徽和死亡链组织成稳定的后续决策记忆。",
+    "当前 task_agent.py 只保留 recent_public_summaries、last_public_round_phase、private_resource_state 三类压缩记忆，没有显式的死亡序列、票压、对跳链、警徽转移、关键候选集等结构化状态。",
+    "当前实现的 `_high_confidence_targets` 依赖关键词扫描（查杀、狼人、悍跳、wolf、kill 等）和 p\\d+ 提取，属于粗粒度文本启发式，不是真正的局势评分。",
+    "当前 `_apply_role_safe_fallback` 只对 poison 生效，并且在“低置信”时直接 pass；它能防误毒，但也会让女巫在证据不够清晰时缺乏更细的风险判断。",
+    "另一个分支 witch-n00060 已经开始加入 witch_suspicion_ledger、recent_public_deaths、recent_vote_pressure、recent_counterclaims、recent_role_chain，说明进化方向已指向结构化状态，而不是继续堆文本摘要。"
+  ],
+  "root_causes": [
+    "记忆表示过于扁平：只保留少量公共 digest 和药水状态，无法在后续夜晚复用“谁在带节奏、谁被对跳、谁被票压、谁是关键神职”的结构化关系。",
+    "置信判断过于依赖关键词：`_high_confidence_targets` 用 raw text 搜词来决定是否允许毒人，容易把“文本里出现狼/刀/查杀”误当作真正高置信证据，也容易在信息分散时直接落空。",
+    "救药/毒药没有分离成独立策略：代码对 poison 有兜底，但没有明确的 heal 触发条件、收益比较和终局节奏控制，导致资源使用更像反应式而不是计划式。",
+    "提示词与代码之间缺少统一的决策骨架：模型收到的是当前 state + 摘要 + 安全提示，但没有一个固定的“先看死亡/票型/对跳/警徽，再决定救或毒”的结构模板。",
+    "当前实现虽然安全，但偏保守：低置信直接 pass 的机制能减少误毒，却会在证据链半成形时错过高价值出手窗口。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增 witch 专用的结构化决策上下文构建器，把 public_state、request、current_round_dialogue 和 compact memory 解析成固定字段：最近死亡、票压排名、公开对跳、警徽持有与转移、疑似神职、剩余药水、合法目标集合。",
+      "rationale": "把当前的文本 digest 升级为可计算的局势状态，减少模型自己从长文本里猜的负担。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 `_high_confidence_targets`，改为基于结构化字段打分，而不是纯关键词扫描；保留关键词只做弱信号，不再作为唯一门槛。",
+      "rationale": "避免“看到狼/刀/查杀就算高置信”的误判，也避免信息分散时完全失去可毒目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "拆分出明确的 `heal_policy` 和 `poison_policy`：heal 只在当夜刀口存在且救人能改变轮次或保护高价值位时触发；poison 只在目标达到阈值时触发，否则 pass。",
+      "rationale": "让女巫的两种药水分别有独立收益判断，避免只靠一个通用 fallback。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 `_apply_role_safe_fallback` 从“低置信自动 pass”改为“先给出结构化候选排序，再按阈值决定 pass/毒”；同时把决定过程写入 `_last_decision_audit`，便于回放定位。",
+      "rationale": "保留安全兜底，但让兜底建立在可解释排序上，而不是一刀切放弃行动。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充一段面向女巫的决策顺序要求：每次行动先看最近死亡、票型、警徽归属、公开对跳，再决定救/毒/留；明确禁止用关键词命中代替证据判断。",
+      "rationale": "让 prompt 与代码里的结构化状态一致，降低模型继续按文本直觉作答的概率。"
+    }
+  ],
+  "risks": [
+    "结构化状态过多会增加 prompt 长度，接近 12000 字符上限；需要严格控制字段数量和序列化长度。",
+    "阈值如果设得过高，会把低风险但高收益的毒药窗口也过滤掉，导致女巫继续偏保守。",
+    "如果对票型/对跳/警徽的结构化提取不够稳，可能把公共发言的噪声也编码进决策，反而造成误判。",
+    "task.md 的文字约束只能辅助模型，不能替代代码层逻辑；如果代码不改，仅改 prompt，收益会有限。",
+    "过度依赖当前回放中的局面特征，可能对其他随机局产生轻微过拟合，需要保持阈值和特征集合尽量通用。"
+  ],
+  "code_agent_brief": "请在 witch-n00003 的 Task-Agent 上做一次小步升级：把女巫决策从“recent_public_summaries + 关键词高置信 + 低置信 pass”改成“结构化局势上下文 + 分离的救药/毒药评分 + 安全兜底”。优先改 task_agent.py：新增一个 witch 专用 context builder，解析最近死亡、票型、公开对跳、警徽归属/转移、剩余药水、合法目标；将 `_high_confidence_targets` 改为结构化打分而非纯词匹配；把 heal 与 poison 分成独立 policy；保留 pass 作为最后兜底但不要把关键词命中当作唯一依据。若需要，再同步更新 task.md 中的女巫决策顺序说明，保持与代码一致。不要改引擎、规则、schema 或可见性。"
+}

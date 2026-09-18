@@ -1,0 +1,507 @@
+--- wolf-n00004/task_agent.py
++++ wolf-n00019/task_agent.py
+@@ -413,17 +413,14 @@
+         self._self_history = self._self_history[-_MAX_HISTORY_ITEMS:]
+ 
+     def _memory_snapshot(self) -> dict[str, Any]:
+-        snapshot = {
++        return {
+             "game": {
+                 key: self._game_memory.get(key)
+                 for key in ("round", "phase", "sheriff_id", "alive_players", "dead_players", "death_order")
+             },
+             "recent_public_history": self._public_history[-3:],
+-            "recent_self_history": self._self_history[-3:],
+             "recent_vote_summary": self._game_memory.get("recent_votes", [])[-2:],
+-            "anti_template_notes": self._anti_template_notes(),
+         }
+-        return snapshot
+ 
+     def _build_compact_turn_prompt(
+         self,
+@@ -516,32 +513,144 @@
+         is_night = any(token in phase_lower for token in ("night", "夜")) or any(
+             token in channel_lower for token in ("night", "wolf")
+         )
++        recent_vote_summary = memory_snapshot.get("recent_vote_summary") or []
++        dialogue_slice = current_dialogue[-3:]
+         if is_night and target_actions:
+             ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions)
+             primary = ranked_targets[0] if ranked_targets else None
+-            backup = ranked_targets[1] if len(ranked_targets) > 1 else None
++            backup = self._pick_backup_target(ranked_targets)
+             return {
+                 "stage": "night",
+-                "objective": "收敛到一个主刀和一个备选刀",
++                "phase_bucket": self._night_stage(memory_snapshot),
++                "objective": "收敛到一个主刀和一个来自不同威胁层级的备选刀",
+                 "primary_target": primary,
+                 "backup_target": backup,
+-                "tie_break": "优先高威胁公共目标，再按座位/ID固定顺序；保留上一次一致目标",
++                "target_diversity_required": True,
++                "tie_break": "先看真神职暴露/对跳/验人链，其次警徽与票型核心，再看公共威胁；若同分，保留更接近既有一致目标者",
++                "recent_vote_summary": recent_vote_summary,
++                "current_round_dialogue": dialogue_slice,
+                 "notes": self._night_notes(memory_snapshot, current_dialogue),
+             }
+         if speech_actions:
++            focus_target = self._pick_day_focus_target(memory_snapshot, current_dialogue)
++            focus_reason = self._day_focus_reason(focus_target, recent_vote_summary, dialogue_slice)
+             return {
+                 "stage": "day",
+-                "objective": "用具体发言、票型和死亡顺序维持可解释叙事",
+-                "must_include": ["具体对象", "具体理由", "下一步动作"],
++                "phase_bucket": self._night_stage(memory_snapshot),
++                "objective": "围绕当前争议对象持续修正叙事",
++                "focus_target": focus_target,
++                "focus_reason": focus_reason,
++                "narrative_contract": {
++                    "object": "必须点名一个具体对象",
++                    "reason": "必须引用 recent_vote_summary 或 current_round_dialogue 中的具体票型/发言",
++                    "action": "必须给出下一步动作（继续压、转向、暂缓）",
++                },
++                "recent_vote_summary": recent_vote_summary,
++                "current_round_dialogue": dialogue_slice,
++                "pressure_points": self._day_pressure_points(memory_snapshot),
+                 "avoid_templates": self._anti_template_notes(),
+-                "pressure_points": self._day_pressure_points(memory_snapshot),
+-                "dialogue_focus": self._dialogue_focus(current_dialogue),
+             }
+         return {
+             "stage": "other",
+             "objective": "只做当前合法行动，不额外发散",
+             "avoid_templates": self._anti_template_notes(),
+         }
++
++    def _night_stage(self, memory_snapshot: Mapping[str, Any]) -> str:
++        game = memory_snapshot.get("game", {})
++        round_value = self._nonnegative_int(game.get("round"), fallback=0) or 0
++        alive_players = game.get("alive_players") or []
++        alive_count = len(alive_players) if isinstance(alive_players, list) else 0
++        if round_value <= 1 and alive_count >= 9:
++            return "early"
++        if alive_count <= 6 or round_value >= 4:
++            return "end"
++        return "mid"
++
++    def _target_threat_profile(
++        self,
++        target_id: str,
++        record: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        stage = self._night_stage(memory_snapshot)
++        stage_weights = {
++            "early": {"exposed": 10, "counterclaim": 8, "sheriff": 12, "vote_lock": 4, "public": 3},
++            "mid": {"exposed": 9, "counterclaim": 10, "sheriff": 9, "vote_lock": 8, "public": 4},
++            "end": {"exposed": 8, "counterclaim": 10, "sheriff": 7, "vote_lock": 12, "public": 5},
++        }[stage]
++        score = 0
++        reasons: list[str] = []
++        layer = 1
++        if target_id == self.player_id:
++            return {"score": -100, "layer": 0, "reason": "自己不能作为刀口"}
++        if record:
++            alive_state = self._is_alive_record(record)
++            if alive_state is False:
++                score -= 80
++                reasons.append("已死亡")
++                layer = max(layer, 0)
++            claim_text = " ".join(
++                str(item)
++                for item in (
++                    record.get("public_role"),
++                    record.get("claim"),
++                    record.get("claimed_role"),
++                )
++                if item
++            )
++            corpus = " ".join(
++                self._extract_text_snippets(memory_snapshot.get("recent_public_history"))
++                + self._extract_text_snippets(self._recent_public_texts[-6:])
++            )
++            if claim_text:
++                score += stage_weights["exposed"]
++                reasons.append("公开跳身份")
++                layer = max(layer, 4)
++                if self._has_counterclaim_signal(target_id, claim_text, corpus):
++                    score += stage_weights["counterclaim"]
++                    reasons.append("对跳/验人链")
++                    layer = max(layer, 5)
++            sheriff_id = memory_snapshot.get("game", {}).get("sheriff_id")
++            if record.get("is_sheriff") or record.get("sheriff") or str(target_id) == str(sheriff_id):
++                score += stage_weights["sheriff"]
++                reasons.append("警徽位")
++                layer = max(layer, 4)
++            elif self._has_badge_transfer_signal(target_id, corpus):
++                score += max(4, stage_weights["sheriff"] - 2)
++                reasons.append("疑似警徽传递位")
++                layer = max(layer, 4)
++            vote_count = record.get("vote_count", record.get("votes"))
++            vote_pressure = self._vote_pressure_for_target(memory_snapshot, target_id)
++            locked_votes = max(
++                self._nonnegative_int(vote_count, fallback=0) or 0,
++                vote_pressure,
++            )
++            if locked_votes:
++                score += min(stage_weights["vote_lock"], 2 + locked_votes * 2)
++                reasons.append("票型锁位")
++                layer = max(layer, 3)
++            speak_count = record.get("speak_count", record.get("speech_count"))
++            if isinstance(speak_count, int) and speak_count > 0:
++                score += min(stage_weights["public"], 1 + speak_count // 2)
++                reasons.append("公共发言活跃")
++                layer = max(layer, 2)
++        mentions = self._recent_mention_count(target_id)
++        if mentions:
++            score += min(3, mentions)
++            reasons.append(f"近期被提及{mentions}次")
++            layer = max(layer, 2)
++        if self._is_alive_record(record) is False and "已死亡" not in reasons:
++            score -= 40
++            reasons.append("不在存活名单")
++        death_order = memory_snapshot.get("game", {}).get("death_order") or []
++        if isinstance(death_order, list) and target_id in {str(item) for item in death_order[-2:]}:
++            score += 1
++            reasons.append("延续已有压力")
++            layer = max(layer, 2)
++        if not reasons:
++            reasons.append("默认公共威胁")
++        return {"score": score, "layer": layer, "reason": ",".join(reasons[:4])}
+ 
+     def _rank_targets(
+         self,
+@@ -560,20 +669,43 @@
+                     continue
+                 seen.add(target)
+                 record = players.get(target, {})
+-                score, reason = self._score_target(target, record, memory_snapshot)
++                profile = self._target_threat_profile(target, record, memory_snapshot)
+                 candidates.append(
+                     {
+                         "player_id": target,
+-                        "score": score,
+-                        "reason": reason,
++                        "score": profile["score"],
++                        "layer": profile["layer"],
++                        "reason": profile["reason"],
+                         "seat": self._seat_sort_value(record, target),
+                     }
+                 )
+-        candidates.sort(key=lambda item: (-int(item["score"]), item["seat"], item["player_id"]))
+-        return [
+-            {"player_id": item["player_id"], "reason": item["reason"]}
+-            for item in candidates[:3]
+-        ]
++        candidates.sort(key=lambda item: (-int(item["score"]), -int(item["layer"]), item["seat"], item["player_id"]))
++        primary_layer = candidates[0]["layer"] if candidates else None
++        ranked: list[dict[str, Any]] = []
++        if candidates:
++            ranked.append(
++                {
++                    "player_id": candidates[0]["player_id"],
++                    "layer": candidates[0]["layer"],
++                    "reason": candidates[0]["reason"],
++                }
++            )
++        backup = self._pick_backup_from_ranked(candidates, primary_layer)
++        if backup is not None:
++            ranked.append(backup)
++        for item in candidates:
++            if len(ranked) >= 3:
++                break
++            if item["player_id"] in {entry["player_id"] for entry in ranked}:
++                continue
++            ranked.append(
++                {
++                    "player_id": item["player_id"],
++                    "layer": item["layer"],
++                    "reason": item["reason"],
++                }
++            )
++        return ranked
+ 
+     def _score_target(
+         self,
+@@ -581,45 +713,33 @@
+         record: Mapping[str, Any],
+         memory_snapshot: Mapping[str, Any],
+     ) -> tuple[int, str]:
+-        score = 0
+-        reasons: list[str] = []
+-        if target_id == self.player_id:
+-            return -100, "自己不能作为刀口"
+-        if record:
+-            if record.get("alive") is False or record.get("status") in {"dead", "eliminated"}:
+-                score -= 50
+-                reasons.append("已死亡")
+-            if record.get("is_sheriff") or record.get("sheriff"):
+-                score += 8
+-                reasons.append("警长位")
+-            if record.get("public_role") or record.get("claim") or record.get("claimed_role"):
+-                score += 5
+-                reasons.append("身份暴露")
+-            vote_count = record.get("vote_count", record.get("votes"))
+-            if isinstance(vote_count, int):
+-                score += min(4, max(0, vote_count))
+-                if vote_count:
+-                    reasons.append("票型集中")
+-            speak_count = record.get("speak_count", record.get("speech_count"))
+-            if isinstance(speak_count, int):
+-                score += min(3, max(0, speak_count))
+-                if speak_count:
+-                    reasons.append("发言活跃")
+-        mentions = self._recent_mention_count(target_id)
+-        if mentions:
+-            score += min(3, mentions)
+-            reasons.append(f"近期被提及{mentions}次")
+-        if self._is_alive_record(record) is False:
+-            score -= 50
+-            if "已死亡" not in reasons:
+-                reasons.append("不在存活名单")
+-        death_order = memory_snapshot.get("game", {}).get("death_order") or []
+-        if isinstance(death_order, list) and target_id in {str(item) for item in death_order[-2:]}:
+-            score += 1
+-            reasons.append("延续已有压力")
+-        if not reasons:
+-            reasons.append("默认公共威胁")
+-        return score, ",".join(reasons[:3])
++        profile = self._target_threat_profile(target_id, record, memory_snapshot)
++        return int(profile["score"]), str(profile["reason"])
++
++    def _pick_backup_from_ranked(
++        self,
++        candidates: list[dict[str, Any]],
++        primary_layer: int | None,
++    ) -> dict[str, Any] | None:
++        if not candidates:
++            return None
++        if primary_layer is None:
++            return {
++                "player_id": candidates[1]["player_id"],
++                "layer": candidates[1]["layer"],
++                "reason": candidates[1]["reason"],
++            } if len(candidates) > 1 else None
++        for item in candidates[1:]:
++            if item["layer"] != primary_layer:
++                return {
++                    "player_id": item["player_id"],
++                    "layer": item["layer"],
++                    "reason": item["reason"],
++                }
++        if len(candidates) > 1:
++            item = candidates[1]
++            return {"player_id": item["player_id"], "layer": item["layer"], "reason": item["reason"]}
++        return None
+ 
+     def _night_notes(
+         self,
+@@ -627,16 +747,23 @@
+         current_dialogue: list[dict[str, Any]],
+     ) -> list[str]:
+         notes: list[str] = []
++        stage = self._night_stage(memory_snapshot)
++        if stage == "early":
++            notes.append("首夜优先真神职暴露与对跳位")
++        elif stage == "mid":
++            notes.append("中期优先断验人链与警徽线")
++        else:
++            notes.append("残局优先票型锁位与定点收口")
+         game = memory_snapshot.get("game", {})
+         sheriff_id = game.get("sheriff_id")
+         if sheriff_id:
+-            notes.append(f"优先考虑警长{self._clip_text(str(sheriff_id), 18)}")
++            notes.append(f"关注警长线：{self._clip_text(str(sheriff_id), 18)}")
+         recent_votes = memory_snapshot.get("recent_vote_summary") or []
+         if recent_votes:
+             notes.append("结合最近票型收敛刀口")
+         if current_dialogue:
+-            notes.append("优先处理夜间讨论中的高威胁公共目标")
+-        return notes[:3]
++            notes.append("从当前可见发言里找能串证据链的人")
++        return notes[:4]
+ 
+     def _day_pressure_points(self, memory_snapshot: Mapping[str, Any]) -> list[str]:
+         points: list[str] = []
+@@ -649,7 +776,7 @@
+             points.append(f"盯住警长位：{sheriff_id}")
+         recent_votes = memory_snapshot.get("recent_vote_summary") or []
+         if recent_votes:
+-            points.append("根据上一轮票型调整站边")
++            points.append(f"上一轮票型：{self._format_id_list(recent_votes[-2:])}")
+         return points[:3]
+ 
+     def _dialogue_focus(self, current_dialogue: list[dict[str, Any]]) -> list[str]:
+@@ -684,79 +811,82 @@
+             return 0
+         return corpus.count(str(target_id))
+ 
+-    def _build_compact_turn_prompt(
++    def _has_counterclaim_signal(self, target_id: str, claim_text: str, corpus: str) -> bool:
++        haystack = f"{target_id} {claim_text} {corpus}"
++        keywords = ("对跳", "验人", "查杀", "预言家", "女巫", "猎人", "守卫")
++        return any(keyword in haystack for keyword in keywords)
++
++    def _has_badge_transfer_signal(self, target_id: str, corpus: str) -> bool:
++        if not corpus:
++            return False
++        badge_keywords = ("警徽", "警长", "移交", "接警", "归票")
++        return str(target_id) in corpus and any(keyword in corpus for keyword in badge_keywords)
++
++    def _vote_pressure_for_target(self, memory_snapshot: Mapping[str, Any], target_id: str) -> int:
++        votes = memory_snapshot.get("recent_vote_summary") or []
++        if not isinstance(votes, list):
++            return 0
++        target = str(target_id)
++        pressure = 0
++        for item in votes:
++            if not isinstance(item, str):
++                continue
++            if item.endswith(f"->{target}") or f"->{target}," in item or f"->{target} " in item:
++                pressure += 1
++        return pressure
++
++    def _pick_backup_target(self, ranked_targets: list[dict[str, Any]]) -> dict[str, Any] | None:
++        if not ranked_targets:
++            return None
++        primary_layer = ranked_targets[0].get("layer")
++        for item in ranked_targets[1:]:
++            if item.get("layer") != primary_layer:
++                return item
++        return ranked_targets[1] if len(ranked_targets) > 1 else None
++
++    def _pick_day_focus_target(self, memory_snapshot: Mapping[str, Any], current_dialogue: list[dict[str, Any]]) -> str | None:
++        counts: Counter[str] = Counter()
++        alive_players = {
++            str(player_id)
++            for player_id in (memory_snapshot.get("game", {}).get("alive_players") or [])
++            if player_id is not None
++        }
++        self_id = str(self.player_id)
++        for item in memory_snapshot.get("recent_vote_summary") or []:
++            if not isinstance(item, str) or "->" not in item:
++                continue
++            _, target = item.split("->", 1)
++            target = target.strip()
++            if target and target != self_id:
++                counts[target] += 2
++        for item in current_dialogue[-3:]:
++            text = str(item.get("text") or item.get("content") or item.get("message") or "")
++            for target in re.findall(r"p\d+", text):
++                if target != self_id and (not alive_players or target in alive_players):
++                    counts[target] += 1
++        if not counts:
++            return None
++        return counts.most_common(1)[0][0]
++
++    def _day_focus_reason(
+         self,
+-        turn_packet: Mapping[str, Any],
+-        memory_snapshot: Mapping[str, Any],
++        focus_target: str | None,
++        recent_vote_summary: list[str],
+         current_dialogue: list[dict[str, Any]],
+-    ) -> dict[str, Any]:
+-        public_rules = self._compact_snapshot(
+-            turn_packet.get("public_rules"),
+-            preferred_keys=(
+-                "phase_rules",
+-                "vote_rules",
+-                "speech_limits",
+-                "action_limits",
+-                "public_information",
+-                "night_rules",
+-                "day_rules",
+-            ),
+-        )
+-        game = self._compact_snapshot(
+-            turn_packet.get("game"),
+-            preferred_keys=(
+-                "round",
+-                "phase",
+-                "public_phase",
+-                "day",
+-                "night",
+-                "alive_count",
+-                "dead_count",
+-                "players_alive",
+-                "players_dead",
+-            ),
+-        )
+-        public_state = self._compact_public_state(turn_packet.get("public_state"))
+-        request = self._compact_snapshot(
+-            turn_packet.get("request"),
+-            preferred_keys=(
+-                "request_id",
+-                "phase",
+-                "channel",
+-                "allowed_actions",
+-                "max_chars",
+-                "target_ids",
+-                "speaker_id",
+-            ),
+-        )
+-        self_state = self._compact_snapshot(
+-            turn_packet.get("self"),
+-            preferred_keys=(
+-                "player_id",
+-                "seat",
+-                "seat_id",
+-                "alive",
+-                "status",
+-                "vote_target",
+-                "speak_order",
+-            ),
+-        )
+-        private_information = self._compact_snapshot(
+-            turn_packet.get("private_information"),
+-            preferred_keys=("role", "team", "identity", "faction", "ability"),
+-        )
+-        wolf_strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
+-        return {
+-            "game": game,
+-            "public_rules": public_rules,
+-            "self": self_state,
+-            "private_information": private_information,
+-            "public_state": public_state,
+-            "request": request,
+-            "memory": memory_snapshot,
+-            "wolf_strategy": wolf_strategy,
+-            "current_round_dialogue": current_dialogue,
+-        }
++    ) -> str:
++        if focus_target is None:
++            return "当前没有明确票型焦点，先围绕最近发言和票型收窄判断"
++        reasons: list[str] = []
++        if any(isinstance(item, str) and focus_target in item for item in recent_vote_summary):
++            reasons.append("最近票型直接指向该对象")
++        if any(
++            focus_target in str(item.get("text") or item.get("content") or item.get("message") or "")
++            for item in current_dialogue
++        ):
++            reasons.append("当前对话正在围绕该对象展开")
++        if not reasons:
++            reasons.append("它是本轮最容易形成争议收口的对象")
++        return "；".join(reasons)
+ 
+     def _extract_current_round_dialogue(self, turn_packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+         tool_context = turn_packet.get("tool_context") or {}
+--- wolf-n00004/task.md
++++ wolf-n00019/task.md
+@@ -4,12 +4,13 @@
+ 
+ ## 夜间
+ - 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标。
+-- 首夜优先处理公开威胁高、发言强、容易带队的人。
+-- 如果有人已经明显暴露身份、对跳、被查杀或成为票型焦点，优先把这些信息纳入刀口判断。
+-- 队友意见不一致时，按“高威胁公共目标 > 警长/神职概率高 > 更难被队友解释 > 固定座位/最后一致目标”收敛。
++- 先按阶段分层：首夜更重公开跳身份、对跳和验人链；中后期更重警徽位与票型核心；残局更重票型锁位与收口。
++- 如果有人已经明显暴露身份、对跳、被查杀、串起验人链或成为票型焦点，优先把这些信息纳入刀口判断。
++- 队友意见不一致时，按“真神职暴露/对跳/验人链 > 警长与票型核心 > 难解释的公共威胁 > 固定座位/最后一致目标”收敛。
+ 
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序再表态，不要只讲泛泛原则。
++- 每次公开发言都必须绑定一个具体对象、一个具体局势理由、一个下一步动作；优先直接引用本轮争议对象、最近票型和当前发言。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
+ 

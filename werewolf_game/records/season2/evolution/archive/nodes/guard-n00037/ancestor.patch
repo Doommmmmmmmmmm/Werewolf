@@ -1,0 +1,517 @@
+--- guard-n00034/task_agent.py
++++ guard-n00037/task_agent.py
+@@ -211,6 +211,7 @@
+         self.alive_player_cache: set[str] = set()
+         self.recent_public_focus_ids: deque[str] = deque(maxlen=8)
+         self.player_risk_profile: dict[str, dict[str, int]] = {}
++        self._guard_signal_round_counts: dict[tuple[str, int], dict[str, int]] = {}
+         self._last_observed_round: int | None = None
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+@@ -290,7 +291,7 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
+-            action = self._repair_guard_decision(action, turn_packet["request"])
++            action = self._repair_guard_decision(action, turn_packet["request"], turn_packet)
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 self._record_successful_guard_action(action, turn_packet)
+@@ -330,7 +331,8 @@
+         if self.profile.role == "guard":
+             role_task = role_task + (
+                 "\n\n守卫约束：只从当前 target_ids 里选；先判定今晚最可能被狼刀的好人；"
+-                "默认不要重复上一夜目标；优先保护高风险好人而不是单纯热度位。"
++                "再看公开神职、警徽链和被多人压票者；话多不等于高风险；"
++                "默认不要重复上一夜目标；不要把守护成功当作已确认结果。"
+             )
+         return render_prompt(
+             "player_system.txt",
+@@ -351,7 +353,8 @@
+         if self.profile.role == "guard":
+             guard_note = (
+                 "守卫执行要点：只在当前 target_ids 内选；先找今晚最可能被刀的好人；"
+-                "优先公开神职、被多人点名/压票的关键发言位；没有更好目标时再自守。"
++                "优先公开神职、警徽链和被多人压票的关键节点；话多不等于高风险；"
++                "没有更好目标时再自守。"
+             )
+             validation_feedback = guard_note + ("\n" + validation_feedback if validation_feedback else "")
+         return render_prompt(
+@@ -401,7 +404,12 @@
+         if round_no is not None:
+             self.last_protected_round = round_no
+ 
+-    def _repair_guard_decision(self, action: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
++    def _repair_guard_decision(
++        self,
++        action: dict[str, Any],
++        request: dict[str, Any],
++        packet: Mapping[str, Any] | None = None,
++    ) -> dict[str, Any]:
+         if self.profile.role != "guard" or action.get("kind") != _GUARD_ACTION_KIND:
+             return action
+         allowed = next(
+@@ -414,16 +422,43 @@
+         )
+         if not isinstance(allowed, Mapping):
+             return action
+-        candidates = self._guard_candidate_targets(allowed, request)
+-        if not candidates:
++        ranked = self._guard_candidate_ranking(allowed, request, packet)
++        if not ranked:
+             return action
+-        if action.get("target_id") not in candidates:
++        chosen = action.get("target_id")
++        ranked_targets = {item["candidate"] for item in ranked}
++        if chosen not in ranked_targets:
+             repaired = dict(action)
+-            repaired["target_id"] = candidates[0]
++            repaired["target_id"] = ranked[0]["candidate"]
+             return repaired
+-        return action
+-
+-    def _guard_candidate_targets(self, allowed: Mapping[str, Any], request: Mapping[str, Any]) -> list[str]:
++        best = ranked[0]
++        chosen_item = next(item for item in ranked if item["candidate"] == chosen)
++        score_gap = best["total_score"] - chosen_item["total_score"]
++        if chosen_item["rank"] <= 1 and score_gap <= 12:
++            return action
++        if score_gap <= 4:
++            return action
++        if chosen_item["rank"] <= 2 and score_gap <= 8:
++            return action
++        repaired = dict(action)
++        repaired["target_id"] = best["candidate"]
++        return repaired
++
++    def _guard_candidate_targets(
++        self,
++        allowed: Mapping[str, Any],
++        request: Mapping[str, Any],
++        packet: Mapping[str, Any] | None = None,
++    ) -> list[str]:
++        ranked = self._guard_candidate_ranking(allowed, request, packet)
++        return [item["candidate"] for item in ranked]
++
++    def _guard_candidate_ranking(
++        self,
++        allowed: Mapping[str, Any],
++        request: Mapping[str, Any],
++        packet: Mapping[str, Any] | None = None,
++    ) -> list[dict[str, Any]]:
+         target_ids = allowed.get("target_ids")
+         if not isinstance(target_ids, list):
+             return []
+@@ -434,26 +469,48 @@
+                 candidates.append(candidate)
+         if not candidates:
+             return []
+-        round_no = self._extract_round_number(request) or self._last_observed_round
++        round_no = self._extract_round_number(request)
++        if round_no is None and packet is not None:
++            round_no = self._extract_round_number(packet)
++        if round_no is None:
++            round_no = self._last_observed_round
+         repeat_forbidden = self._guard_repeat_forbidden(allowed)
+-        scored: list[tuple[int, int, int, str]] = []
++        ranked: list[dict[str, Any]] = []
+         for index, candidate in enumerate(candidates):
+-            risk_score = self._player_risk_score(candidate, request, round_no)
+-            heat_score = self._public_heat_score(candidate, request)
++            profile = self._guard_candidate_profile(candidate, request, packet, round_no)
+             if candidate == self.player_id:
+-                risk_score -= 10_000
++                profile["wolf_attack_risk"] -= 10_000
++                profile["information_value"] -= 10_000
++                profile["public_pressure"] -= 10_000
+             if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:
+-                risk_score -= 5_000
+-            if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:
+-                risk_score -= max(0, 200 - max(0, round_no - self.last_protected_round))
+-            scored.append((-risk_score, -heat_score, index, candidate))
+-        scored.sort()
+-        ordered = [candidate for _, _, _, candidate in scored]
++                profile["wolf_attack_risk"] -= 6_000
++                profile["information_value"] -= 3_000
++                profile["public_pressure"] -= 1_000
++            profile["score_key"] = (
++                profile["wolf_attack_risk"],
++                profile["information_value"],
++                profile["public_pressure"],
++                profile["stage_bonus"],
++                profile["recency"],
++                -index,
++            )
++            profile["total_score"] = (
++                profile["wolf_attack_risk"] * 100
++                + profile["information_value"] * 14
++                + profile["public_pressure"] * 5
++                + profile["stage_bonus"] * 8
++                + profile["recency"]
++            )
++            profile["candidate"] = candidate
++            ranked.append(profile)
++        ranked.sort(key=lambda item: item["score_key"], reverse=True)
+         if repeat_forbidden and self.last_protected_id:
+-            filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]
++            filtered = [item for item in ranked if item["candidate"] != self.last_protected_id]
+             if filtered:
+-                return filtered
+-        return ordered
++                ranked = filtered
++        for rank, item in enumerate(ranked):
++            item["rank"] = rank
++        return ranked
+ 
+     def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:
+         if allowed.get("guard_can_repeat_protect") is True:
+@@ -462,8 +519,104 @@
+             return True
+         return True
+ 
+-    def _looks_publicly_salient(self, candidate: str, request: Mapping[str, Any]) -> bool:
+-        return candidate in self._extract_focus_ids(request.get("public_state"))
++    def _guard_candidate_profile(
++        self,
++        candidate: str,
++        request: Mapping[str, Any],
++        packet: Mapping[str, Any] | None,
++        round_no: int | None,
++    ) -> dict[str, int]:
++        bucket = self.player_risk_profile.get(candidate) or {}
++        alive_count = self._current_alive_count(request, packet)
++        stage_bonus = self._guard_stage_bonus(alive_count)
++        if round_no is None:
++            round_no = self._last_observed_round
++        last_round = bucket.get("last_round")
++        recency = 0
++        if isinstance(last_round, int) and last_round >= 0 and round_no is not None:
++            gap = max(0, round_no - last_round)
++            recency = max(0, 10 - gap * 2)
++        threat = int(bucket.get("threat", 0))
++        claim = int(bucket.get("claim", 0))
++        vote = int(bucket.get("vote", 0))
++        pressure = int(bucket.get("pressure", 0))
++        exposure = int(bucket.get("exposure", 0))
++        public_focus = 1 if candidate in self.recent_public_focus_ids else 0
++        salient = 1 if self._looks_publicly_salient(candidate, request, packet) else 0
++        wolf_attack_risk = threat * 12 + claim * 5 + vote * 4 + pressure * 2
++        information_value = claim * 4 + vote * 5 + pressure * 3 + exposure + public_focus * 3 + salient * 3
++        public_pressure = pressure * 5 + vote * 4 + exposure * 2 + public_focus * 2 + salient
++        if threat and (claim or vote):
++            wolf_attack_risk += 4
++        if claim and vote:
++            information_value += 3
++        if alive_count is not None:
++            if alive_count <= 5:
++                wolf_attack_risk += 3
++                information_value += 6
++                public_pressure += 2
++            elif alive_count <= 7:
++                wolf_attack_risk += 1
++                information_value += 3
++        if candidate in self.alive_player_cache:
++            information_value += 1
++        if recency:
++            wolf_attack_risk += recency // 3
++            information_value += recency // 2
++        return {
++            "wolf_attack_risk": wolf_attack_risk,
++            "information_value": information_value,
++            "public_pressure": public_pressure,
++            "stage_bonus": stage_bonus,
++            "recency": recency,
++            "alive_count": alive_count or 0,
++        }
++
++    def _guard_stage_bonus(self, alive_count: int | None) -> int:
++        if alive_count is None:
++            return 0
++        if alive_count <= 5:
++            return 6
++        if alive_count <= 7:
++            return 3
++        return 0
++
++    def _current_alive_count(self, request: Mapping[str, Any], packet: Mapping[str, Any] | None) -> int | None:
++        alive_ids: set[str] = set()
++        public_state = request.get("public_state") if isinstance(request, Mapping) else None
++        if isinstance(public_state, Mapping):
++            alive_ids.update(
++                self._extract_ids_by_keys(
++                    public_state,
++                    ("alive", "alive_player", "alive_players", "alive_player_ids", "player_ids", "players"),
++                )
++            )
++        if not alive_ids and isinstance(packet, Mapping):
++            public_state = packet.get("public_state")
++            if isinstance(public_state, Mapping):
++                alive_ids.update(
++                    self._extract_ids_by_keys(
++                        public_state,
++                        ("alive", "alive_player", "alive_players", "alive_player_ids", "player_ids", "players"),
++                    )
++                )
++        if not alive_ids:
++            alive_ids.update(self.alive_player_cache)
++        return len(alive_ids) if alive_ids else None
++
++    def _looks_publicly_salient(
++        self,
++        candidate: str,
++        request: Mapping[str, Any],
++        packet: Mapping[str, Any] | None = None,
++    ) -> bool:
++        public_state = request.get("public_state") if isinstance(request, Mapping) else None
++        if candidate in self._extract_focus_ids(public_state):
++            return True
++        if isinstance(packet, Mapping):
++            if candidate in self._extract_focus_ids(packet.get("public_state")):
++                return True
++        return False
+ 
+     def _update_guard_memory(self, packet: Mapping[str, Any] | Any) -> None:
+         if not isinstance(packet, Mapping):
+@@ -482,6 +635,10 @@
+             if focus_id not in self.recent_public_focus_ids:
+                 self.recent_public_focus_ids.append(focus_id)
+         self._update_guard_risk_memory(packet, round_no)
++        if round_no is not None:
++            stale_keys = [key for key in self._guard_signal_round_counts if key[1] < round_no - 3]
++            for key in stale_keys:
++                self._guard_signal_round_counts.pop(key, None)
+ 
+     def _update_guard_risk_memory(self, packet: Mapping[str, Any], round_no: int | None) -> None:
+         self._scan_guard_signal_tree(packet, round_no)
+@@ -498,12 +655,9 @@
+                     signal_name, signal_weight = signal
+                     for player_id in self._extract_player_ids(value):
+                         self._bump_player_risk(player_id, signal_name, signal_weight, round_no)
+-                if isinstance(value, Mapping):
++                    continue
++                if self._is_guard_signal_container_key(key_text):
+                     self._scan_guard_signal_tree(value, round_no)
+-                elif isinstance(value, list):
+-                    for item in value:
+-                        if isinstance(item, (Mapping, list)):
+-                            self._scan_guard_signal_tree(item, round_no)
+             return
+         if isinstance(node, list):
+             for item in node:
+@@ -528,28 +682,53 @@
+             return ("exposure", 2)
+         return None
+ 
++    def _is_guard_signal_container_key(self, key_text: str) -> bool:
++        return key_text in {
++            "players",
++            "player_list",
++            "events",
++            "history",
++            "rounds",
++            "records",
++            "logs",
++            "entries",
++            "dialogue_list",
++            "dialogue_entries",
++            "dialogues",
++            "chat",
++            "speech",
++            "speeches",
++            "transcript",
++        }
++
+     def _ingest_dialogue_entries(self, dialogue: Any, round_no: int | None) -> None:
+         entries = dialogue if isinstance(dialogue, list) else [dialogue]
+         for entry in entries:
+             speaker_id = self._dialogue_entry_speaker_id(entry)
+             text = self._dialogue_entry_text(entry)
+-            mentioned_ids = set(self._extract_player_ids(entry))
++            explicit_targets = self._dialogue_entry_targets(entry)
++            mentioned_ids = set(explicit_targets)
+             if text:
+                 mentioned_ids.update(self._extract_player_ids(text))
+             if speaker_id:
+                 mentioned_ids.discard(speaker_id)
+-            explicit_targets = self._dialogue_entry_targets(entry)
+-            if explicit_targets:
+-                mentioned_ids.update(explicit_targets)
+             signals = self._dialogue_text_signals(text)
+-            if not signals and mentioned_ids:
+-                signals = {"pressure": 1}
++            if not signals:
++                if explicit_targets:
++                    signals = {"pressure": 1}
++                else:
++                    continue
+             if speaker_id and signals.get("claim"):
+                 self._bump_player_risk(speaker_id, "claim", signals["claim"], round_no)
+             if speaker_id and signals.get("threat"):
+                 self._bump_player_risk(speaker_id, "pressure", max(1, signals["threat"] // 2), round_no)
++            if speaker_id and not mentioned_ids and signals.get("pressure"):
++                self._bump_player_risk(speaker_id, "pressure", signals["pressure"], round_no)
++                continue
+             for player_id in mentioned_ids:
+                 for signal_name, signal_weight in signals.items():
++                    if signal_name == "claim" and player_id == speaker_id:
++                        continue
+                     self._bump_player_risk(player_id, signal_name, signal_weight, round_no)
+ 
+     def _dialogue_entry_text(self, entry: Any) -> str:
+@@ -597,9 +776,9 @@
+         if any(token in lowered for token in ("夜刀", "刀口", "今晚刀", "击杀", "attack", "kill")):
+             signals["threat"] = 4
+         if any(token in lowered for token in ("怀疑", "可疑", "狼", "站边", "压票", "focus", "关注", "push", "指认")):
+-            signals["pressure"] = max(signals.get("pressure", 0), 3)
++            signals["pressure"] = max(signals.get("pressure", 0), 2)
+         if any(token in lowered for token in ("公开", "关键", "核心", "热度", "中心", "public")):
+-            signals["exposure"] = max(signals.get("exposure", 0), 2)
++            signals["exposure"] = max(signals.get("exposure", 0), 1)
+         return signals
+ 
+     def _player_risk_bucket(self, player_id: str) -> dict[str, int]:
+@@ -619,42 +798,32 @@
+     def _bump_player_risk(self, player_id: str, signal_name: str, amount: int, round_no: int | None) -> None:
+         if not player_id:
+             return
++        if round_no is not None:
++            key = (player_id, round_no)
++            seen = self._guard_signal_round_counts.setdefault(key, {})
++            cap = self._guard_signal_round_cap(signal_name)
++            if seen.get(signal_name, 0) >= cap:
++                return
++            seen[signal_name] = seen.get(signal_name, 0) + 1
+         bucket = self._player_risk_bucket(player_id)
+         bucket[signal_name] = bucket.get(signal_name, 0) + max(1, int(amount))
+         if round_no is not None:
+             bucket["last_round"] = max(bucket.get("last_round", -1), round_no)
+ 
++    def _guard_signal_round_cap(self, signal_name: str) -> int:
++        if signal_name == "threat":
++            return 2
++        if signal_name in {"claim", "vote"}:
++            return 2
++        return 1
++
+     def _player_risk_score(self, candidate: str, request: Mapping[str, Any], round_no: int | None) -> int:
+-        bucket = self.player_risk_profile.get(candidate) or {}
+-        score = 0
+-        score += int(bucket.get("threat", 0)) * 8
+-        score += int(bucket.get("claim", 0)) * 6
+-        score += int(bucket.get("vote", 0)) * 5
+-        score += int(bucket.get("pressure", 0)) * 4
+-        score += int(bucket.get("exposure", 0)) * 2
+-        if candidate in self.recent_public_focus_ids:
+-            score += 3
+-        if self._looks_publicly_salient(candidate, request):
+-            score += 2
+-        if candidate in self.alive_player_cache:
+-            score += 1
+-        last_round = bucket.get("last_round")
+-        if round_no is None:
+-            round_no = self._last_observed_round
+-        if isinstance(last_round, int) and last_round >= 0 and round_no is not None:
+-            score += max(0, 6 - max(0, round_no - last_round))
+-        return score
++        profile = self._guard_candidate_profile(candidate, request, None, round_no)
++        return profile["wolf_attack_risk"]
+ 
+     def _public_heat_score(self, candidate: str, request: Mapping[str, Any]) -> int:
+-        bucket = self.player_risk_profile.get(candidate) or {}
+-        score = 0
+-        if candidate in self.recent_public_focus_ids:
+-            score += 4
+-        if self._looks_publicly_salient(candidate, request):
+-            score += 3
+-        score += int(bucket.get("exposure", 0))
+-        score += int(bucket.get("pressure", 0))
+-        return score
++        profile = self._guard_candidate_profile(candidate, request, None, self._last_observed_round)
++        return profile["public_pressure"]
+ 
+     def _extract_round_number(self, packet: Mapping[str, Any] | Any) -> int | None:
+         if not isinstance(packet, Mapping):
+@@ -679,17 +848,61 @@
+         focus_ids: set[str] = set()
+         if not isinstance(packet, Mapping):
+             return focus_ids
++        focus_keys = {
++            "sheriff",
++            "sheriff_id",
++            "sheriff_chain",
++            "警长",
++            "警长id",
++            "警徽",
++            "警徽链",
++            "vote",
++            "voted",
++            "vote_target",
++            "vote_targets",
++            "claim",
++            "claimed",
++            "target",
++            "target_id",
++            "target_ids",
++            "suspect",
++            "suspected",
++            "pressure",
++            "point",
++            "focus",
++            "threat",
++            "公开",
++            "public",
++        }
++        container_keys = {
++            "players",
++            "player_list",
++            "events",
++            "history",
++            "rounds",
++            "records",
++            "logs",
++            "entries",
++            "dialogue",
++            "dialogues",
++            "chat",
++            "speech",
++            "speeches",
++            "transcript",
++        }
+         for key, value in packet.items():
+             key_text = str(key).lower()
+-            if any(keyword in key_text for keyword in _GUARD_CONTEXT_KEYWORDS):
++            if key_text in focus_keys or any(token in key_text for token in ("sheriff", "警长", "警徽", "vote", "claim", "target", "suspect", "pressure", "focus", "threat", "公开", "public")):
+                 focus_ids.update(self._extract_player_ids(value))
+-            if isinstance(value, Mapping):
+-                focus_ids.update(self._extract_focus_ids(value))
+-            elif isinstance(value, list):
+-                for item in value:
+-                    focus_ids.update(self._extract_player_ids(item))
+-                    if isinstance(item, Mapping):
+-                        focus_ids.update(self._extract_focus_ids(item))
++                continue
++            if key_text in container_keys:
++                if isinstance(value, Mapping):
++                    focus_ids.update(self._extract_focus_ids(value))
++                elif isinstance(value, list):
++                    for item in value:
++                        focus_ids.update(self._extract_player_ids(item))
++                        if isinstance(item, Mapping):
++                            focus_ids.update(self._extract_focus_ids(item))
+         return focus_ids
+ 
+     def _extract_ids_by_keys(self, packet: Mapping[str, Any], keys: tuple[str, ...]) -> set[str]:
+--- guard-n00034/task.md
++++ guard-n00037/task.md
+@@ -1,7 +1,8 @@
+ # 守卫操作规程
+ 
+ - 先看当前 `target_ids`，只能从里面选。
+-- 先判断今晚最可能被狼刀的好人，再在合法目标里排序。
+-- 优先保护公开神职、被多人压票/点名的关键发言位、最近被集中讨论的高风险好人。
++- 先判断今晚最可能被狼刀的好人，再排序。
++- 第二层再看公开神职、警徽链、被多人压票/点名者，以及最近两轮的关键信息节点。
++- 话多不等于高风险；不要把公开热度当成刀口概率。
+ - 只有没有更好目标时才考虑自守；若规则不允许连守，默认不要重复同一人。
+-- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。
++- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾、票型压力和可见信息展开。

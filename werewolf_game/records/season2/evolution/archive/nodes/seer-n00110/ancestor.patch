@@ -1,0 +1,339 @@
+--- seer-n00015/task_agent.py
++++ seer-n00110/task_agent.py
+@@ -187,12 +187,161 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
++        # 这不是完整历史，只是从公开同步和自己的已提交行动中提炼的事实锚点。
++        self._seer_state: dict[str, list[Any]] = {
++            "own_public_claims": [],
++            "announced_inspections": [],
++            "announced_vote_targets": [],
++            "announced_badge_flows": [],
++            "last_day_vote_counts": [],
++            "death_events": [],
++            "sheriff_history": [],
++        }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """保守读取公开事件；未知同步格式一律忽略。"""
++
++        if not isinstance(sync_packet, Mapping):
++            return
++        for event in self._public_events(sync_packet):
++            self._remember_public_event(event)
++
++    @staticmethod
++    def _public_events(packet: Mapping[str, Any]) -> list[Mapping[str, Any]]:
++        events: list[Mapping[str, Any]] = []
++        seen: set[int] = set()
++        event_keys = {"event", "event_type", "type", "kind", "name"}
++
++        def walk(value: object) -> None:
++            if isinstance(value, Mapping):
++                marker = any(key in value for key in event_keys)
++                if marker and id(value) not in seen:
++                    seen.add(id(value))
++                    events.append(value)
++                for key, nested in value.items():
++                    # 只沿着事件容器和同步包继续走，避免把 public_state 的普通字段
++                    # 当成审计事件；字段缺失时静默兼容不同 runner。
++                    if key in {"events", "event", "event_list", "event_log", "audit_events", "public_events", "sync", "data", "payload"}:
++                        walk(nested)
++            elif isinstance(value, list):
++                for item in value:
++                    walk(item)
++
++        walk(packet)
++        return events
++
++    def _remember_public_event(self, event: Mapping[str, Any]) -> None:
++        # 有些 runner 把事件名放在外层、事件字段放在 data/payload；合并仅用于
++        # 读取公开字段，不把该结构或原始文本保存进状态。
++        flattened: dict[str, Any] = dict(event)
++        for container_key in ("data", "payload", "details"):
++            nested = event.get(container_key)
++            if isinstance(nested, Mapping):
++                for key, value in nested.items():
++                    flattened.setdefault(key, value)
++        kind = str(flattened.get("event_type", flattened.get("event", flattened.get("type", flattened.get("kind", flattened.get("name", "")))))).upper()
++        actor = self._event_player_id(flattened)
++        text = self._event_text(flattened)
++        if kind in {"PLAYER_SPOKE", "PLAYER_LAST_WORDS"} and actor == self.player_id:
++            if text:
++                if re.search(r"预言家|先知|\bseer\b", text, re.I):
++                    self._remember("own_public_claims", "公开声称身份：预言家")
++                for target, team in self._spoken_inspections(text):
++                    self._remember("announced_inspections", {"target_id": target, "team": team})
++                for target in self._spoken_targets(text, r"(?:主票|归票|投票|票口|压|出)" ):
++                    self._remember("announced_vote_targets", target)
++                for target in self._spoken_badge_targets(text):
++                    self._remember("announced_badge_flows", target)
++        elif kind in {"VOTE_CAST", "DAY_VOTE_CAST"} and actor == self.player_id:
++            target = self._event_target(flattened)
++            if target:
++                self._remember("announced_vote_targets", target)
++        elif kind in {"DAY_VOTE_RESOLVED", "VOTE_RESOLVED"}:
++            counts = flattened.get("vote_counts", flattened.get("counts", flattened.get("results")))
++            if isinstance(counts, Mapping):
++                self._remember("last_day_vote_counts", {str(k): str(v) for k, v in counts.items()})
++        elif kind in {"PLAYER_ELIMINATED", "PLAYER_DIED", "PLAYER_KILLED"}:
++            target = self._event_target(flattened) or actor
++            reason = flattened.get("death_reason", flattened.get("reason", flattened.get("cause", "未知")))
++            if target:
++                self._remember("death_events", {"player_id": str(target), "reason": str(reason)[:24]})
++        elif kind in {"SHERIFF_ELECTED", "SHERIFF_BADGE_TRANSFERRED", "SHERIFF_BADGE_TRANSFER"}:
++            target = self._event_target(flattened)
++            if target:
++                self._remember("sheriff_history", {"event": kind, "player_id": target})
++
++    @staticmethod
++    def _event_player_id(event: Mapping[str, Any]) -> str:
++        for key in ("player_id", "actor_id", "speaker_id", "voter_id", "speaker", "player", "actor"):
++            value = event.get(key)
++            if isinstance(value, Mapping):
++                value = value.get("player_id", value.get("id"))
++            if value is not None:
++                return str(value)
++        return ""
++
++    @staticmethod
++    def _event_target(event: Mapping[str, Any]) -> str:
++        for key in ("target_id", "eliminated_player_id", "recipient_id", "to_player_id", "elected_player_id", "target", "to", "player_id"):
++            value = event.get(key)
++            if isinstance(value, Mapping):
++                value = value.get("player_id", value.get("id"))
++            if value is not None:
++                return str(value)
++        return ""
++
++    @staticmethod
++    def _event_text(event: Mapping[str, Any]) -> str:
++        for key in ("text", "speech", "content", "message", "last_words"):
++            if isinstance(event.get(key), str):
++                return event[key]
++        return ""
++
++    def _remember(self, category: str, value: Any, limit: int = 12) -> None:
++        values = self._seer_state[category]
++        if value in values:
++            return
++        values.append(value)
++        del values[:-limit]
++
++    @staticmethod
++    def _spoken_inspections(text: str) -> list[tuple[str, str]]:
++        found: list[tuple[str, str]] = []
++        target_re = r"(?:p\d+|\d+号)"
++        for match in re.finditer(target_re + r"[^。；\n]{0,12}(查杀|金水|狼人|狼|好人|村民|wolf|village)", text, re.I):
++            target_match = re.search(target_re, match.group(0), re.I)
++            if target_match is None:
++                continue
++            target = TaskAgent._normalize_public_target(target_match.group(0))
++            result = match.group(1).lower()
++            team = "wolf" if result in {"查杀", "狼人", "狼", "wolf"} else "village"
++            found.append((target, team))
++        return found
++
++    @staticmethod
++    def _spoken_targets(text: str, prefix: str) -> list[str]:
++        return [
++            TaskAgent._normalize_public_target(m.group(1))
++            for m in re.finditer(prefix + r"[^。；\n]{0,10}?((?:p\d+|\d+号))", text, re.I)
++        ]
++
++    @staticmethod
++    def _spoken_badge_targets(text: str) -> list[str]:
++        match = re.search(r"警徽流\s*[：:]?\s*([^。；\n]+)", text)
++        if not match:
++            return []
++        flow_text = re.split(r"[，,]\s*(?:主票|归票|当日)", match.group(1), maxsplit=1)[0]
++        return [
++            TaskAgent._normalize_public_target(x)
++            for x in re.findall(r"(?:p\d+|\d+号)", flow_text, re.I)
++        ]
++
++    @staticmethod
++    def _normalize_public_target(text: str) -> str:
++        text = str(text).strip()
++        if text.endswith("号") and text[:-1].isdigit():
++            return "p" + text[:-1]
++        return text
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -219,6 +368,10 @@
+         seer_known_results = self._extract_seer_known_results(private)
+         if seer_known_results:
+             prompt["seer_known_results"] = seer_known_results
++        if str(private.get("role")) == "seer":
++            prompt["seer_state_brief"] = self._seer_state_brief(
++                private, turn_packet["public_state"], turn_packet["request"]
++            )
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+@@ -239,7 +392,9 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], private, feedback),
++                "instruction": self._turn_instruction(
++                    turn_packet["request"], private, feedback, self._seer_state
++                ),
+                 "packet": prompt,
+             }
+             try:
+@@ -268,6 +423,7 @@
+             action = normalize_decision(raw, turn_packet["request"])
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
++                self._remember_own_action(action)
+                 return action
+             if _attempt >= self.max_decision_retries:
+                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+@@ -314,20 +470,68 @@
+             max_prompt_chars=self.max_prompt_chars,
+         )
+ 
+-    @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], private: Mapping[str, Any], feedback: str) -> str:
++    def _remember_own_action(self, action: Mapping[str, Any]) -> None:
++        if action.get("kind") in _SPEECH_ACTION_KINDS:
++            text = action.get("text")
++            if isinstance(text, str):
++                if re.search(r"预言家|先知|\bseer\b", text, re.I):
++                    self._remember("own_public_claims", "公开声称身份：预言家")
++                for target, team in self._spoken_inspections(text):
++                    self._remember("announced_inspections", {"target_id": target, "team": team})
++                for target in self._spoken_targets(text, r"(?:主票|归票|投票|票口|压|出)"):
++                    self._remember("announced_vote_targets", target)
++                for target in self._spoken_badge_targets(text):
++                    self._remember("announced_badge_flows", target)
++        elif action.get("kind") == "day_vote" and action.get("target_id"):
++            self._remember("announced_vote_targets", str(action["target_id"]))
++
++    def _seer_state_brief(
++        self, private: Mapping[str, Any], public_state: object, request: Mapping[str, Any]
++    ) -> str:
++        known = self._extract_seer_known_results(private)
++        allowed = request.get("allowed_actions") if isinstance(request, Mapping) else []
++        target_ids: set[str] = set()
++        if isinstance(allowed, list):
++            for item in allowed:
++                if isinstance(item, Mapping) and item.get("kind") == "day_vote":
++                    ids = item.get("target_ids")
++                    if isinstance(ids, list):
++                        target_ids.update(str(x) for x in ids)
++        wolves = [x["target_id"] for x in known if x["team"] == "wolf" and (not target_ids or x["target_id"] in target_ids)]
++        villages = [x["target_id"] for x in known if x["team"] == "village"]
++        brief = {
++            "私有查验(按收到顺序)": known[:6],
++            "已公开身份": self._seer_state["own_public_claims"][-6:],
++            "已公开查验(按顺序)": self._seer_state["announced_inspections"][-8:],
++            "仍可投的已验狼": wolves[:6],
++            "已验金水": villages[:6],
++            "最近公开主票": self._seer_state["announced_vote_targets"][-6:],
++            "警徽流": self._seer_state["announced_badge_flows"][-6:],
++            "最近投票结果": self._seer_state["last_day_vote_counts"][-3:],
++            "公开死亡原因": self._seer_state["death_events"][-6:],
++            "警长记录": self._seer_state["sheriff_history"][-6:],
++        }
++        # 结构化摘要而非原话；截断是最后一道预算保护，避免异常 ID/状态撑大 prompt。
++        return json.dumps(brief, ensure_ascii=False, separators=(",", ":"))[:1800]
++
++    @staticmethod
++    def _turn_instruction(request: Mapping[str, Any], private: Mapping[str, Any], feedback: str,
++                          seer_state: Mapping[str, list[Any]] | None = None) -> str:
+         instruction = render_prompt(
+             "player_turn_instruction.txt",
+             action_contract=render_action_contract(request),
+             validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
+         )
+-        seer_hint = TaskAgent._seer_phase_hint(request, private)
++        seer_hint = TaskAgent._seer_phase_hint(request, private, seer_state)
+         if seer_hint:
+             instruction = instruction + "\n\n" + seer_hint
+         return instruction
+ 
+     @staticmethod
+-    def _seer_phase_hint(request: Mapping[str, Any], private: Mapping[str, Any]) -> str:
++    def _seer_phase_hint(
++        request: Mapping[str, Any], private: Mapping[str, Any],
++        seer_state: Mapping[str, list[Any]] | None = None,
++    ) -> str:
+         if str(private.get("role")) != "seer":
+             return ""
+         raw_actions = request.get("allowed_actions")
+@@ -339,7 +543,28 @@
+         if kinds & {"sheriff_candidate", "sheriff_election_speech", "speak", "last_words"}:
+             hints.append("首日/警上若已拿到查验，先公开查验事实，再给两个警徽流、验人理由和当日主票；若已暴露且可能夜死，也要把下一验顺序和不同结果下的处置说完。")
+         if "day_vote" in kinds:
+-            hints.append("白天投票优先执行自己公开的归票，保护金水，不投已验好人，除非有更高可信的公开事实。")
++            known = TaskAgent._extract_seer_known_results(private)
++            allowed_targets = set()
++            for item in allowed_actions:
++                if isinstance(item, Mapping) and item.get("kind") == "day_vote":
++                    ids = item.get("target_ids")
++                    if isinstance(ids, list):
++                        allowed_targets.update(str(x) for x in ids)
++            live_wolves = [x["target_id"] for x in known if x["team"] == "wolf" and x["target_id"] in allowed_targets]
++            if live_wolves:
++                hints.append("硬约束：当前允许投票目标中有仍存活的已验狼（" + "、".join(live_wolves) + "），除非目标不合法，否则 day_vote 必须优先投其中最明确者。")
++            else:
++                hints.append("白天投票优先执行自己公开的归票，保护金水，不投已验好人，除非有更高可信的公开事实。")
++        if seer_state and seer_state.get("own_public_claims"):
++            hints.append("公开一致性硬约束：已经公开跳过预言家就不得否认或改写；复述查验必须严格按‘已公开查验’顺序，不要颠倒时间线。")
++        if "last_words" in kinds:
++            death_events = (seer_state or {}).get("death_events", [])
++            own_death = [x for x in death_events if isinstance(x, Mapping)]
++            if own_death:
++                reason = own_death[-1].get("reason", "未知")
++                hints.append(f"遗言事实约束：公开记录显示你的死亡原因是“{reason}”；不要说成其他方式。")
++            else:
++                hints.append("遗言事实约束：若死亡方式无法从公开记录确认，请使用‘我死亡后’等中性说法，不要声称被狼人刀。")
+         if kinds & {"sheriff_badge_transfer", "destroy"}:
+             hints.append("警徽处置优先传给已公开金水或最可信带队好人；若没有可信接徽者，再考虑撕徽。")
+         return " ".join(hints)
+@@ -424,6 +649,14 @@
+                         break
+                 if target is not None and team is not None:
+                     add_entry(target, team)
++                elif target is None and team is None and value and all(
++                    isinstance(key, (str, int)) and isinstance(item, str)
++                    for key, item in value.items()
++                ):
++                    # 常见内核格式：inspections={target_id: team}。Mapping 保持
++                    # 插入顺序，add_entry 负责稳定去重。
++                    for target_id, team_name in value.items():
++                        add_entry(target_id, team_name)
+                 for nested_key in (
+                     "inspection_results",
+                     "inspections",
+@@ -449,6 +682,8 @@
+             "seer_checks",
+             "known_results",
+             "memory",
++            "role_state",
++            "seer_state",
+         ):
+             value = private.get(key)
+             if value is not None:
+--- seer-n00015/task.md
++++ seer-n00110/task.md
+@@ -21,3 +21,11 @@
+ - 发言按【查验事实】【公开事实】【推断】【行动】四段组织。
+ - 不得把推断、玩家自述、遗言、平安夜解释或投票推断写成已确认身份。
+ - 可以并且应该明确说“这是推测”或“这是基于当前公开信息的判断”。
++
++## 公开承诺一致性
++
++- 一旦公开跳过预言家，后续所有发言都必须承认“我已经跳过预言家”，不得改口说自己没跳、没报验或只是诈身份。
++- 查验结果必须按真实收到顺序复述：先验谁、结果是什么，再验谁、结果是什么；不要颠倒夜晚顺序，也不要把后验说成首验。
++- 已公开过的警徽流、主票和归票要作为后续发言锚点；需要调整时必须说明基于哪些新的公开事实调整。
++- 已验狼仍存活且是当前合法投票目标时，主票和投票优先压已验狼，高于普通发言推断；已验金水原则上保护不投。
++- 遗言只能说公开可确认的死亡方式：被白天放逐就说被放逐，夜间死亡才可说夜死/被刀；若不确定，使用“我死亡后”等中性表述。

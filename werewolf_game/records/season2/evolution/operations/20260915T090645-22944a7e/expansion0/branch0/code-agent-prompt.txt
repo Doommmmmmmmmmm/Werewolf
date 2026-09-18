@@ -1,0 +1,85 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00121 结构化记忆和合法性表现稳定，但胜率从父节点 villager-n00046 的约 0.45 下降到 0.25。主要问题不是一般策略缺失，而是当前代码把“警长/警徽持有”过度当作好身份、没有可靠解析 public_state.players 的存活/翻牌信息、对当前轮发言只做浅摘要不形成可比较的声明/指向边，导致残局被狼方警徽链和弱证据带票。下一代应做最小修复：改正公开状态抽取、取消警长好人加权、加入警徽传递风险和未对跳神职声明的风险提示，并把当前轮对话解析为临时候选对比证据。",
+  "evidence": [
+    "评测汇总显示 villager-n00121：20 局 5 胜 15 负，focus 胜率 0.25，focus fallback/invalid 均为 0；说明问题主要是决策质量而不是 schema 稳定性。",
+    "父节点 villager-n00046 历史诊断/评测显示 20 局 9 胜 11 负，胜率 0.45；当前节点在父节点基础上增加了复杂账本和证据权重后，表现反而下降。",
+    "随机回放 game17 中，好人首日正确放逐狼 p3，第二天正确放逐狼 p1，但随后第 3 天误出平民 p2，第 4 天误出猎人 p4，最终三人局平民 p11 与守卫 p12 信任狼警长 p6，投出 p11，狼人胜。",
+    "回放第 4 天：p4 明确跳猎人并威胁若被票出会枪 p10；p10、p6 两名狼人推动出 p4，p9、p12跟票，导致猎人 p4 被放逐并带走狼 p10。这里暴露出好人没有充分保护未对跳强神声明，仍按“滑水/警长压票”弱证据执行。",
+    "回放后期警徽链为 p5→p1→p10→p6，其中 p1、p10、p6 终局均为狼人；但当前代码的 _is_good_role 包含“警长”，_maybe_register_verified_alignment 会把包含警长的公开标签加入 revealed_alignment，并给负分保护，容易把警徽持有者误当低疑点。",
+    "当前 _extract_alive_ids 只寻找 alive_ids/living_ids 等键，不解析 public_state.players 中的 alive 布尔字段；回放 public_state 主要以 players[{id, alive, revealed_role}] 表示存活，因此 late_mode 和 alive/dead 记忆可能不稳定或缺失。",
+    "当前 _extract_alive_count 同样没有根据 players[].alive 计数，导致 alive_count 可能为 None，残局 late_mode 权重无法可靠启用。",
+    "当前 _walk_public_packet 刻意不扫描 players/assignment/description，这避免误读身份分配是正确方向，但也遗漏了 public_state.players 中合法公开的 revealed_role，例如回放最终/后期 p4 的 hunter 公开翻牌。",
+    "当前 _summarize_dialogue 只保留最多 5 条文本摘要，不把当前轮发言中的‘谁指向谁、谁自称什么、谁推动哪个候选’结构化为临时证据；在第 4 天、第 5 天这种 3-6 人残局，模型容易被最后发言的狼警长带走。",
+    "另一分支 villager-n00119 的 patch 方向加入 alive/dead、vote_edges、claim_edges、sheriff_chain、statement_only 提示，说明同族分支也在修复边/链式账本问题；但该 patch 较大且含 set 序列化/复杂重置风险，当前建议只吸收最小安全子集。"
+  ],
+  "root_causes": [
+    "警长身份被当作好人证据：代码把“警长”列入 _is_good_role，并可能通过 _maybe_register_verified_alignment 给予 revealed_alignment 负权重。警徽只是公开权力/票权，不证明阵营；在回放中狼 p1、p10、p6 连续接警徽，这一错误尤其致命。",
+    "公开存活与翻牌解析不适配实际 public_state：引擎公开状态使用 players 列表携带 alive 和 revealed_role，而当前抽取函数主要寻找 alive_ids 和事件总线；这会削弱 late_mode、死亡/存活过滤、公开翻牌账本。",
+    "当前轮发言没有形成结构化临时证据：current_round_dialogue 被压成短文本，未提取 role_claim、accusation、support/oppose、target_mentions，导致模型在投票时无法稳定比较两个候选的声明风险和推动关系。",
+    "未对跳神职声明缺乏保护机制：平民可怀疑神职声明，但当前决策辅助没有明确提示“猎人/守卫/女巫等未对跳强声明，若只因滑水被推，应优先审推动者和反证”。回放中 p4 猎人声明被弱证据放逐。",
+    "残局权重虽有 late_mode 设计，但触发依赖 alive_count；若 alive_count 无法从 players[].alive 提取，后期票型、死亡顺序、警徽流向权重不会稳定上升。",
+    "证据权重仍偏向‘被多人指向/被投票者可疑’，但缺少对‘谁在推动错误候选、谁从错误放逐中受益、谁继承可疑警徽却未被刀’的反向压力。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "修改 _is_good_role：移除“警长/sheriff”作为好人角色关键词；新增单独的 _is_public_power_label 或简单注释，说明警长只代表公开票权，不代表阵营。同步修改 _maybe_register_verified_alignment，禁止因 latest_public_label 含“警长”而加入 verified_alignment 或降低嫌疑。",
+      "rationale": "警徽不是身份翻牌。回放中狼 p1、p10、p6 连续持有警徽，当前好人加权会系统性保护狼警长。该修改最小、风险低，直接修复错误事实建模。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 _extract_alive_ids 和 _extract_alive_count：若 packet 中存在 players 列表，读取每个 mapping 的 id/player_id 且 alive is True 的玩家作为 alive_ids，并用数量作为 alive_count；新增 _extract_dead_ids_from_players 或在 _summarize_public_packet 中填充 dead_ids，用 alive is False 的玩家记录死亡集合。",
+      "rationale": "实际 public_state 使用 players[].alive。可靠存活解析能让 legal target 过滤、late_mode 和死亡顺序提示在残局生效。不得读取隐藏 roles，只读取公开 alive 字段。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _summarize_public_packet 中窄范围解析 public_state.players 的 revealed_role：仅当玩家条目含 revealed_role/role_revealed 且该字段非空时生成 public_reveals 事件；不要读取 roles、roles_revealed、audit_state 或 assignment 字段。解析结果进入 verified_facts 与 revealed_alignment，但只对真实公开角色如 hunter/villager/wolf 等生效。",
+      "rationale": "当前不扫描 players 是为避免误读隐藏分配，但 public_state.players.revealed_role 是公开翻牌。窄范围白名单解析可提升公开翻牌利用率，同时不越界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增轻量 sheriff_chain 记忆：在 _working_memory 初始化加入 sheriff_chain；在 _summarize_public_packet 或 _walk_explicit_event_bus 中识别 SHERIFF_ELECTED、SHERIFF_BADGE_TRANSFERRED 等公开事件形态，记录 from_player_id/to_player_id/player_id、round、phase；若只能从 public_state.sheriff 看到当前 sheriff，也记录 current_sheriff 但标注 source='state_only'。在 decision_aid 中输出最近 sheriff_chain。",
+      "rationale": "回放后期关键证据是警徽从已出局可疑位流向 p10、p6。把链条给模型，比简单把警长当好人更符合任务要求的警徽流向分析。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在候选行 _make_candidate_row 或 _evidence_reasons 中加入警徽风险规则：late_mode 下，若某存活候选是当前/近期警长且警徽来自已被放逐、被查杀声明、或高 suspicion 的玩家，则添加 evidence_reasons，如“警徽从可疑/出局位传来，不能当好身份”；不要直接给过高分，建议 +2 到 +3 的 contradiction/death_order 类辅助权重。",
+      "rationale": "避免过拟合一局，同时让模型在残局比较 p6/p11/p12 时不会盲信警长票权。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _summarize_dialogue_edges(current_dialogue, legal_ids)：从当前轮可见发言中用保守正则提取 speaker、text、role_claim（猎人/守卫/女巫/预言家/平民等自称）、target_mentions（p\\d+）、accusation_keywords（狼/出/票/查杀/怀疑）、support_keywords（信/站边/跟票）。只作为 decision_aid['current_dialogue_edges'] 临时信息，不写入长期 verified_facts。",
+      "rationale": "当前轮发言是合法可见信息，但现在只给 5 条短文本。结构化边可帮助模型在投票前比较“谁跳猎人、谁推他、谁跟票”，且不会把玩家声明升级为系统事实。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _turn_instruction 的平民决策清单中加入两条短规则：1）“警长/警徽只代表公开票权，不代表好人身份；警徽从可疑死亡位传来时要反查链条”；2）“未对跳的猎人/守卫/女巫等强神声明，不能仅因滑水/沉默放逐；若要投，必须列出比身份风险更强的公开证据，并比较推动该票的人”。",
+      "rationale": "这是对回放失败的直接提示，文本短，不显著增加 prompt，能减少被狼警长用弱证据带票。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_decision_aid 中为 late_mode 添加 endgame_frame：列出 alive_ids、dead_ids、current_sheriff、recent_sheriff_chain、uncountered_power_claims（从 current_dialogue_edges 和近几条 claim_log 推断，标 statement_only=true）、top_two_candidates。确保输出有界，最多各 4-6 条。",
+      "rationale": "残局需要把票型残差、死亡顺序、警徽流向和强声明风险放到模型面前。保持有界，避免 prompt 超限。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充一句到特殊检查/后期规则：‘警徽/警长是公开权力事件，不是阵营验证；警徽流向要结合死亡、放逐和票型审查。未对跳神职声明只按玩家声明处理，但在放逐前必须权衡误出真神的成本和推动者收益。’",
+      "rationale": "让角色任务与代码提示一致；不改变规则或能力，只改变平民如何解释公开信息。"
+    }
+  ],
+  "risks": [
+    "解析 current_dialogue_edges 若正则过激，可能把普通提及当作强指控；必须标注 statement_only=true，且只作为临时辅助，不写入 verified_facts。",
+    "解析 public_state.players.revealed_role 必须严格只使用 revealed_role/role_revealed 等公开字段，不能读取 roles、roles_revealed、audit_state 或 role_assignment，否则会越过可见性边界。",
+    "移除警长好人保护可能让模型过度怀疑真警长；需要在提示中写‘不代表好人，也不代表狼人’，并只结合传徽来源、死亡顺序和票型加权。",
+    "保护未对跳神职声明可能被狼悍跳利用；因此规则应要求‘声明不是事实’，只是提高误出成本，并反查推动者，不应自动认好。",
+    "增加 decision_aid 字段会占用 prompt；实现时必须限制列表长度，避免当前已有的 prompt_over_limit 问题恶化。",
+    "n00119 分支含更大规模 edge ledger，但直接照搬可能引入 set 序列化、复杂重置和超时风险；建议只采用本计划中的小型、安全函数。"
+  ],
+  "code_agent_brief": "请在 villager-n00121 的 task_agent.py/task.md 上做最小修复，不要改 Game Engine、工具、schema 或可见性。目标是修复平民后期误信狼警长、遗漏 players[].alive/revealed_role、无法结构化当前轮声明的问题。具体实现：1) 从 _is_good_role 中移除“警长/sheriff”，并禁止 _maybe_register_verified_alignment 因警长标签给 revealed_alignment 负分；警长只作为公开票权。2) 扩展 _extract_alive_ids/_extract_alive_count，支持 public_state.players 列表中 id/player_id + alive 布尔；同时在 summary 中维护 dead_ids。3) 窄范围解析 public_state.players 中公开 revealed_role/role_revealed 字段为 public_reveals，严禁读取 roles/roles_revealed/audit_state/assignment。4) 加一个有界 sheriff_chain 记忆，记录 SHERIFF_ELECTED/SHERIFF_BADGE_TRANSFERRED 或当前 public_state.sheriff，并在 decision_aid 暴露最近链条；若持徽者的警徽来自高疑点或出局位，给候选 evidence_reasons 加轻量风险说明，不要把警长当好人。5) 新增保守的 _summarize_dialogue_edges，把 current_round_dialogue 中 speaker、role_claim、target_mentions、accusation/support 解析为 statement_only 临时边，加入 decision_aid，不写入 verified_facts。6) 在 turn_instruction 和 task.md 增加短提示：警徽不是阵营验证；未对跳猎人/守卫/女巫等强神声明不能仅因滑水放逐，投前必须比较误出成本和推动者收益。所有新增列表必须限长，保持 prompt 在 12000 字符预算内。"
+}

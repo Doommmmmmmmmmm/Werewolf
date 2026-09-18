@@ -1,0 +1,241 @@
+--- guard-n00034/task_agent.py
++++ guard-n00039/task_agent.py
+@@ -48,6 +48,22 @@
+     "刀口",
+     "站边",
+ )
++_GUARD_SELF_EXPOSE_PATTERNS = (
++    r"我是守卫",
++    r"我就是守卫",
++    r"跳守卫",
++    r"报守卫",
++    r"自报守卫",
++    r"昨晚守了",
++    r"昨夜守了",
++    r"昨晚守的是",
++    r"昨夜守的是",
++    r"我守的是",
++    r"我保护了",
++    r"我保护的是",
++    r"守护成功",
++    r"守住了",
++)
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -126,6 +142,15 @@
+     return "\n".join(lines)
+ 
+ 
++def _guard_speech_exposure_error(text: str) -> str | None:
++    lowered = text.lower()
++    if any(pattern in lowered for pattern in _GUARD_SELF_EXPOSE_PATTERNS[:5]):
++        return "守卫普通发言不得自报守卫身份"
++    if any(pattern in text for pattern in _GUARD_SELF_EXPOSE_PATTERNS[5:]):
++        return "守卫普通发言不得公开具体守护对象或把守护结果当确认信息"
++    return None
++
++
+ def normalize_decision(raw: dict[str, Any] | None, request: dict[str, Any]) -> dict[str, Any]:
+     """把模型可能使用的 action / targetId 字段规范成引擎格式。"""
+ 
+@@ -160,6 +185,10 @@
+             return f"发言超过 max_chars={allowed['max_chars']}"
+         if allowed.get("require_chinese") and not _CHINESE_CHARACTER.search(text):
+             return "发言必须包含中文"
++        if action["kind"] == "speak":
++            guard_exposure_error = _guard_speech_exposure_error(text)
++            if guard_exposure_error is not None:
++                return guard_exposure_error
+     target_ids = allowed.get("target_ids")
+     if target_ids:
+         if action.get("target_id") not in target_ids:
+@@ -234,6 +263,9 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
++            "guard_memory_summary": self._guard_memory_summary(turn_packet["request"])
++            if self.profile.role == "guard"
++            else {},
+             "history_policy": {
+                 "default_context": "current_state_only",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -330,7 +362,8 @@
+         if self.profile.role == "guard":
+             role_task = role_task + (
+                 "\n\n守卫约束：只从当前 target_ids 里选；先判定今晚最可能被狼刀的好人；"
+-                "默认不要重复上一夜目标；优先保护高风险好人而不是单纯热度位。"
++                "优先参考 guard_memory_summary 里的风险排序，公开热度只作同分参考；"
++                "没有更好外部目标时可以自守；普通发言不得自报守卫身份、不得公开具体守护对象、不得把守护成功当作确认事实。"
+             )
+         return render_prompt(
+             "player_system.txt",
+@@ -351,7 +384,8 @@
+         if self.profile.role == "guard":
+             guard_note = (
+                 "守卫执行要点：只在当前 target_ids 内选；先找今晚最可能被刀的好人；"
+-                "优先公开神职、被多人点名/压票的关键发言位；没有更好目标时再自守。"
++                "优先参考 guard_memory_summary 里的风险排序，风险判断优先于公开热度；没有更好外部目标时可以自守；"
++                "普通发言只能围绕公开票型、矛盾和风险位，不要自报守卫、不要公开守护对象、不要把守护结果当确认信息。"
+             )
+             validation_feedback = guard_note + ("\n" + validation_feedback if validation_feedback else "")
+         return render_prompt(
+@@ -436,17 +470,22 @@
+             return []
+         round_no = self._extract_round_number(request) or self._last_observed_round
+         repeat_forbidden = self._guard_repeat_forbidden(allowed)
++        risk_scores: dict[str, int] = {}
++        heat_scores: dict[str, int] = {}
++        for candidate in candidates:
++            risk_scores[candidate] = self._player_risk_score(candidate, request, round_no)
++            heat_scores[candidate] = self._public_heat_score(candidate, request)
++        self_bonus = self._guard_self_target_bonus(candidates, risk_scores, round_no)
+         scored: list[tuple[int, int, int, str]] = []
+         for index, candidate in enumerate(candidates):
+-            risk_score = self._player_risk_score(candidate, request, round_no)
+-            heat_score = self._public_heat_score(candidate, request)
++            risk_score = risk_scores[candidate]
+             if candidate == self.player_id:
+-                risk_score -= 10_000
++                risk_score += self_bonus
+             if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:
+                 risk_score -= 5_000
+             if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:
+                 risk_score -= max(0, 200 - max(0, round_no - self.last_protected_round))
+-            scored.append((-risk_score, -heat_score, index, candidate))
++            scored.append((-risk_score, -heat_scores[candidate], index, candidate))
+         scored.sort()
+         ordered = [candidate for _, _, _, candidate in scored]
+         if repeat_forbidden and self.last_protected_id:
+@@ -455,12 +494,101 @@
+                 return filtered
+         return ordered
+ 
++    def _guard_self_target_bonus(
++        self,
++        candidates: list[str],
++        risk_scores: Mapping[str, int],
++        round_no: int | None,
++    ) -> int:
++        if self.player_id not in candidates:
++            return 0
++        self_risk = int(risk_scores.get(self.player_id, 0))
++        external_best = max(
++            (int(risk_scores.get(candidate, 0)) for candidate in candidates if candidate != self.player_id),
++            default=None,
++        )
++        bonus = 0
++        if external_best is None:
++            bonus += 3
++        else:
++            gap = external_best - self_risk
++            if gap <= 0:
++                bonus += 3
++            elif gap == 1:
++                bonus += 2
++            elif gap == 2:
++                bonus += 1
++        if round_no is not None and round_no <= 2:
++            bonus += 1
++        if self.last_protected_id == self.player_id:
++            bonus += 1
++        return bonus
++
+     def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:
+         if allowed.get("guard_can_repeat_protect") is True:
+             return False
+         if allowed.get("guard_can_repeat_protect") is False:
+             return True
+         return True
++
++    def _guard_memory_summary(self, request: Mapping[str, Any]) -> dict[str, Any]:
++        allowed = next(
++            (
++                item
++                for item in request.get("allowed_actions", [])
++                if isinstance(item, Mapping) and item.get("kind") == _GUARD_ACTION_KIND
++            ),
++            None,
++        )
++        round_no = self._extract_round_number(request) or self._last_observed_round
++        summary: dict[str, Any] = {
++            "last_protected_id": self.last_protected_id,
++            "last_protected_round": self.last_protected_round,
++            "risk_score_meaning": (
++                "risk_score 越高，表示越应优先保护；它主要来自被点名、被投票、被公开怀疑或被威胁程度，"
++                "公开热度只作为同分时参考。"
++            ),
++            "top_risk_candidates": [],
++        }
++        if not isinstance(allowed, Mapping):
++            return summary
++        target_ids = allowed.get("target_ids")
++        if not isinstance(target_ids, list):
++            return summary
++        candidates: list[str] = []
++        for target_id in target_ids:
++            candidate = str(target_id)
++            if candidate and candidate not in candidates:
++                candidates.append(candidate)
++        if not candidates:
++            return summary
++        risk_scores = {candidate: self._player_risk_score(candidate, request, round_no) for candidate in candidates}
++        heat_scores = {candidate: self._public_heat_score(candidate, request) for candidate in candidates}
++        bonus = self._guard_self_target_bonus(candidates, risk_scores, round_no)
++        ranked: list[tuple[int, int, int, str, int]] = []
++        for index, candidate in enumerate(candidates):
++            effective_risk = risk_scores[candidate]
++            if candidate == self.player_id:
++                effective_risk += bonus
++            if self._guard_repeat_forbidden(allowed) and self.last_protected_id and candidate == self.last_protected_id:
++                effective_risk -= 5_000
++            if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:
++                effective_risk -= max(0, 200 - max(0, round_no - self.last_protected_round))
++            ranked.append((-effective_risk, -heat_scores[candidate], index, candidate, effective_risk))
++        ranked.sort()
++        top_candidates: list[dict[str, Any]] = []
++        for _, _, _, candidate, effective_risk in ranked[:3]:
++            top_candidates.append(
++                {
++                    "target_id": candidate,
++                    "risk_score": effective_risk,
++                    "heat_score": heat_scores[candidate],
++                    "is_self": candidate == self.player_id,
++                    "is_last_protected": candidate == self.last_protected_id,
++                }
++            )
++        summary["top_risk_candidates"] = top_candidates
++        return summary
+ 
+     def _looks_publicly_salient(self, candidate: str, request: Mapping[str, Any]) -> bool:
+         return candidate in self._extract_focus_ids(request.get("public_state"))
+@@ -631,11 +759,6 @@
+         score += int(bucket.get("claim", 0)) * 6
+         score += int(bucket.get("vote", 0)) * 5
+         score += int(bucket.get("pressure", 0)) * 4
+-        score += int(bucket.get("exposure", 0)) * 2
+-        if candidate in self.recent_public_focus_ids:
+-            score += 3
+-        if self._looks_publicly_salient(candidate, request):
+-            score += 2
+         if candidate in self.alive_player_cache:
+             score += 1
+         last_round = bucket.get("last_round")
+@@ -653,7 +776,6 @@
+         if self._looks_publicly_salient(candidate, request):
+             score += 3
+         score += int(bucket.get("exposure", 0))
+-        score += int(bucket.get("pressure", 0))
+         return score
+ 
+     def _extract_round_number(self, packet: Mapping[str, Any] | Any) -> int | None:
+--- guard-n00034/task.md
++++ guard-n00039/task.md
+@@ -3,5 +3,5 @@
+ - 先看当前 `target_ids`，只能从里面选。
+ - 先判断今晚最可能被狼刀的好人，再在合法目标里排序。
+ - 优先保护公开神职、被多人压票/点名的关键发言位、最近被集中讨论的高风险好人。
+-- 只有没有更好目标时才考虑自守；若规则不允许连守，默认不要重复同一人。
+-- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。
++- 夜间没有更好外部目标时可以优先考虑自守；若规则不允许连守，默认不要重复同一人。
++- 白天发言禁止主动自证守卫、禁止披露具体守护对象，也不要把“守护成功”当作已确认结果；发言只围绕公开票型、矛盾和风险位展开。

@@ -1,0 +1,392 @@
+--- guard-n00098/task_agent.py
++++ guard-n00108/task_agent.py
+@@ -31,7 +31,8 @@
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _GUARD_ACTION_KIND = "guard_protect"
+-_PLAYER_ID_PATTERN = re.compile(r"\bp\d+\b")
++# 允许玩家编号紧邻中文（例如“p5是狼人”），但不吞掉更长的 ASCII 标识。
++_PLAYER_ID_PATTERN = re.compile(r"(?<![A-Za-z0-9_])p\d+(?![A-Za-z0-9_])")
+ _GUARD_CONTEXT_KEYWORDS = (
+     "sheriff",
+     "警长",
+@@ -208,6 +209,8 @@
+         }
+         self.last_protected_id: str | None = None
+         self.last_protected_round: int | None = None
++        self.last_guard_action_kind: str | None = None
++        self.last_guard_action_round: int | None = None
+         self.alive_player_cache: set[str] = set()
+         self.recent_public_focus_ids: deque[str] = deque(maxlen=8)
+         self.player_risk_profile: dict[str, dict[str, int]] = {}
+@@ -228,6 +231,10 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         self._update_guard_memory(turn_packet.get("public_state") or {})
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
++        if current_dialogue:
++            self._update_guard_memory({"current_round_dialogue": current_dialogue})
+         system = self._system_prompt(private)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -243,11 +250,10 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
+-
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue") or []
+-        if current_dialogue:
+-            self._update_guard_memory({"current_round_dialogue": current_dialogue})
++        if self.profile.role == "guard":
++            prompt["private_guard_context"] = self._render_guard_private_context(
++                turn_packet["request"], turn_packet
++            )
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -331,10 +337,11 @@
+         role_task = self.profile.task
+         if self.profile.role == "guard":
+             role_task = role_task + (
+-                "\n\n守卫约束：只从当前 target_ids 里选；禁止连守时先排除上一夜目标；"
+-                "只把明确夜刀/狼刀/击杀/今晚刀视为刀口；普通target、投票、查验和话多只是同分参考；"
+-                "身份声称不等于可信好人；已公开暴露或残局且无更高可信外部目标时可以自守；"
+-                "不要把守护成功或平安夜当作已确认结果。"
++                "\n\n守卫约束：只从当前 target_ids 里选；有合法 guard_protect 时不要 pass；"
++                "禁止连守时先排除上一夜目标；只把明确夜刀/狼刀/击杀/今晚刀视为刀口；"
++                "身份声称不等于可信好人；查杀、悍跳、狼人指控和冲票会降低可信度；"
++                "已公开暴露或残局且无更高可信外部目标时可以自守；不要把守护成功或平安夜当作已确认结果。"
++                "守卫私有上下文仅供内部决策；发言默认不跳守卫、不公开或虚构守护对象。"
+             )
+         return render_prompt(
+             "player_system.txt",
+@@ -354,10 +361,12 @@
+         validation_feedback = f"上一次输出未通过校验：{feedback}" if feedback else ""
+         if self.profile.role == "guard":
+             guard_note = (
+-                "守卫执行要点：只在当前 target_ids 内选，禁止连守时排除上一夜目标；"
+-                "优先明确可信好人神职/警徽链和近期明确夜刀信号；"
+-                "普通target、投票、查验、被提及或话多不等于刀口，身份声称本身不等于可信；"
+-                "本人已公开暴露或5人及以下残局且无更高可信外部目标时可以自守。"
++                "守卫执行要点：只在当前 target_ids 内选；存在合法 guard_protect 时不要 pass；"
++                "禁止连守时先排除上一夜目标；优先低可疑且可信的好人神职/警徽链和明确夜刀信号；"
++                "普通target、投票、查验、被提及或话多不等于刀口；警长/警徽链只有低可疑且来源可信才加分；"
++                "查杀、悍跳、假预言家、狼人指控、冲票/带节奏目标要明显降权，残局更严格；"
++                "若是 speak/last_words：默认不跳守卫，不公开昨夜或历史守护对象，不声称守护成功/失败，也不得编造；"
++                "即使被问到也只用公开信息回答，不透露私有守卫行动；本人已公开暴露或5人及以下残局且无更高可信外部目标时可以自守。"
+             )
+             validation_feedback = guard_note + ("\n" + validation_feedback if validation_feedback else "")
+         return render_prompt(
+@@ -395,17 +404,20 @@
+                 self._model_token_usage[key] += value
+ 
+     def _record_successful_guard_action(self, action: Mapping[str, Any], packet: Mapping[str, Any]) -> None:
+-        if self.profile.role != "guard" or action.get("kind") != _GUARD_ACTION_KIND:
++        if self.profile.role != "guard":
+             return
+-        target_id = action.get("target_id")
+-        if not target_id:
++        kind = str(action.get("kind") or "")
++        if kind not in {_GUARD_ACTION_KIND, "pass"}:
+             return
+-        self.last_protected_id = str(target_id)
+         round_no = self._extract_round_number(packet)
+         if round_no is None and isinstance(packet.get("game"), Mapping):
+             round_no = self._extract_round_number(packet["game"])
+-        if round_no is not None:
+-            self.last_protected_round = round_no
++        self.last_guard_action_kind = kind
++        self.last_guard_action_round = round_no
++        if kind == _GUARD_ACTION_KIND and action.get("target_id"):
++            self.last_protected_id = str(action["target_id"])
++            if round_no is not None:
++                self.last_protected_round = round_no
+ 
+     def _repair_guard_decision(
+         self,
+@@ -413,7 +425,7 @@
+         request: dict[str, Any],
+         packet: Mapping[str, Any] | None = None,
+     ) -> dict[str, Any]:
+-        if self.profile.role != "guard" or action.get("kind") != _GUARD_ACTION_KIND:
++        if self.profile.role != "guard":
+             return action
+         allowed = next(
+             (
+@@ -426,7 +438,12 @@
+         if not isinstance(allowed, Mapping):
+             return action
+         ranked = self._guard_candidate_ranking(allowed, request, packet)
+-        if not ranked:
++        # pass 是规则允许但通常浪费守卫能力的合法行动；只有存在合法目标时才覆盖。
++        if action.get("kind") == "pass":
++            if ranked:
++                return {**action, "kind": _GUARD_ACTION_KIND, "target_id": ranked[0]["candidate"]}
++            return action
++        if action.get("kind") != _GUARD_ACTION_KIND or not ranked:
+             return action
+         chosen = action.get("target_id")
+         ranked_targets = {item["candidate"] for item in ranked}
+@@ -478,6 +495,7 @@
+                 profile["public_pressure"] -= 1_000
+             profile["score_key"] = (
+                 profile["wolf_attack_risk"],
++                -profile["wolf_suspicion"],
+                 -profile["suspicion_penalty"],
+                 profile["information_value"],
+                 profile["stage_bonus"],
+@@ -487,6 +505,7 @@
+             )
+             profile["total_score"] = (
+                 profile["wolf_attack_risk"] * 100
++                - profile["wolf_suspicion"] * 40
+                 - profile["suspicion_penalty"] * 35
+                 + profile["information_value"] * 12
+                 + profile["stage_bonus"] * 8
+@@ -533,19 +552,29 @@
+         vote = int(bucket.get("vote", 0))
+         pressure = int(bucket.get("pressure", 0))
+         exposure = int(bucket.get("exposure", 0))
++        wolf_suspicion = int(bucket.get("wolf_suspicion", 0)) + int(bucket.get("distrust", 0))
+         public_focus = 1 if candidate in self.recent_public_focus_ids else 0
+         salient = 1 if self._looks_publicly_salient(candidate, request, packet) else 0
++        current_sheriff = self._extract_current_sheriff_id(request.get("public_state"))
++        if current_sheriff is None and isinstance(packet, Mapping):
++            current_sheriff = self._extract_current_sheriff_id(packet.get("public_state"))
+         # 夜刀风险只吃明确狼刀/夜刀信号和少量近期暴露/直接压迫；身份声称和普通热度
+         # 不再在多个维度重复加分。
+         wolf_attack_risk = threat * 14 + min(pressure, 3) * 2 + min(exposure, 3)
+-        information_value = min(claim, 4) * 2 + min(exposure, 4) * 2 + public_focus + salient
+-        public_pressure = min(pressure, 5) * 3 + min(vote, 5) * 2 + public_focus + salient
++        # claim 只有在没有明显不信任时才是信息价值；警长只给很小的、可被疑似度抵消的加分。
++        trusted_claim = min(claim, 4) if wolf_suspicion <= 2 and not (vote >= 4 and pressure >= 4) else 0
++        information_value = trusted_claim + min(exposure, 4) * 2 + salient
++        if candidate == current_sheriff and wolf_suspicion <= 2:
++            information_value += 1
++        public_pressure = min(pressure, 5) * 2 + min(vote, 5) + public_focus + salient
+         suspicion_penalty = 0
+         if claim and (vote or pressure):
+             # 抢身份又被集中质疑/投票时，不能把 claim 当作可信好人价值。
+             suspicion_penalty += min(claim, 5) + min(vote + pressure, 6)
+         if pressure >= 6 and not threat:
+             suspicion_penalty += 2
++        if alive_count is not None and alive_count <= 7:
++            wolf_suspicion *= 2
+         if threat:
+             information_value += min(threat, 4)
+         if alive_count is not None:
+@@ -575,9 +604,82 @@
+             "information_value": information_value,
+             "public_pressure": public_pressure,
+             "suspicion_penalty": suspicion_penalty,
++            "wolf_suspicion": wolf_suspicion,
+             "stage_bonus": stage_bonus,
+             "recency": recency,
+             "alive_count": alive_count or 0,
++        }
++
++    def _extract_current_sheriff_id(self, packet: Mapping[str, Any] | Any) -> str | None:
++        if not isinstance(packet, Mapping):
++            return None
++        direct_keys = {"current_sheriff_id", "sheriff_id", "current_sheriff", "警长id", "警长"}
++        for key, value in packet.items():
++            if str(key).lower() in direct_keys:
++                ids = self._extract_player_ids(value)
++                if ids:
++                    return sorted(ids)[0]
++        for value in packet.values():
++            if isinstance(value, Mapping):
++                found = self._extract_current_sheriff_id(value)
++                if found:
++                    return found
++        return None
++
++    def _guard_self_publicly_exposed(self, request: Mapping[str, Any], packet: Mapping[str, Any] | None) -> bool:
++        # 仅把本人公开自报身份（由公开结构化字段或发言解析得到）视为暴露；
++        # 被提及、被投票或成为焦点并不等于守卫身份暴露。
++        del request, packet
++        bucket = self.player_risk_profile.get(self.player_id) or {}
++        return int(bucket.get("claim", 0)) > 0
++
++    def _guard_candidate_reason_codes(self, candidate: str, profile: Mapping[str, int], current_sheriff: str | None) -> list[str]:
++        reasons: list[str] = []
++        suspicion = int(profile.get("wolf_suspicion", 0))
++        if suspicion:
++            reasons.append("high_wolf_suspicion_penalty" if suspicion >= 4 else "wolf_suspicion_penalty")
++        if int(profile.get("wolf_attack_risk", 0)) > 0:
++            reasons.append("clear_attack_or_public_risk")
++        if candidate == current_sheriff and suspicion <= 2:
++            reasons.append("current_sheriff_low_suspicion")
++        if int(profile.get("information_value", 0)) > 0 and not suspicion:
++            reasons.append("trusted_public_information")
++        if candidate == self.player_id:
++            reasons.append("self_exposed_endgame" if int(profile.get("stage_bonus", 0)) else "self_available")
++        if self.last_protected_id == candidate and self._guard_repeat_forbidden({}):
++            reasons.append("repeat_forbidden_excluded")
++        return reasons[:3]
++
++    def _render_guard_private_context(self, request: Mapping[str, Any], packet: Mapping[str, Any]) -> dict[str, Any]:
++        allowed = next(
++            (item for item in request.get("allowed_actions", [])
++             if isinstance(item, Mapping) and item.get("kind") == _GUARD_ACTION_KIND),
++            None,
++        )
++        ranking: list[dict[str, Any]] = []
++        if isinstance(allowed, Mapping):
++            current_sheriff = self._extract_current_sheriff_id(request.get("public_state"))
++            if current_sheriff is None:
++                current_sheriff = self._extract_current_sheriff_id(packet.get("public_state"))
++            ranked = self._guard_candidate_ranking(allowed, request, packet)
++            for item in ranked[:5]:
++                ranking.append({
++                    "candidate": item["candidate"],
++                    "rank": item["rank"],
++                    "reason_codes": self._guard_candidate_reason_codes(item["candidate"], item, current_sheriff),
++                })
++        return {
++            "internal_only": True,
++            "last_protected_id": self.last_protected_id,
++            "last_protected_round": self.last_protected_round,
++            "last_guard_action_kind": self.last_guard_action_kind,
++            "last_guard_action_round": self.last_guard_action_round,
++            "alive_count": self._current_alive_count(request, packet),
++            "current_sheriff_id": self._extract_current_sheriff_id(request.get("public_state"))
++            or self._extract_current_sheriff_id(packet.get("public_state")),
++            "self_publicly_exposed": self._guard_self_publicly_exposed(request, packet),
++            "guard_candidate_ranking": ranking,
++            "note": "仅供内部决策；不得在公开发言中透露或编造守护行动。",
+         }
+ 
+     def _guard_stage_bonus(self, alive_count: int | None) -> int:
+@@ -668,6 +770,7 @@
+         vote_keys = ("vote", "voted", "投票", "票型", "归票", "票数")
+         inspection_keys = ("inspect", "inspection", "check", "查验", "验人", "验出")
+         claim_keys = ("claim", "claimed", "身份", "报身份", "自报", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神", "神职")
++        distrust_keys = ("wolf", "werewolf", "狼人", "查杀", "悍跳", "假预言家", "accus", "distrust", "不信任")
+         # 只接受明确狼刀/夜刀语义；普通 target/target_id 不等于刀口。
+         threat_keys = (
+             "wolf_target",
+@@ -690,14 +793,16 @@
+         )
+         pressure_keys = ("suspect", "suspected", "怀疑", "pressure", "point", "点名", "push", "压票", "站边", "focus", "关注", "指认")
+         exposure_keys = ("public", "公开", "center", "核心", "关键", "hot", "热度")
++        if any(token in key_text for token in threat_keys):
++            return ("threat", 4)
++        if any(token in key_text for token in distrust_keys):
++            return ("wolf_suspicion", 4)
+         if any(token in key_text for token in vote_keys):
+             return ("vote", 3)
+         if any(token in key_text for token in inspection_keys):
+             return ("exposure", 1)
+         if any(token in key_text for token in claim_keys):
+             return ("claim", 3)
+-        if any(token in key_text for token in threat_keys):
+-            return ("threat", 4)
+         if any(token in key_text for token in pressure_keys):
+             return ("pressure", 2)
+         if any(token in key_text for token in exposure_keys):
+@@ -791,8 +896,12 @@
+             return {}
+         lowered = text.lower()
+         signals: dict[str, int] = {}
+-        if any(token in lowered for token in ("claim", "报身份", "自报", "我是预言家", "我是女巫", "我是守卫", "我是猎人", "我是白痴", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神", "神职", "预言家", "女巫", "守卫", "猎人", "白痴")):
++        # 只有说话者明确自称时才记 claim；提到“pX 是狼人/悍跳”属于对 pX 的不信任。
++        if any(token in lowered for token in ("我是预言家", "我是女巫", "我是守卫", "我是猎人", "我是白痴", "我跳预", "我跳女巫", "我跳守卫", "我跳猎人", "自称", "报身份")):
+             signals["claim"] = 5
++        targeted_vote = re.search(r"(?:出|票|归票|投给|点出)\s*p\d+", lowered)
++        if any(token in lowered for token in ("查杀", "狼人", "悍跳", "假预言家", "是狼", "冲票", "带节奏", "不信", "可疑")) or targeted_vote:
++            signals["wolf_suspicion"] = 4
+         if any(token in lowered for token in ("投票", "归票", "vote", "票型", "点名")):
+             signals["vote"] = 4
+         if any(token in lowered for token in ("夜刀", "刀口", "今晚刀", "击杀", "attack", "kill")):
+@@ -812,6 +921,8 @@
+                 "claim": 0,
+                 "threat": 0,
+                 "exposure": 0,
++                "wolf_suspicion": 0,
++                "distrust": 0,
+                 "last_round": -1,
+             }
+             self.player_risk_profile[player_id] = bucket
+@@ -962,11 +1073,11 @@
+         factor_denominator = 10 ** min(gap, 6)
+         empty_players: list[str] = []
+         for player_id, bucket in self.player_risk_profile.items():
+-            for signal_name in ("pressure", "vote", "claim", "threat", "exposure"):
++            for signal_name in ("pressure", "vote", "claim", "threat", "exposure", "wolf_suspicion", "distrust"):
+                 value = int(bucket.get(signal_name, 0))
+                 bucket[signal_name] = (value * factor_numerator) // factor_denominator
+             last_round = bucket.get("last_round")
+-            if all(int(bucket.get(name, 0)) <= 0 for name in ("pressure", "vote", "claim", "threat", "exposure")):
++            if all(int(bucket.get(name, 0)) <= 0 for name in ("pressure", "vote", "claim", "threat", "exposure", "wolf_suspicion", "distrust")):
+                 if not isinstance(last_round, int) or last_round < round_no - 3:
+                     empty_players.append(player_id)
+         for player_id in empty_players:
+@@ -1019,8 +1130,11 @@
+ 
+         agent = object.__new__(cls)
+         agent.player_id = "p6"
++        agent.profile = type("GuardProfile", (), {"role": "guard"})()
+         agent.last_protected_id = "p1"
+         agent.last_protected_round = 1
++        agent.last_guard_action_kind = None
++        agent.last_guard_action_round = None
+         agent.alive_player_cache = {"p1", "p2", "p3", "p6"}
+         agent.recent_public_focus_ids = deque(maxlen=8)
+         agent.player_risk_profile = {}
+@@ -1036,13 +1150,25 @@
+         alive_count_ok = agent._current_alive_count({}, None) == 3
+ 
+         agent.player_risk_profile["p6"] = {"pressure": 3, "vote": 2, "claim": 3, "threat": 0, "exposure": 3, "last_round": 4}
+-        agent.player_risk_profile["p2"] = {"pressure": 0, "vote": 0, "claim": 3, "threat": 0, "exposure": 0, "last_round": 4}
+-        allowed = {"kind": _GUARD_ACTION_KIND, "target_ids": ["p1", "p2", "p6"], "guard_can_repeat_protect": False}
++        agent.player_risk_profile["p2"] = {"pressure": 0, "vote": 0, "claim": 3, "threat": 0, "exposure": 0, "wolf_suspicion": 8, "last_round": 4}
++        agent.player_risk_profile["p3"] = {"pressure": 0, "vote": 0, "claim": 0, "threat": 0, "exposure": 1, "wolf_suspicion": 0, "last_round": 4}
++        allowed = {"kind": _GUARD_ACTION_KIND, "target_ids": ["p1", "p2", "p3", "p6"], "guard_can_repeat_protect": False}
+         ranked = agent._guard_candidate_ranking(allowed, {"round": 4}, None)
+         ranked_ids = [item["candidate"] for item in ranked]
+         self_top_two = "p6" in ranked_ids[:2]
+         repeat_excluded = "p1" not in ranked_ids
+         claim_not_tripled = agent._guard_candidate_profile("p2", {"round": 4}, None, 4)["wolf_attack_risk"] == 0
++        repaired_pass = agent._repair_guard_decision(
++            {"kind": "pass"},
++            {"round": 4, "allowed_actions": [
++                {"kind": "pass"}, allowed,
++            ]},
++        )
++        pass_repaired = repaired_pass.get("kind") == _GUARD_ACTION_KIND and repaired_pass.get("target_id") == ranked_ids[0]
++        suspicious_not_top = ranked_ids.index("p2") > ranked_ids.index("p3")
++        agent.last_protected_id = None
++        agent._record_successful_guard_action({"kind": "pass"}, {"round": 5})
++        pass_memory_is_explicit = agent.last_guard_action_kind == "pass" and agent.last_guard_action_round == 5 and agent.last_protected_id is None
+         return {
+             "vote_target_not_threat": vote_signal != ("threat", 4) and no_vote_threat,
+             "explicit_attack_target_is_threat": threat_signal == ("threat", 4),
+@@ -1050,4 +1176,7 @@
+             "repeat_target_excluded": repeat_excluded,
+             "claim_not_repeated_as_attack_risk": claim_not_tripled,
+             "dead_players_not_counted_alive": alive_count_ok,
++            "pass_repaired_to_ranked_protect": pass_repaired,
++            "suspicious_candidate_does_not_precede_low_suspicion": suspicious_not_top,
++            "pass_memory_has_no_protected_target": pass_memory_is_explicit,
+         }
+--- guard-n00098/task.md
++++ guard-n00108/task.md
+@@ -1,9 +1,11 @@
+ # 守卫操作规程
+ 
+ - 先看当前 `target_ids`，只能从里面选；若规则禁止连守，先排除上一夜守护目标。
+-- 决策优先级：合法/非重复目标 > 明确可信的公开好人神职或警徽链关键节点 > 近期明确夜刀/狼刀/击杀/今晚刀信号 > 其他信息价值目标。
++- 只要当前存在合法 `guard_protect` 目标，就必须保护其中一个，不要选择 `pass`；只有没有合法保护目标时才空过。
++- 决策优先级：合法/非重复目标 > 低可疑且可信的公开好人神职或警徽链关键节点 > 近期明确夜刀/狼刀/击杀/今晚刀信号 > 其他信息价值目标。
+ - 普通 `target`、投票目标、警长投票目标、查验目标、被提及、话多或公开热度，都不等于狼刀刀口；这些只能作同分参考。
+-- 身份声称本身不等于可信好人：抢身份、被多人质疑或与公开信息冲突时要降低保护优先级。
+-- 守卫本人若已公开自报、公开报过守护对象、被多人直接施压/投票，或进入 5 人及以下残局，且没有更高可信外部刀口，允许自守。
++- 警长/警徽链不是天然好人：只有来源可信、低可疑时才提高保护优先级；被查杀、被指悍跳/假预言家、被多人怀疑、冲票或带节奏的目标要明显降权，残局（存活 7 人及以下）更严格。
++- 身份声称本身不等于可信好人：抢身份、被多人质疑或与公开信息冲突时要降低保护优先级。守卫本人若已公开暴露，或进入 5 人及以下残局且没有更高可信外部刀口，允许自守。
+ - 不要把“平安夜”“守护成功”“普通 target 字段”当成确认守护有效或确认阵营的证据。
+-- 发言只围绕公开矛盾、票型压力和可见信息展开；需要本轮发言时主动调用受限工具，不要要求完整历史。
++- 白天发言只围绕公开矛盾、票型压力和可见信息展开；默认不跳守卫、不公开昨夜或历史守护对象、不声称守护成功/失败，也不编造守护行动。即使被问到，也只用公开信息回答。
++- 需要本轮发言时主动调用受限工具，不要要求完整历史；私有守卫行动记忆只用于内部决策。

@@ -1,0 +1,80 @@
+--- villager-base/task_agent.py
++++ villager-n00012/task_agent.py
+@@ -40,6 +40,39 @@
+         "additionalProperties": False,
+     },
+ }
++
++
++def render_villager_decision_checklist(request: Mapping[str, Any]) -> str:
++    """给平民用的短决策清单，只作为提示文本，不引入任何隐藏状态。"""
++
++    phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "")
++    phase_lower = phase.lower()
++    allowed_actions = request.get("allowed_actions")
++    allowed_kinds = {
++        str(item.get("kind") or "").lower()
++        for item in allowed_actions
++        if isinstance(item, Mapping)
++    } if isinstance(allowed_actions, list) else set()
++    lines = ["【平民决策清单】先分系统事实 / 玩家声明 / 自己推测；投票前至少比较两个候选。"]
++    has_vote = any(key in phase_lower for key in ("vote", "投票")) or any("vote" in kind for kind in allowed_kinds)
++    has_speak = any(key in phase_lower for key in ("speak", "discussion", "发言", "白天", "day")) or any(
++        kind in {"speak", "discussion", "day_speak"} for kind in allowed_kinds
++    )
++    has_last_words = any(key in phase_lower for key in ("last", "遗言")) or "last_words" in allowed_kinds
++    has_sheriff = any(key in phase_lower for key in ("sheriff", "警长", "警徽")) or any(
++        key in allowed_kinds for key in ("sheriff_vote", "sheriff")
++    )
++    if has_vote:
++        lines.append("投票时优先保护可信金水、持续报验且查杀被支持的预言家、强神声明者和警徽传递链；只有硬对跳、明显矛盾、查杀命中或事实错误时才推翻。")
++        lines.append("优先找未被金水覆盖且存在票型异常、事实错误、被查杀或爆狼线索指向的人。")
++    if has_speak:
++        lines.append("发言至少点出一个关注对象和一个暂不投对象，并说明依据哪条公开信息。")
++    if has_last_words:
++        lines.append("遗言只留公开事实、票型、查验链和怀疑对象，不把推测说成系统事实。")
++    if has_sheriff:
++        lines.append("警长/警徽相关回合优先看报验链是否清晰一致；接徽时继承公开遗产但不要把它当系统确认。")
++    lines.append("残局或持警徽时，额外复盘存活名单、已死名单、可信查验链和灰区名单，再决定出谁。")
++    return "\n".join(lines)
+ 
+ 
+ def render_action_contract(request: Mapping[str, Any]) -> str:
+@@ -313,10 +346,15 @@
+ 
+     @staticmethod
+     def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
++        checklist = render_villager_decision_checklist(request)
++        feedback_text = f"上一次输出未通过校验：{feedback}" if feedback else ""
++        validation_feedback = "\n".join(
++            part for part in (feedback_text, checklist) if part
++        )
+         return render_prompt(
+             "player_turn_instruction.txt",
+             action_contract=render_action_contract(request),
+-            validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
++            validation_feedback=validation_feedback,
+         )
+ 
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+--- villager-base/task.md
++++ villager-n00012/task.md
+@@ -2,7 +2,14 @@
+ 
+ 你的任务是帮助好人阵营找出狼人并完成放逐，同时像真实玩家一样参与讨论。
+ 
+-- 先区分系统事实、玩家声明和自己的猜测，再根据发言、票型和死亡信息形成判断。
+-- 发言要回应当前局面中的具体人和具体理由，允许暂时不确定，不要每轮都说同一句话。
+-- 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实。
+-- 投票前比较多个候选，不要只因为一个模糊印象就机械跟票。
++## 闭眼村民可执行清单
++
++- 先把信息分成三栏：**系统事实/公开事件**、**玩家声明**、**自己的推测**；只有前两栏能直接当依据。
++- 白天发言不要空转：至少点出**一个你关注的人**和**一个你暂不投的人**，并说明各自基于哪条公开信息。
++- 投票前必须先比较**至少两个候选**，再给出最终票；不要只凭模糊印象或跟票习惯决定。
++- 保护可信公开链：对**持续报验且查杀被票型或发言支持的预言家**、**已公开金水**、**强神声明者**、**警徽传递链**，默认提高保护权重；除非出现**硬对跳、明显矛盾、查杀命中、事实错误**，否则不要优先投他们。
++- 公开信息权重从高到低通常是：**系统死亡/存活/投票** > **清晰且持续的查验链** > **玩家遗言与自报** > **你的猜测**。
++- 狼人遗言自爆、点队友或反咬他人都只能算玩家声明，不能当系统事实；但如果它和查杀、票型、发言矛盾一起出现，要纳入高权重候选。
++- 当存活人数较少，或你自己持有警徽时，先复盘四件事：**存活名单、已死名单、可信查验链、灰区名单**；优先找**未被金水覆盖**且存在**事实错误、票型异常、被查杀/爆狼线索**的人。
++- 少弃票：只有在候选几乎无差异且继续投票会明显误伤强神时才考虑 pass；否则尽量给出当前证据最强的票。
++- 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实，也不能把猜测说成事实。

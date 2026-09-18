@@ -1,0 +1,266 @@
+--- hunter-n00104/task_agent.py
++++ hunter-n00130/task_agent.py
+@@ -534,19 +534,45 @@
+         signals: list[dict[str, Any]] = []
+         player = r"([A-Za-z]*\d+)"
+         identity = r"(预言家|猎人|女巫|守卫|白痴|摄梦人|神职)"
+-        for role in re.findall(r"(?:我是|自称|跳|认)" + identity, text):
+-            signals.append({"speaker": speaker, "claim": role, "kind": "identity_claim", "text": self._compact_text(text, 120)})
+-        for label, pattern in (("查杀", r"(?:查杀|验出狼|验到狼)[：: ]*" + player), ("金水", r"金水[：: ]*" + player), ("验人", r"(?:验|查验|查了)[：: ]*" + player)):
+-            match = re.search(pattern, text, re.IGNORECASE)
+-            if match:
+-                signals.append({"speaker": speaker, "target": match.group(1), "claim": label, "kind": "investigation_claim", "text": self._compact_text(text, 120)})
++        compact = self._compact_text(text, 120)
++        for role in re.findall(r"(?:我是|我为|自称|跳|起跳|认)" + identity, text):
++            signals.append({"speaker": speaker, "claim": role, "kind": "identity_claim", "text": compact, "source": "claim"})
++
++        investigation_patterns = [
++            ("查杀", r"(?:查杀|验出狼|验到狼|验了?是狼|查验?到狼)[：: ]*" + player, 1),
++            ("金水", r"(?:金水|验出好人|验到好人)[：: ]*" + player, 1),
++            ("查杀", r"(?:验|查验|查了|昨晚验了|今晚验了)\s*" + player + r"\s*(?:是|为|出)?\s*(?:查杀|狼人|狼)", 1),
++            ("金水", r"(?:验|查验|查了|昨晚验了|今晚验了)\s*" + player + r"\s*(?:是|为|出)?\s*(?:金水|好人|清白)", 1),
++            ("狼人", r"(?:查验|验|查了)?\s*" + player + r"\s*(?:是|为)\s*(?:狼人|狼)", 1),
++            ("好人", r"(?:查验|验|查了)?\s*" + player + r"\s*(?:是|为)\s*(?:好人|金水|清白)", 1),
++            ("金水", r"给\s*" + player + r"\s*(?:发|一张|个)?\s*金水", 1),
++            ("查杀", player + r"\s*(?:是我)?\s*(?:查杀|查验为狼|验出狼)", 1),
++            ("金水", player + r"\s*(?:是我)?\s*(?:金水|查验为好人|验出好人)", 1),
++            ("狼人", r"我是预言家[，,、 ]*" + player + r"\s*(?:是|为)?\s*(?:狼人|狼)", 1),
++        ]
++        seen_claims: set[tuple[str, str]] = set()
++        for label, pattern, group_index in investigation_patterns:
++            for match in re.finditer(pattern, text, re.IGNORECASE):
++                target = match.group(group_index)
++                if self._is_negated_claim(text, match.start(), match.end()):
++                    continue
++                key = (target.lower(), label)
++                if key in seen_claims:
++                    continue
++                seen_claims.add(key)
++                signals.append({"speaker": speaker, "target": target, "claim": label, "kind": "investigation_claim", "text": compact, "source": "claim"})
+         vote_match = re.search(r"(?:归票|投票|投|出|上)\s*" + player, text, re.IGNORECASE)
+-        if vote_match and not re.search(r"(?:别投|不要投|别出|不要出)\s*" + player, text, re.IGNORECASE):
+-            signals.append({"speaker": speaker, "target": vote_match.group(1), "claim": "vote_direction", "kind": "vote_claim", "text": self._compact_text(text, 120)})
+-        death_match = re.search(r"(?:平安夜|死了|死亡|被杀|出局).*?" + player, text, re.IGNORECASE)
++        if vote_match and not re.search(r"(?:别投|不要投|别出|不要出|不投|不出)\s*" + player, text, re.IGNORECASE):
++            signals.append({"speaker": speaker, "target": vote_match.group(1), "claim": "vote_direction", "kind": "vote_claim", "text": compact, "source": "claim"})
++        death_match = re.search(r"(?:平安夜|死了|死亡|被杀|出局|遗言).*?" + player, text, re.IGNORECASE)
+         if death_match:
+-            signals.append({"speaker": speaker, "target": death_match.group(1), "claim": "death_claim", "kind": "death_claim", "text": self._compact_text(text, 120)})
+-        return signals[:3]
++            signals.append({"speaker": speaker, "target": death_match.group(1), "claim": "death_claim", "kind": "death_claim", "text": compact, "source": "claim"})
++        return signals[:5]
++
++    @staticmethod
++    def _is_negated_claim(text: str, start: int, end: int) -> bool:
++        window = text[max(0, start - 8): min(len(text), end + 8)]
++        return bool(re.search(r"不是|并非|别信|不认|假称|伪称|没说|不是我查|不算", window))
+ 
+     def _build_decision_brief(self, turn_packet: Mapping[str, Any]) -> str:
+         if self.profile.role != "hunter":
+@@ -575,6 +601,16 @@
+             lines.append("票链：" + pressure["vote_chain"])
+         if pressure.get("top_evidence"):
+             lines.append("证据：" + "；".join(pressure["top_evidence"][:2]))
++        duel_summary = self._prophet_duel_summary(memory_entries)
++        if duel_summary:
++            lines.append("对跳链：" + "；".join(duel_summary[:2]))
++        if mode == "speak":
++            exposure = "若正被多人集中点名可简短自证；否则"
++            if not self._self_under_public_pressure(turn_packet, memory_entries):
++                exposure = ""
++            lines.append(exposure + "本轮不要主动说自己是猎人/有枪/硬牌，用票型、查验冲突、遗言链说理。")
++        if mode == "last_words":
++            lines.append(self._hunter_last_words_fact_hint(public_state, memory_entries))
+         layers = self._evidence_layer_summary(memory_entries)
+         for label in ("引擎事实", "玩家声称", "推断"):
+             if layers.get(label):
+@@ -621,11 +657,13 @@
+     def _infer_hunter_decision_mode(self, request: Mapping[str, Any], phase: str) -> str:
+         raw_actions = request.get("allowed_actions") if isinstance(request.get("allowed_actions"), list) else []
+         kinds = [str(item.get("kind") or "").lower() for item in raw_actions if isinstance(item, Mapping)]
++        phase_text = f"{phase} {request.get('phase', '')}".lower()
++        if "last_words" in kinds or any(token in phase_text for token in ("last_words", "遗言")):
++            return "last_words"
++        if any(token in phase_text for token in ("hunter", "反应", "开枪", "被击杀", "被刀", "death")):
++            return "hunter_reaction"
+         if any(kind in _SPEECH_ACTION_KINDS for kind in kinds):
+             return "speak"
+-        phase_text = f"{phase} {request.get('phase', '')}".lower()
+-        if any(token in phase_text for token in ("hunter", "last_words", "遗言", "反应", "开枪", "被击杀", "被刀", "death")):
+-            return "hunter_reaction"
+         return "day_vote"
+ 
+     def _summarize_current_dialogue(self, tool_context: Any) -> str:
+@@ -651,6 +689,57 @@
+                     bits.append(compact)
+         return " | ".join(bits[:3])
+ 
++    def _prophet_duel_summary(self, memory_entries: list[dict[str, Any]]) -> list[str]:
++        prophets: dict[str, list[str]] = {}
++        last_words_bits: list[str] = []
++        for entry in memory_entries[-8:]:
++            phase = str(entry.get("phase") or "")
++            records = entry.get("records") if isinstance(entry.get("records"), list) else []
++            for record in records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY]:
++                if not isinstance(record, Mapping):
++                    continue
++                speaker = self._first_compact(record, ("speaker", "player"))
++                claim = self._first_compact(record, ("claim",))
++                target = self._first_compact(record, ("target",))
++                text = self._public_record_text(record)
++                is_last = "last_words" in phase.lower() or "遗言" in phase or "遗言" in text
++                if speaker and claim == "预言家":
++                    prophets.setdefault(speaker, [])
++                if speaker and target and claim in {"查杀", "金水", "狼人", "好人"}:
++                    prophets.setdefault(speaker, []).append(f"{target}{claim}")
++                    if is_last:
++                        last_words_bits.append(f"{speaker}遗言/死亡声称{target}{claim}")
++                elif is_last and speaker and target:
++                    last_words_bits.append(f"{speaker}遗言指向{target}")
++        lines: list[str] = []
++        for speaker, claims in list(prophets.items())[:3]:
++            if claims or speaker in prophets:
++                unique_claims = self._dedupe_preserve_order(claims)[:3]
++                lines.append(f"{speaker}声称预言家" + (":" + "、".join(unique_claims) if unique_claims else ""))
++        lines.extend(self._dedupe_preserve_order(last_words_bits)[:2])
++        return lines[:4]
++
++    def _self_under_public_pressure(self, turn_packet: Mapping[str, Any], memory_entries: list[dict[str, Any]]) -> bool:
++        request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
++        phase_text = str(request.get("phase") or turn_packet.get("game", {}).get("public_phase") or "").lower()
++        if any(token in phase_text for token in ("vote", "放逐", "投票")):
++            return True
++        speakers: set[str] = set()
++        for entry in memory_entries[-2:]:
++            records = entry.get("records") if isinstance(entry.get("records"), list) else []
++            for record in records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY]:
++                text = self._public_record_text(record)
++                if _text_mentions_token(text, self.player_id) and any(word in text for word in ("投", "出", "怀疑", "查杀", "狼", "身份")):
++                    speaker = self._first_compact(record, ("speaker", "voter", "player")) or "?"
++                    speakers.add(speaker)
++        return len(speakers) >= 2
++
++    def _hunter_last_words_fact_hint(self, public_state: Mapping[str, Any], memory_entries: list[dict[str, Any]]) -> str:
++        text = self._public_record_text(public_state) + " " + " ".join(str(entry.get("summary") or "") for entry in memory_entries[-3:])
++        if re.search(r"HUNTER_SHOT|HUNTER_SHOT_FIRED|HUNTER_SHOT_RESOLVED|hunter_shoot|开枪", text, re.IGNORECASE):
++            return "遗言事实约束：若刚提交/公开了 hunter_shoot，必须承认已开枪并说明目标；不要说枪没开成或被毒走。"
++        return "遗言事实约束：只说公开发生的死亡/票型和自己提交的行动；无法确认时不要声称枪没开成、被毒走或开枪结果。"
++
+     def _evidence_layer_summary(self, memory_entries: list[dict[str, Any]]) -> dict[str, list[str]]:
+         layers = {"引擎事实": [], "玩家声称": [], "推断": []}
+         for entry in memory_entries[-6:]:
+@@ -668,6 +757,7 @@
+ 
+     def _rank_public_pressure(self, memory_entries: list[dict[str, Any]], public_state: Mapping[str, Any]) -> dict[str, Any]:
+         candidate_scores: dict[str, dict[str, Any]] = {}
++        target_features: dict[str, set[str]] = {}
+         conflicts: list[str] = []
+         vote_chain: list[str] = []
+         for entry in memory_entries[-6:]:
+@@ -688,8 +778,15 @@
+                         continue
+                     delta = 0
+                     if role == "target":
++                        features = target_features.setdefault(name, set())
++                        if any(word in lower for word in ("警徽", "sheriff", "badge", "归票", "带票", "强归", "冲票")):
++                            features.add("持警徽/强归票")
++                        if any(word in lower for word in ("遗言", "last_words", "死亡", "出局")) and any(word in lower for word in ("查杀", "狼", "wolf")):
++                            features.add("死亡遗言指向")
++                        if any(word in lower for word in ("预言家", "出局", "死亡", "遗言")) and any(word in lower for word in ("查杀", "狼", "wolf")):
++                            features.add("出局预言家查杀")
+                         if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "冲票", "带票", "矛盾", "反水")):
+-                            delta += 3
++                            delta += 2 if claim in {"查杀", "狼人"} and len(features) < 2 else 3
+                         elif any(word in lower for word in ("票", "vote", "投", "怀疑", "死亡", "身份")):
+                             delta += 1
+                         if any(word in lower for word in ("金水", "可信", "好人", "站边", "支持", "清白")):
+@@ -707,6 +804,13 @@
+                     bucket["score"] += delta
+                     if len(bucket["evidence"]) < 2:
+                         bucket["evidence"].append(self._truncate_text(f"{entry_label} {record_text}", 78))
++        for name, features in target_features.items():
++            combo = {"持警徽/强归票", "出局预言家查杀", "死亡遗言指向"} & features
++            if len(combo) >= 2:
++                bucket = candidate_scores.setdefault(name, {"score": 0, "evidence": []})
++                bucket["score"] += 4
++                if len(bucket["evidence"]) < 2:
++                    bucket["evidence"].append("组合反证:" + "/".join(sorted(combo)))
+         top = sorted(candidate_scores.items(), key=lambda item: (-int(item[1]["score"]), str(item[0])))
+         return {
+             "conflicts": self._dedupe_preserve_order(conflicts)[:2],
+@@ -774,6 +878,7 @@
+         score = 0
+         reasons: list[str] = []
+         evidence: set[str] = set()
++        combo_features: set[str] = set()
+         seen_rounds: set[str] = set()
+         for entry in memory_entries[-8:]:
+             entry_label = self._public_memory_label(entry)
+@@ -796,11 +901,17 @@
+                 matched_this_entry = True
+                 delta = 0
+                 if target and _text_mentions_token(target, target_token):
++                    if any(word in lower for word in ("警徽", "sheriff", "badge", "归票", "带票", "强归", "冲票")):
++                        combo_features.add("持警徽/强归票")
++                    if any(word in lower for word in ("遗言", "last_words", "死亡", "出局")) and any(word in lower for word in ("查杀", "狼", "wolf")):
++                        combo_features.add("死亡遗言持续指向")
++                    if any(word in lower for word in ("预言家", "出局", "死亡", "遗言")) and any(word in lower for word in ("查杀", "狼", "wolf")):
++                        combo_features.add("出局预言家查杀")
+                     if str(record.get("source") or "") == "fact" and any(word in lower for word in ("wolf", "狼人", "狼")):
+                         delta += 5
+                         evidence.add("引擎公开身份")
+                     elif any(word in lower for word in ("查杀", "验出狼", "狼", "对跳", "假", "伪", "冲票", "带票", "矛盾", "反水", "带节奏")):
+-                        delta += 4
++                        delta += 2 if claim in {"查杀", "狼人"} and not (combo_features & {"死亡遗言持续指向", "出局预言家查杀"}) else 4
+                         evidence.add("身份/查验冲突")
+                     elif any(word in lower for word in ("票", "vote", "投", "归票", "怀疑", "出局")):
+                         delta += 2
+@@ -815,8 +926,8 @@
+                     else:
+                         delta += 1
+                         evidence.add("身份声称")
+-                if claim and _text_mentions_token(target, target_token) and claim in ("查杀", "death_claim"):
+-                    delta += 2 if claim == "查杀" else 1
++                if claim and target and _text_mentions_token(target, target_token) and claim in ("查杀", "狼人", "death_claim"):
++                    delta += 1 if claim in {"查杀", "狼人"} else 1
+                     evidence.add("玩家查验/死亡声称")
+                 if target_token in lower and any(word in lower for word in ("平安夜", "死了", "死亡", "被杀")):
+                     delta += 2
+@@ -832,6 +943,11 @@
+             if matched_this_entry and entry_label not in seen_rounds:
+                 seen_rounds.add(entry_label)
+                 score += 1
++        if len({"持警徽/强归票", "出局预言家查杀", "死亡遗言持续指向"} & combo_features) >= 2:
++            score += 5
++            evidence.add("警徽/遗言/查验组合反证")
++            if len(reasons) < 3:
++                reasons.append("目标同时触发" + "/".join(sorted(combo_features)))
+         score = max(score, 0)
+         if not reasons:
+             reasons.append("公开记忆里缺少强关联")
+--- hunter-n00104/task.md
++++ hunter-n00130/task.md
+@@ -12,8 +12,22 @@
+ 
+ ## 公开发言规则
+ - 活着时保持自然的好人视角，回应当下争议，但必须落到具体人名、具体票型或具体身份冲突上。
+-- 不必急于自证身份；如果需要表态，用简短、可信、基于公开信息的话说明立场，并点出你在看谁、为什么。
+ - 禁止把“先听一圈”“普通牌”“没什么花活”“看情况再说”这类空话当作常规发言；它们只能作为过渡，不能作为主要内容。
+ - 猎人反应阶段先列合法目标，再按“身份可信度 / 票型一致性 / 连锁风险”比较；证据不足优先 pass / skip / wait，但中后期有多来源强证据时应积极开枪，不能因保守习惯默认跳过。
+ - 所有查验、金水、查杀、遗言和身份都要注明是引擎公开事实还是玩家声称；玩家声称必须用后续票型、死亡和对跳交叉验证，不能直接当事实。
+ - 不要把没有发生的猎人反应、开枪结果或身份结论写成系统事实。
++
++## 猎人身份暴露纪律
++- 默认不要在警长竞选、普通白天发言中主动说自己是“猎人 / 有枪 / 硬牌”，也不要用猎人身份压人。
++- 只有三种情况可以公开猎人身份：自己正被多人集中放逐且需要自证、有人与你发生假身份对跳、行动包已进入 hunter_reaction / 开枪反应。
++- 发言优先用票型、查验冲突、警徽归票链和遗言链说理；即使需要自证，也要简短并马上回到具体证据。
++
++## 预言家对跳复盘
++- 查杀、金水、警徽都只是玩家声称或公开状态，不等于真实阵营；不得只因“查杀比金水硬”或“拿到警徽”就站边。
++- 复盘对跳时必须同时检查：查验句式前后是否一致、被查杀者遗言是否反驳、持警徽者是否强归票、死亡玩家遗言是否重复同一查验链、跟票者是否形成异常同盟。
++- 若某人“持警徽强归票”且又被出局预言家查杀、被遗言持续指向或票型显示异常同盟，要显著提高其狼面；但单一来源查杀、单人空踩不能直接当作开枪或投票铁证。
++
++## 遗言事实约束
++- last_words 只能描述已经公开发生的事件、公开票型/死亡链、玩家声称，以及自己刚提交的行动；推断要明确说成推断。
++- 如果刚刚提交或公开了 hunter_shoot，必须承认已开枪并说明目标；不得说“枪没开成”“被毒走”等没有公开事件支持的话。
++- 如果无法确认开枪是否结算，只能说“我提交/考虑的目标是 X，结果看公开事件”，不要编造结果。

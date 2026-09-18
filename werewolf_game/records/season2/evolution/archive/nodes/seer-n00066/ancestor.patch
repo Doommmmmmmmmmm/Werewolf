@@ -1,0 +1,560 @@
+--- seer-n00025/task_agent.py
++++ seer-n00066/task_agent.py
+@@ -61,6 +61,7 @@
+     inspected: list[dict[str, str]] = field(default_factory=list)
+     declared_claims: list[dict[str, str]] = field(default_factory=list)
+     challenged_players: list[str] = field(default_factory=list)
++    announced_inspections: set[str] = field(default_factory=set)
+     seat_to_player_id: dict[str, str] = field(default_factory=dict)
+     player_to_seat: dict[str, str] = field(default_factory=dict)
+     recent_vote_summary: str = ""
+@@ -78,6 +79,7 @@
+         self.inspected.clear()
+         self.declared_claims.clear()
+         self.challenged_players.clear()
++        self.announced_inspections.clear()
+         self.seat_to_player_id.clear()
+         self.player_to_seat.clear()
+         self.recent_vote_summary = ""
+@@ -370,6 +372,7 @@
+         pieces = [render_action_contract(request)]
+         risk_mode = seer_brief.get("risk_mode") if isinstance(seer_brief, Mapping) else None
+         risk_active = bool(isinstance(risk_mode, Mapping) and risk_mode.get("active"))
++        public_plan = seer_brief.get("public_plan") if isinstance(seer_brief, Mapping) else None
+         if mode == "night_inspect":
+             pieces.append(
+                 "夜间优先验信息增益最高的目标：优先 sheriff 候选、强对跳、发言强但立场模糊者、票型关键位；"
+@@ -390,19 +393,41 @@
+             pieces.append(
+                 "投票优先级：查验事实 > 明显对跳/矛盾 > 票型关键位 > 其他怀疑对象；若正在被集火，优先选择能自保且不背离事实的票。"
+             )
++            if isinstance(public_plan, Mapping) and public_plan.get("vote_target_from_inspection"):
++                pieces.append(
++                    f"硬优先级：若 {public_plan['vote_target_from_inspection']} 仍合法存活且可投，必须投该查杀目标。"
++                )
+         else:
+             pieces.append(
+                 "保持 seer 视角：任何发言都要尽量围绕查验、对跳、票型和可验证推断，不要套通用狼人杀模板。"
+             )
+         if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
+-            pieces.append(
+-                "风险发言模式：只输出 1 个已知事实 + 1 个可验证投票方向；不要一次性摊开全部查验、全部名单或完整推理链。"
++            rule = (
++                "风险发言模式：只压缩推理，不隐藏查杀；若有未公开的 wolf 查验，"
++                "白天发言必须先报该查验，再给归票方向，不得用模糊理由替代查杀。"
+             )
++            if isinstance(public_plan, Mapping) and public_plan.get("must_announce"):
++                rule += f" 当前必须优先执行：{public_plan['must_announce']}。"
++            pieces.append(rule)
+         if seer_brief.get("facts"):
+-            facts = seer_brief["facts"]
++            facts = list(seer_brief["facts"])
+             if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
+-                facts = facts[:1]
++                wolf_facts = [fact for fact in facts if "=wolf" in fact or "查杀" in fact]
++                if wolf_facts:
++                    village_facts = [
++                        fact for fact in facts if fact not in wolf_facts and ("=village" in fact or "金水" in fact)
++                    ]
++                    facts = wolf_facts + village_facts[:1]
++                else:
++                    facts = facts[:2]
+             pieces.append("事实摘要：" + ";".join(facts))
++        if isinstance(public_plan, Mapping):
++            if public_plan.get("inspect_chain"):
++                pieces.append("查验链：" + ";".join(public_plan["inspect_chain"]))
++            if public_plan.get("must_announce"):
++                pieces.append("公开计划：" + str(public_plan["must_announce"]))
++            if public_plan.get("vote_target_from_inspection"):
++                pieces.append("查验归票：" + str(public_plan["vote_target_from_inspection"]))
+         if seer_brief.get("pressure_points"):
+             pieces.append("当前压力点：" + ";".join(seer_brief["pressure_points"]))
+         if seer_brief.get("self_risk"):
+@@ -809,15 +834,14 @@
+     def _summarize_dialogue(self, dialogue: Any) -> list[str]:
+         if not dialogue:
+             return []
+-        items: list[str] = []
+         if isinstance(dialogue, Mapping):
+             dialogue = [dialogue]
+         if not isinstance(dialogue, Sequence) or isinstance(dialogue, (str, bytes, bytearray)):
+             text = self._truncate_text(self._stringify(dialogue), _CURRENT_DIALOGUE_TEXT_LIMIT)
+             return [text] if text else []
+-        for item in dialogue:
+-            if len(items) >= _CURRENT_DIALOGUE_ITEM_LIMIT:
+-                break
++
++        items: list[dict[str, Any]] = []
++        for index, item in enumerate(dialogue):
+             if isinstance(item, Mapping):
+                 speaker = self._extract_single_player_id(
+                     item.get("speaker") or item.get("player_id") or item.get("id") or item.get("from")
+@@ -835,11 +859,63 @@
+             text = self._truncate_text(text.strip(), _CURRENT_DIALOGUE_TEXT_LIMIT)
+             if not text:
+                 continue
+-            if speaker:
+-                items.append(f"{speaker}:{text}")
++            items.append({"index": index, "speaker": speaker, "text": text})
++
++        if not items:
++            return []
++
++        total = len(items)
++        selected_indices: list[int] = []
++        anchor_indices = list(range(min(2, total)))
++        anchor_indices.extend(range(max(0, total - 4), total))
++        for index in anchor_indices:
++            if index not in selected_indices:
++                selected_indices.append(index)
++
++        keyword_tokens = (
++            self.player_id,
++            "预言家",
++            "查验",
++            "查杀",
++            "金水",
++            "对跳",
++            "归票",
++            "投票",
++            "票",
++            "质疑",
++        )
++        keyword_indices = [
++            item["index"]
++            for item in items
++            if any(token and token in item["text"] for token in keyword_tokens)
++            or item["speaker"] == self.player_id
++        ]
++        for index in keyword_indices:
++            if len(selected_indices) >= _CURRENT_DIALOGUE_ITEM_LIMIT:
++                break
++            if index not in selected_indices:
++                selected_indices.append(index)
++
++        if len(selected_indices) < _CURRENT_DIALOGUE_ITEM_LIMIT:
++            for index in range(total - 1, -1, -1):
++                if index in selected_indices:
++                    continue
++                selected_indices.append(index)
++                if len(selected_indices) >= _CURRENT_DIALOGUE_ITEM_LIMIT:
++                    break
++
++        selected_indices = sorted(set(selected_indices))
++        if len(selected_indices) > _CURRENT_DIALOGUE_ITEM_LIMIT:
++            selected_indices = selected_indices[:_CURRENT_DIALOGUE_ITEM_LIMIT]
++
++        summary: list[str] = []
++        for index in selected_indices:
++            item = items[index]
++            if item["speaker"]:
++                summary.append(f"{item['speaker']}:{item['text']}")
+             else:
+-                items.append(text)
+-        return items
++                summary.append(item["text"])
++        return summary
+ 
+     def _current_round_dialogue_tool_result(
+         self, turn_packet: Mapping[str, Any], current_dialogue: Any
+@@ -869,6 +945,8 @@
+                 }
+                 if entry["speaker"] or entry["claim"]:
+                     self._seer_memory.declared_claims.append(entry)
++            if speaker == self.player_id or (not speaker and any(marker in text for marker in ("我验", "我查", "验了", "验过", "查验"))):
++                self._record_announced_inspections_from_text(text)
+             challenge_targets = self._extract_explicit_challenge_targets(text)
+             if challenge_targets:
+                 if speaker:
+@@ -903,6 +981,23 @@
+         if targets:
+             return targets
+         return []
++
++    def _record_announced_inspections_from_text(self, text: str) -> None:
++        text = self._stringify(text).strip()
++        if not text:
++            return
++        targets = self._extract_player_ids(text)
++        if not targets:
++            return
++        result = ""
++        if any(token in text for token in ("查杀", "wolf", "狼人", "狼")):
++            result = "wolf"
++        elif any(token in text for token in ("金水", "好人", "村民", "平民", "village", "villager")):
++            result = "village"
++        if not result:
++            return
++        for target in targets:
++            self._seer_memory.announced_inspections.add(self._inspection_signature(target, result))
+ 
+     def _update_claims_and_challenges_from_packet(self, packet: Mapping[str, Any]) -> None:
+         claims = self._first_present(
+@@ -962,48 +1057,132 @@
+         )
+         if not isinstance(private, Mapping):
+             return
+-        target = self._extract_single_player_id(
+-            self._first_present(
+-                private,
++        records = self._extract_inspection_records(private)
++        for entry in records:
++            self._store_inspection_record(entry)
++
++    def _extract_inspection_records(self, value: Any, *, fallback_round: str = "") -> list[dict[str, str]]:
++        records: list[dict[str, str]] = []
++        seen: set[tuple[str, str, str]] = set()
++
++        def add_record(target: Any, result: Any, round_no: Any = fallback_round) -> None:
++            target_id = self._extract_single_player_id(target)
++            result_text = self._inspection_result_text(result)
++            round_text = self._stringify(round_no)
++            if not target_id or not result_text:
++                return
++            key = (target_id, result_text, round_text)
++            if key in seen:
++                return
++            seen.add(key)
++            records.append({"round": round_text, "target": target_id, "result": result_text})
++
++        def walk(node: Any) -> None:
++            if isinstance(node, Mapping):
++                target = self._extract_single_player_id(
++                    self._first_present(
++                        node,
++                        (
++                            ("inspect_target",),
++                            ("target_id",),
++                            ("target",),
++                            ("checked_player",),
++                            ("seer_target",),
++                        ),
++                    )
++                )
++                result_value = self._first_present(
++                    node,
++                    (
++                        ("inspect_result",),
++                        ("check_result",),
++                        ("seer_result",),
++                        ("night_result",),
++                        ("latest_result",),
++                        ("last_inspection",),
++                        ("last_result",),
++                        ("result",),
++                        ("team",),
++                    ),
++                )
++                if target and result_value is not None:
++                    add_record(
++                        target,
++                        result_value,
++                        self._first_present(node, (("round",), ("round_no",), ("day",))),
++                    )
++
++                for path in (
++                    ("inspections",),
++                    ("role_state", "inspections"),
++                    ("seer", "inspections"),
++                    ("latest_result",),
++                    ("last_inspection",),
++                    ("latest_inspection",),
++                    ("last_result",),
++                    ("seer_result",),
++                ):
++                    nested = self._first_present(node, (path,))
++                    if nested is not None:
++                        walk(nested)
++
++                for key, nested in node.items():
++                    key_target = self._extract_single_player_id(key)
++                    if key_target and self._inspection_result_text(nested):
++                        add_record(
++                            key_target,
++                            nested,
++                            self._first_present(node, (("round",), ("round_no",), ("day",))),
++                        )
++                    walk(nested)
++            elif isinstance(node, Sequence) and not isinstance(node, (str, bytes, bytearray)):
++                for item in node:
++                    walk(item)
++
++        walk(value)
++        return records
++
++    def _store_inspection_record(self, entry: Mapping[str, Any]) -> None:
++        target = self._stringify(entry.get("target"))
++        result = self._inspection_result_text(entry.get("result"))
++        round_no = self._stringify(entry.get("round"))
++        if not target or not result:
++            return
++        normalized = {"round": round_no, "target": target, "result": result}
++        for index, existing in enumerate(list(self._seer_memory.inspected)):
++            if self._stringify(existing.get("target")) == target:
++                if self._stringify(existing.get("result")) == result and self._stringify(existing.get("round")) == round_no:
++                    break
++                self._seer_memory.inspected.pop(index)
++                break
++        self._seer_memory.inspected.append(normalized)
++
++    def _inspection_result_text(self, value: Any) -> str:
++        if isinstance(value, Mapping):
++            candidate = self._first_present(
++                value,
+                 (
+-                    ("inspect_target",),
+-                    ("target_id",),
+-                    ("target",),
+-                    ("checked_player",),
+-                    ("seer_target",),
++                    ("inspect_result",),
++                    ("check_result",),
++                    ("seer_result",),
++                    ("night_result",),
++                    ("latest_result",),
++                    ("last_inspection",),
++                    ("last_result",),
++                    ("result",),
++                    ("team",),
+                 ),
+             )
+-        )
+-        result_value = self._first_present(
+-            private,
+-            (
+-                ("inspect_result",),
+-                ("check_result",),
+-                ("seer_result",),
+-                ("night_result",),
+-                ("result",),
+-            ),
+-        )
+-        if not target and not result_value:
+-            return
+-        result_text = self._inspection_result_text(result_value)
+-        if not result_text:
+-            return
+-        round_no = self._seer_memory.round_no
+-        if target:
+-            entry = {"round": round_no, "target": target, "result": result_text}
+-            if entry not in self._seer_memory.inspected:
+-                self._seer_memory.inspected.append(entry)
+-
+-    def _inspection_result_text(self, value: Any) -> str:
++            if candidate is not None:
++                value = candidate
+         text = self._truncate_text(self._stringify(value), _SUMMARY_TEXT_LIMIT)
+         if not text:
+             return ""
+         normalized = text.lower()
+         if any(token in normalized for token in ("wolf", "werewolf", "evil", "狼", "bad")):
+             return "wolf"
+-        if any(token in normalized for token in ("villager", "good", "human", "好人", "村民", "平民")):
+-            return "villager"
++        if any(token in normalized for token in ("village", "villager", "good", "human", "好人", "村民", "平民")):
++            return "village"
+         return text
+ 
+     def _build_seer_brief(self, turn_packet: Mapping[str, Any], mode: str) -> dict[str, Any]:
+@@ -1016,6 +1195,7 @@
+         pressure_points = self._pressure_points_summary(turn_packet)
+         self_risk = self._self_risk_summary(turn_packet)
+         risk_mode = self._risk_mode_summary(turn_packet, mode, self_risk)
++        public_plan = self._public_plan_summary(turn_packet, target_candidates)
+         brief: dict[str, Any] = {
+             "mode": mode,
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+@@ -1023,6 +1203,7 @@
+             "pressure_points": pressure_points,
+             "self_risk": self_risk,
+             "risk_mode": risk_mode,
++            "public_plan": public_plan,
+         }
+         if preferred_targets:
+             brief["preferred_targets"] = preferred_targets[:_SUMMARY_LIST_LIMIT]
+@@ -1031,14 +1212,16 @@
+ 
+     def _seer_facts_summary(self) -> list[str]:
+         facts: list[str] = []
+-        for item in self._seer_memory.inspected[-_SUMMARY_LIST_LIMIT:]:
++        for item in self._ordered_inspection_entries():
+             if not isinstance(item, Mapping):
+                 continue
+-            round_no = self._stringify(item.get("round"))
+             target = self._stringify(item.get("target"))
+             result = self._stringify(item.get("result"))
+             if target and result:
+-                facts.append(f"{round_no + '轮' if round_no else '查验'}{target}={result}")
++                label = "查杀" if result == "wolf" else "金水" if result == "village" else "查验"
++                signature = self._inspection_signature(target, result)
++                suffix = "（已报）" if signature in self._seer_memory.announced_inspections else ""
++                facts.append(f"{label} {target}={result}{suffix}")
+         if self._seer_memory.sheriff_id:
+             facts.append(f"警长/队长位：{self._seer_memory.sheriff_id}")
+         if self._seer_memory.recent_vote_summary:
+@@ -1079,6 +1262,119 @@
+             return "信息竞争激烈：要把查验事实尽快转成压票点。"
+         return "常规风险：优先保留信息优势，不要过度展开。"
+ 
++    def _self_has_public_seer_claim(self) -> bool:
++        for claim in self._seer_memory.declared_claims:
++            if not isinstance(claim, Mapping):
++                continue
++            if self._stringify(claim.get("speaker")) != self.player_id:
++                continue
++            claim_text = self._stringify(claim.get("claim"))
++            if "预言家" in claim_text or any(token in claim_text for token in ("查验", "查杀", "金水")):
++                return True
++        return False
++
++    def _inspection_pressure_from_dialogue(self) -> bool:
++        demand_speakers: set[str] = set()
++        demand_tokens = ("报验", "报查验", "完整查验", "查验链", "交代查验", "查杀", "金水", "对跳", "归票")
++        for line in self._seer_memory.dialogue_digest:
++            if not line:
++                continue
++            speaker = ""
++            text = line
++            if ":" in line:
++                speaker, text = line.split(":", 1)
++                speaker = self._extract_single_player_id(speaker.strip()) or speaker.strip()
++            if any(token in text for token in demand_tokens):
++                demand_speakers.add(speaker or self._speaker_from_text(text) or text)
++        return len(demand_speakers) >= 2
++
++    def _inspection_signature(self, target: str, result: str) -> str:
++        return f"{self._stringify(target)}={self._stringify(result)}"
++
++    def _round_sort_value(self, round_no: Any) -> int:
++        text = self._stringify(round_no)
++        match = re.search(r"\d+", text)
++        if match:
++            try:
++                return int(match.group(0))
++            except ValueError:
++                return 0
++        return 0
++
++    def _ordered_inspection_entries(self) -> list[dict[str, str]]:
++        entries: list[dict[str, str]] = []
++        for item in self._seer_memory.inspected:
++            if not isinstance(item, Mapping):
++                continue
++            target = self._stringify(item.get("target"))
++            result = self._inspection_result_text(item.get("result"))
++            if not target or not result:
++                continue
++            entries.append(
++                {
++                    "round": self._stringify(item.get("round")),
++                    "target": target,
++                    "result": result,
++                }
++            )
++        entries.sort(key=self._inspection_sort_key)
++        return entries
++
++    def _inspection_sort_key(self, item: Mapping[str, Any]) -> tuple[int, int, int, int, str]:
++        target = self._stringify(item.get("target"))
++        result = self._stringify(item.get("result"))
++        signature = self._inspection_signature(target, result)
++        result_rank = 0 if result == "wolf" else 1 if result == "village" else 2
++        alive_rank = 0 if target in self._seer_memory.alive else 1
++        announced_rank = 1 if signature in self._seer_memory.announced_inspections else 0
++        round_rank = -self._round_sort_value(item.get("round"))
++        return (result_rank, announced_rank, alive_rank, round_rank, target)
++
++    def _public_plan_summary(self, turn_packet: Mapping[str, Any], allowed_targets: Sequence[str]) -> dict[str, Any]:
++        del turn_packet
++        ordered = self._ordered_inspection_entries()
++        allowed = {target for target in self._unique_stable(allowed_targets) if target}
++        inspect_chain = [self._inspection_fact_text(entry) for entry in ordered if self._inspection_fact_text(entry)]
++        vote_target = ""
++        vote_entry: dict[str, str] | None = None
++        for entry in ordered:
++            if self._stringify(entry.get("result")) != "wolf":
++                continue
++            target = self._stringify(entry.get("target"))
++            if not target:
++                continue
++            if self._seer_memory.alive and target not in self._seer_memory.alive:
++                continue
++            if allowed and target not in allowed:
++                continue
++            vote_target = target
++            vote_entry = entry
++            break
++        must_announce = ""
++        if vote_entry is not None:
++            signature = self._inspection_signature(vote_entry.get("target", ""), vote_entry.get("result", ""))
++            if signature not in self._seer_memory.announced_inspections:
++                must_announce = f"先报 {vote_target}=wolf，再归票 {vote_target}"
++            else:
++                must_announce = f"围绕 {vote_target}=wolf 继续压票"
++        elif inspect_chain:
++            must_announce = "先报查验链，再给归票方向"
++        return {
++            "inspect_chain": inspect_chain[:_SUMMARY_LIST_LIMIT],
++            "must_announce": must_announce,
++            "vote_target_from_inspection": vote_target,
++        }
++
++    def _inspection_fact_text(self, item: Mapping[str, Any]) -> str:
++        target = self._stringify(item.get("target"))
++        result = self._stringify(item.get("result"))
++        if not target or not result:
++            return ""
++        label = "查杀" if result == "wolf" else "金水" if result == "village" else "查验"
++        signature = self._inspection_signature(target, result)
++        suffix = "（已报）" if signature in self._seer_memory.announced_inspections else ""
++        return f"{label} {target}={result}{suffix}"
++
+     def _self_is_under_pressure(self, turn_packet: Mapping[str, Any]) -> bool:
+         phase = self._extract_phase(turn_packet).lower()
+         channel = str((turn_packet.get("request") or {}).get("channel") or "").lower()
+@@ -1092,7 +1388,11 @@
+         self, turn_packet: Mapping[str, Any], mode: str, self_risk: str
+     ) -> dict[str, Any]:
+         under_pressure = self._self_is_under_pressure(turn_packet)
+-        if not under_pressure:
++        claimed_seer = self._self_has_public_seer_claim()
++        sheriff_control = self._seer_memory.sheriff_id == self.player_id
++        inspection_pressure = self._inspection_pressure_from_dialogue()
++        risk_active = under_pressure or claimed_seer or sheriff_control or inspection_pressure
++        if not risk_active:
+             return {
+                 "active": False,
+                 "level": "normal",
+@@ -1104,14 +1404,14 @@
+                 "active": True,
+                 "level": "high",
+                 "mode": mode,
+-                "rule": "只说 1 个已知事实 + 1 个可验证投票方向；不要一次性公开全部查验。",
++                "rule": "公开查杀优先：只压缩推理，不隐藏查杀和最新结果；若有未公开 wolf 查验，先报该查验再归票。",
+                 "self_risk": self_risk,
+             }
+         return {
+             "active": True,
+             "level": "medium",
+             "mode": mode,
+-            "rule": "保持发言克制，优先用最小事实集推动投票。",
++            "rule": "保持发言克制，但查杀和最新查验必须先公开，其他推理可压缩。",
+             "self_risk": self_risk,
+         }
+ 
+@@ -1280,6 +1580,7 @@
+             "challenged_players": self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT],
+             "recent_vote_summary": self._seer_memory.recent_vote_summary,
+             "dialogue_digest": self._seer_memory.dialogue_digest[-_SUMMARY_LIST_LIMIT:],
++            "announced_inspections": sorted(self._seer_memory.announced_inspections)[-_SUMMARY_LIST_LIMIT:],
+         }
+         return memory
+ 
+--- seer-n00025/task.md
++++ seer-n00066/task.md
+@@ -31,4 +31,5 @@
+ - 不要编造没有收到的查验结果。
+ - 不要忽视生存风险；必要时先短发言、后补证据。
+ - 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先短发言并只释放足够推动投票的最小事实集，而不是一次性展开全部查验。
++- 已公开跳预言家或持警徽后，查到狼时白天必须先公开查杀和轮次；风险控制只压缩推理，不隐藏查杀。发言格式优先：查验链 -> 今日归票 -> 反驳当前误传。
+ - 预言家的价值在于把真信息变成公共压力，而不是单纯报身份。

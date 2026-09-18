@@ -1,0 +1,470 @@
+--- wolf-n00043/task_agent.py
++++ wolf-n00134/task_agent.py
+@@ -210,6 +210,10 @@
+             "death_order": [],
+             "recent_votes": [],
+             "wolf_plan": None,
++            "resolved_night_memory": [],
++            "_last_observe_round": None,
++            "_last_observe_phase": None,
++            "_last_observe_dead_players": [],
+             "_claim_state": {},
+             "_vote_state": {},
+             "_dead_state": [],
+@@ -233,6 +237,21 @@
+         summary = self._summarize_sync_packet(sync_packet)
+         if not summary:
+             return
++
++        previous_phase = self._game_memory.get("_last_observe_phase")
++        previous_dead = {
++            str(item) for item in (self._game_memory.get("_last_observe_dead_players") or [])
++        }
++        new_dead = {
++            str(item)
++            for item in (
++                summary.get("dead_players")
++                if "dead_players" in summary
++                else (self._game_memory.get("dead_players") or [])
++            )
++        }
++        if self._is_night_phase(previous_phase) and self._is_day_phase(summary.get("phase")):
++            self._resolve_night_result(previous_dead, new_dead, summary)
+ 
+         self._update_public_ledger(sync_packet, summary)
+ 
+@@ -254,6 +273,10 @@
+ 
+         self._public_history.append(summary)
+         self._public_history = self._public_history[-_MAX_HISTORY_ITEMS:]
++        self._game_memory["_last_observe_round"] = summary.get("round")
++        self._game_memory["_last_observe_phase"] = summary.get("phase")
++        if "dead_players" in summary:
++            self._game_memory["_last_observe_dead_players"] = list(summary.get("dead_players") or [])
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -318,6 +341,12 @@
+                 self._record_self_action(turn_packet, action)
+                 return action
+             if _attempt >= self.max_decision_retries:
++                # target_id 只在模型已经失败时做本地确定性修复；正常合法决策不受影响。
++                if "target_id" in error:
++                    repaired = self._repair_illegal_target(action, turn_packet["request"], prompt)
++                    if repaired is not None and decision_error(repaired, turn_packet["request"]) is None:
++                        self._record_self_action(turn_packet, repaired)
++                        return repaired
+                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+                 # Runner 可将该行动存入管理员审计记录，便于定位 schema / 长度等问题，
+                 # 而不会泄露给公开记录。
+@@ -327,6 +356,64 @@
+                     validation_error=error,
+                 )
+             feedback = f"上一次行动未通过校验：{error}"
++
++    def _repair_illegal_target(
++        self,
++        action: Mapping[str, Any],
++        request: Mapping[str, Any],
++        prompt: Mapping[str, Any],
++    ) -> dict[str, Any] | None:
++        """只修复非法目标，保留模型选择的 kind、文本和请求绑定字段。"""
++
++        allowed = next(
++            (item for item in request.get("allowed_actions", [])
++             if isinstance(item, Mapping) and item.get("kind") == action.get("kind")),
++            None,
++        )
++        if not isinstance(allowed, Mapping):
++            return None
++        valid = [str(item) for item in (allowed.get("target_ids") or []) if item is not None]
++        if not valid:
++            return None
++        state = prompt.get("decision_state", {}) if isinstance(prompt, Mapping) else {}
++        strategy = state.get("wolf_strategy", {}) if isinstance(state, Mapping) else {}
++        request_phase = str(request.get("phase") or "").lower()
++        request_channel = str(request.get("channel") or "").lower()
++        is_night = self._is_night_phase(request_phase) or any(
++            token in request_channel for token in ("night", "wolf", "夜")
++        )
++        preferred: list[str] = []
++        if is_night and isinstance(strategy, Mapping):
++            locked = strategy.get("locked_plan")
++            if isinstance(locked, Mapping):
++                preferred.extend(
++                    str(locked[key]) for key in ("primary_target_id", "backup_target_id")
++                    if locked.get(key) is not None
++                )
++            order = strategy.get("candidate_order")
++            if isinstance(order, list):
++                preferred.extend(
++                    str(item.get("player_id")) for item in order
++                    if isinstance(item, Mapping) and item.get("player_id") is not None
++                )
++        elif isinstance(strategy, Mapping):
++            focus = strategy.get("day_focus")
++            if isinstance(focus, Mapping):
++                obj = focus.get("object")
++                if isinstance(obj, Mapping) and obj.get("player_id") is not None:
++                    preferred.append(str(obj["player_id"]))
++                order = focus.get("candidate_order")
++                if isinstance(order, list):
++                    preferred.extend(
++                        str(item.get("player_id")) for item in order
++                        if isinstance(item, Mapping) and item.get("player_id") is not None
++                    )
++        target = next((item for item in preferred if item in valid), valid[0])
++        repaired = dict(action)
++        repaired["request_id"] = request.get("request_id", action.get("request_id"))
++        repaired["player_id"] = request.get("player_id", action.get("player_id"))
++        repaired["target_id"] = target
++        return repaired
+ 
+     def agent_manifest(self) -> dict[str, Any]:
+         return {
+@@ -425,6 +512,49 @@
+             self._recent_self_texts = self._recent_self_texts[-_MAX_HISTORY_ITEMS:]
+         self._self_history.append(summary)
+         self._self_history = self._self_history[-_MAX_HISTORY_ITEMS:]
++
++    @staticmethod
++    def _is_night_phase(phase: Any) -> bool:
++        value = str(phase or "").lower()
++        return "night" in value or "夜" in value
++
++    @staticmethod
++    def _is_day_phase(phase: Any) -> bool:
++        value = str(phase or "").lower()
++        return "day" in value or "昼" in value or "白天" in value
++
++    def _resolve_night_result(
++        self,
++        previous_dead: set[str],
++        current_dead: set[str],
++        summary: Mapping[str, Any],
++    ) -> None:
++        plan = self._game_memory.get("wolf_plan")
++        if not isinstance(plan, Mapping):
++            return
++        primary = plan.get("primary_target_id")
++        backup = plan.get("backup_target_id")
++        new_deaths = sorted(current_dead - previous_dead)
++        if not new_deaths:
++            result = "no_death"
++        elif primary is not None and str(primary) in new_deaths:
++            result = "primary_death"
++        else:
++            result = "other_death"
++        history = self._game_memory.setdefault("resolved_night_memory", [])
++        if not isinstance(history, list):
++            history = []
++            self._game_memory["resolved_night_memory"] = history
++        history.append(
++            {
++                "round": summary.get("round"),
++                "primary_target_id": str(primary) if primary is not None else None,
++                "backup_target_id": str(backup) if backup is not None else None,
++                "result": result,
++                "new_deaths": new_deaths[:4],
++            }
++        )
++        del history[:-4]
+ 
+     def _memory_snapshot(self) -> dict[str, Any]:
+         night_plan = self._game_memory.get("wolf_plan")
+@@ -448,6 +578,7 @@
+             "recent_public_texts": self._recent_public_texts[-3:],
+             "recent_self_texts": self._recent_self_texts[-2:],
+             "night_plan": night_plan,
++            "resolved_night_memory": self._game_memory.get("resolved_night_memory", [])[-3:],
+             "anti_template_notes": self._anti_template_notes(),
+         }
+         return snapshot
+@@ -499,13 +630,25 @@
+             preferred_keys=("role", "team", "identity", "faction", "ability"),
+         )
+         wolf_strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
++        game_memory = memory_snapshot.get("game") or {}
++        alive_ids = [str(item) for item in (game_memory.get("alive_players") or [])]
++        dead_set = {
++            str(item)
++            for item in (game_memory.get("dead_players") or []) + (game_memory.get("death_order") or [])
++        }
++        dead_ids = sorted(dead_set)
++        verified_claims = self._verified_public_claims(current_dialogue, memory_snapshot)
+         state_digest = {
+-            "alive_players": (memory_snapshot.get("game") or {}).get("alive_players", [])[-6:],
+-            "dead_players": (memory_snapshot.get("game") or {}).get("dead_players", [])[-4:],
+-            "sheriff_id": (memory_snapshot.get("game") or {}).get("sheriff_id"),
++            "alive_ids": alive_ids,
++            "dead_ids": dead_ids,
++            "forbidden_public_targets": dead_ids,
++            "last_deaths": [str(item) for item in (game_memory.get("death_order") or [])[-3:]],
++            "alive_players": alive_ids[-6:],
++            "dead_players": dead_ids[-4:],
++            "sheriff_id": game_memory.get("sheriff_id"),
+             "recent_votes": memory_snapshot.get("recent_vote_summary", [])[-2:],
+             "sheriff_changes": (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:],
+-            "death_order": (memory_snapshot.get("game") or {}).get("death_order", [])[-3:],
++            "verified_claims": verified_claims,
+             "recent_public_texts": memory_snapshot.get("recent_public_texts", [])[-2:],
+             "recent_self_texts": memory_snapshot.get("recent_self_texts", [])[-2:],
+         }
+@@ -516,7 +659,7 @@
+                 "self": self_state,
+                 "private_information": private_information,
+                 "state_digest": state_digest,
+-                "recent_dialogue": current_dialogue[-2:],
++                "recent_dialogue": current_dialogue[-3:],
+                 "case_summary": self._decision_case_summary(wolf_strategy),
+                 "wolf_strategy": wolf_strategy,
+             }
+@@ -583,6 +726,11 @@
+             return {
+                 "stage": "day",
+                 "objective": "先固定对象、证据类型、下一步动作，再用一句解释补齐本局新证据",
++                "hard_constraints": [
++                    "公开发言不得要求 dead_ids / forbidden_public_targets 中的玩家回答，也不得把他们作为今天可投对象",
++                    "引用跳身份、查杀、金水、互查杀只能来自 verified_claims 或 recent_dialogue 原文；否则只能说有人质疑、流传或我推测",
++                    "若证据 speaker 已死亡，只能复盘遗言或旧发言，随后转向当前存活玩家",
++                ],
+                 "must_include": ["对象", "证据类型", "下一步动作", "一句解释"],
+                 "day_focus": day_focus,
+                 "pressure_points": self._day_pressure_points(memory_snapshot),
+@@ -848,6 +996,10 @@
+             item = base_lookup[target]
+             score = int(item["score"])
+             reasons = [item["base_reason"]]
++            failure_penalty = self._recent_night_failure_penalty(target)
++            if failure_penalty:
++                score -= failure_penalty
++                reasons.append(f"上一夜无死亡降权{failure_penalty}")
+             if target == discussion_signal.get("consensus_target"):
+                 score += 12
+                 reasons.append("夜间最后一致目标")
+@@ -882,6 +1034,21 @@
+             {"player_id": item["player_id"], "reason": item["reason"]}
+             for item in adjusted[:3]
+         ]
++
++    def _recent_night_failure_penalty(self, target_id: str) -> int:
++        history = self._game_memory.get("resolved_night_memory") or []
++        if not isinstance(history, list):
++            return 0
++        consecutive = 0
++        for entry in reversed(history):
++            if not isinstance(entry, Mapping) or entry.get("result") != "no_death":
++                break
++            if str(entry.get("primary_target_id")) != str(target_id):
++                break
++            consecutive += 1
++        if consecutive >= 2:
++            return 12
++        return 6 if consecutive == 1 else 0
+ 
+     def _score_target(
+         self,
+@@ -943,6 +1110,68 @@
+             reasons.append("默认公共威胁")
+         return score, ",".join(reasons[:3])
+ 
++    def _verified_public_claims(
++        self,
++        current_dialogue: list[dict[str, Any]],
++        memory_snapshot: Mapping[str, Any],
++    ) -> list[dict[str, Any]]:
++        """只从可见原文抽取保守身份事实，绝不把流言结构化成声明。"""
++
++        game = memory_snapshot.get("game") or {}
++        known_ids = {
++            str(item)
++            for item in (game.get("alive_players") or []) + (game.get("dead_players") or [])
++        }
++        claims: list[dict[str, Any]] = []
++        role_patterns = (
++            ("seer", ("预言家",)),
++            ("guard", ("守卫",)),
++            ("witch", ("女巫",)),
++            ("hunter", ("猎人",)),
++            ("villager", ("平民",)),
++        )
++        for item in current_dialogue[-5:]:
++            if not isinstance(item, Mapping):
++                continue
++            speaker = item.get("speaker") or item.get("player_id") or item.get("from")
++            text = item.get("text") or item.get("content") or item.get("message")
++            if speaker is None or not text:
++                continue
++            source = self._clip_text(str(text), _MAX_SNIPPET_LENGTH)
++            # 当前已知玩家 ID 优先，pN 是回放和行动包中常见的通用形式。
++            mentions = set(known_ids)
++            mentions.update(re.findall(r"(?<![\w])p\d+(?![\w])", source, flags=re.IGNORECASE))
++            target_after = lambda keyword: next(
++                (pid for pid in sorted(mentions, key=len, reverse=True)
++                 if re.search(re.escape(keyword) + r"[^。；，,：:]{0,12}" + re.escape(pid), source, re.IGNORECASE)),
++                None,
++            )
++            if "不是" not in source and any(
++                marker in source for marker in ("我是", "我跳", "跳预言家", "跳守卫", "跳女巫", "跳猎人")
++            ):
++                for claim_type, roles in role_patterns:
++                    if any(role in source for role in roles):
++                        claims.append(
++                            {"speaker": str(speaker), "claim_type": claim_type, "target_id": None, "source_text": source}
++                        )
++                        break
++            for keyword, claim_type in (("查杀", "查杀"), ("金水", "金水")):
++                if keyword in source:
++                    claims.append(
++                        {
++                            "speaker": str(speaker),
++                            "claim_type": claim_type,
++                            "target_id": target_after(keyword),
++                            "source_text": source,
++                        }
++                    )
++            if "对跳" in source and any(role in source for _, roles in role_patterns for role in roles):
++                claims.append(
++                    {"speaker": str(speaker), "claim_type": "对跳", "target_id": None, "source_text": source}
++                )
++        # 同一原文可能同时命中多个保守关键词，保留最近几条即可。
++        return claims[-5:]
++
+     def _select_day_focus(
+         self,
+         turn_packet: Mapping[str, Any],
+@@ -952,14 +1181,22 @@
+     ) -> dict[str, Any]:
+         public_state = turn_packet.get("public_state")
+         records = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
++        game_memory = memory_snapshot.get("game") or {}
++        alive_ids = {str(item) for item in (game_memory.get("alive_players") or [])}
++        dead_ids = {
++            str(item)
++            for item in (game_memory.get("dead_players") or []) + (game_memory.get("death_order") or [])
++        }
+         candidates: list[dict[str, Any]] = []
+         for pid, record in records.items():
+-            if pid == self.player_id:
++            if pid == self.player_id or pid in dead_ids:
++                continue
++            if alive_ids and pid not in alive_ids:
++                continue
++            if self._is_alive_record(record) is False:
+                 continue
+             score = 0
+             reasons: list[str] = []
+-            if self._is_alive_record(record) is False:
+-                continue
+             if record.get("is_sheriff") or record.get("sheriff"):
+                 score += 8
+                 reasons.append("警长位")
+@@ -990,7 +1227,7 @@
+                     "player_id": pid,
+                     "score": score,
+                     "reason": ",".join(reasons[:3]) if reasons else "默认公共压力",
+-                    "claim": claim_text,
++                    "claim": None,
+                 }
+             )
+         candidates.sort(key=lambda item: (-int(item["score"]), self._seat_sort_value(records.get(item["player_id"], {}), item["player_id"]), item["player_id"]))
+@@ -1030,11 +1267,30 @@
+         current_dialogue: list[dict[str, Any]],
+     ) -> dict[str, Any]:
+         ledger = memory_snapshot.get("public_ledger") or {}
+-        if target_id and target_id in records:
+-            record = records[target_id]
+-            claim_text = self._public_claim_text(record)
+-            if claim_text:
+-                return {"kind": "claim", "text": f"{target_id}公开身份:{claim_text}"}
++        game_memory = memory_snapshot.get("game", {})
++        dead_ids = {
++            str(item)
++            for item in (game_memory.get("dead_players") or []) + (game_memory.get("death_order") or [])
++        }
++        verified_claims = self._verified_public_claims(current_dialogue, memory_snapshot)
++        if target_id:
++            for claim in reversed(verified_claims):
++                if str(claim.get("speaker")) == str(target_id) or str(claim.get("target_id")) == str(target_id):
++                    speaker = str(claim.get("speaker"))
++                    if speaker in dead_ids:
++                        return {
++                            "kind": "dead_dialogue",
++                            "text": f"遗言/旧发言 {speaker}:{claim.get('source_text')}",
++                            "speaker": speaker,
++                            "speaker_alive": False,
++                        }
++                    return {
++                        "kind": "claim",
++                        "text": f"{speaker}原话:{claim.get('source_text')}",
++                        "verified_claim": claim,
++                        "speaker": speaker,
++                        "speaker_alive": True,
++                    }
+             for entry in (ledger.get("votes") or [])[-4:]:
+                 if entry.get("player_id") == target_id or entry.get("voter") == target_id or entry.get("target_id") == target_id:
+                     return {"kind": "vote", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
+@@ -1048,9 +1304,19 @@
+             speaker = item.get("speaker") or item.get("player_id") or item.get("from")
+             text = item.get("text") or item.get("content") or item.get("message")
+             if speaker is not None and text:
++                speaker_id = str(speaker)
++                if speaker_id in dead_ids:
++                    return {
++                        "kind": "dead_dialogue",
++                        "text": f"遗言/旧发言 {speaker_id}:{self._clip_text(str(text), 40)}",
++                        "speaker": speaker_id,
++                        "speaker_alive": False,
++                    }
+                 return {
+                     "kind": "dialogue",
+-                    "text": f"{speaker}:{self._clip_text(str(text), 40)}",
++                    "text": f"{speaker_id}:{self._clip_text(str(text), 40)}",
++                    "speaker": speaker_id,
++                    "speaker_alive": True,
+                 }
+         return {"kind": "fallback", "text": "用当前公开信息补一条最具体的链条"}
+ 
+@@ -1062,6 +1328,7 @@
+             "sheriff": "围绕警徽链转向，先解释传递再站边",
+             "death": "用死亡顺序重排站边，避免空泛表态",
+             "dialogue": "先围绕这句发言做定点追问",
++            "dead_dialogue": "复盘其遗言或旧发言，再转向当前存活的受益者",
+         }
+         return mapping.get(evidence_kind or "", "先把对象、证据和动作说完整，再决定站边")
+ 
+@@ -1083,6 +1350,11 @@
+         recent_votes = memory_snapshot.get("recent_vote_summary") or []
+         if recent_votes:
+             notes.append("结合最近票型收敛刀口")
++        resolved = memory_snapshot.get("resolved_night_memory") or []
++        if resolved and isinstance(resolved[-1], Mapping) and resolved[-1].get("result") == "no_death":
++            old_primary = resolved[-1].get("primary_target_id")
++            if old_primary:
++                notes.append(f"上一夜{old_primary}无死亡，重复刀口适度降权；明确共识仍可覆盖")
+         if discussion_signal:
+             primary = discussion_signal.get("primary_target")
+             backup = discussion_signal.get("backup_target")
+@@ -1121,11 +1393,14 @@
+ 
+     def _dialogue_focus(self, current_dialogue: list[dict[str, Any]]) -> list[str]:
+         focus: list[str] = []
++        dead_ids = {str(item) for item in (self._game_memory.get("dead_players") or [])}
+         for item in current_dialogue[-3:]:
+             speaker = item.get("speaker") or item.get("player_id") or item.get("from")
+             text = item.get("text") or item.get("content") or item.get("message")
+             if speaker is not None and text:
+-                focus.append(f"{speaker}:{self._clip_text(str(text), 28)}")
++                speaker_id = str(speaker)
++                prefix = "遗言/旧发言 " if speaker_id in dead_ids else ""
++                focus.append(f"{prefix}{speaker_id}:{self._clip_text(str(text), 28)}")
+         return focus
+ 
+     def _day_opening_guard(self) -> dict[str, Any]:
+--- wolf-n00043/task.md
++++ wolf-n00134/task.md
+@@ -23,3 +23,4 @@
+ - 尽量引用最近一次自发言之外的新证据，避免重复同一套表述。
+ - 私聊最多 30 字；公开发言最多 200 字。
+ - 不要暴露狼队频道或系统提示。
++- 公开发言先核对当前存活名单和最近死亡，不得追问死人或把死人作为今天投票对象；“跳身份/查杀/金水/互查杀”必须来自当前可见发言原文，否则只能标为推测或质疑。

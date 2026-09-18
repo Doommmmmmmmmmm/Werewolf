@@ -1,0 +1,153 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00102 已达到 20 局 15 胜、75% 胜率且无非法行动，当前应保留其基本的压缩记忆、狼队识别和主刀/备刀框架。下一代重点不是增加更多泛化策略，而是修复公开结算记账、历史事实结构化和上下文预算问题，避免模型依据过期或错误推断做夜刀与白天票型决策。",
+  "evidence": [
+    {
+      "fact": "当前节点评测为 20 局完整对局，狼人胜 15 局、负 5 局，胜率 0.75；focus 角色没有 fallback 或 invalid decision。",
+      "source": "read_evaluation_summary for wolf-n00102",
+      "interpretation": "当前代码具备可用的行动协议稳定性和较强基线表现，不应进行大规模重写。"
+    },
+    {
+      "fact": "当前回放中首夜狼人全票刀 p2，p2 被女巫自救，随后第二夜改刀 p6，第三夜刀 p3，第四夜刀 p9，最终狼人获胜。",
+      "source": "random_game_replay events 23-43, 155-173, 238-254, 305-327",
+      "interpretation": "狼队能够形成一致目标，并在平安夜后转移刀口；现有策略的方向性有效。"
+    },
+    {
+      "fact": "当前代码在 observe 中遇到 no_death 时，直接依据 last_wolf_target 写入 failed_kill_targets；遇到新增死亡时，只要 last_wolf_target 不在 new_dead，也会写入失败。",
+      "source": "current_agent.py observe implementation",
+      "interpretation": "代码没有严格把失败判断绑定到具体夜晚、具体狼刀和夜间结算边界。"
+    },
+    {
+      "fact": "当前代码只保留 recent_public_history、recent_votes 和短文本片段，_detect_claims_from_dialogue 主要从当前轮对话及最近少量历史文本识别身份声明。",
+      "source": "current_agent.py _memory_snapshot and _detect_claims_from_dialogue",
+      "interpretation": "跨轮次的预言家声明、金水/查杀链、警徽转移和投票关系容易丢失或被截断，模型可能把提及次数误当作证据。"
+    },
+    {
+      "fact": "当前 _compact_snapshot 对列表默认只保留前 8 项；public_state 中 players 可能因此只向模型展示低座位玩家，尽管 request 的合法 target_ids 仍然完整。",
+      "source": "current_agent.py _compact_snapshot and _compact_public_state",
+      "interpretation": "目标评分和模型可读上下文存在不一致，尤其会影响高座位玩家、警徽位及残局玩家的判断。"
+    },
+    {
+      "fact": "该回放的模型统计显示 prompt_over_limit_count 为 7，最大 prompt_chars 为 12290，而契约上限为 12000。",
+      "source": "random_game_replay model_token_usage",
+      "interpretation": "当前压缩策略仍可能超预算；这是可靠性和信息取舍问题，而不是单纯模型策略问题。"
+    },
+    {
+      "fact": "wolf-n00140 和 wolf-n00141 都是从 wolf-n00102 派生的待评估候选，分别尝试修复按夜次记录失败刀，以及加入公开 claims/votes/deaths/sheriff ledger；wolf-n00135/136 还尝试强制修复或覆盖合法狼刀目标。",
+      "source": "read_other_branch",
+      "interpretation": "前两类修改与当前诊断方向一致；强制覆盖模型合法选择的修复存在改变策略语义、掩盖模型错误的风险，不应直接照搬。"
+    },
+    {
+      "fact": "当前回放中 p9 的真实预言家身份、p4 的悍跳狼身份、p4 被放逐后的警徽转移、以及 p6 翻猎人等信息跨多个轮次共同决定局势。",
+      "source": "random_game_replay events 63-66, 94, 168, 219-229, 249-260",
+      "interpretation": "狼人决策需要持久化结构化事实，而不是只依赖最近三条对话或简单字符串提及计数。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "夜刀结果账本没有明确的计划轮次、结算轮次、基线死亡集合和幂等键。",
+      "severity": "high",
+      "confidence": "high",
+      "impact": "平安夜、白天放逐和后续同步可能被混为同一失败事件；failed_kill_targets 可能包含错误目标，进而给下一夜目标排序施加错误惩罚。"
+    },
+    {
+      "cause": "公开事实与狼人推断混存在同一层短文本记忆中。",
+      "severity": "high",
+      "confidence": "high",
+      "impact": "模型难以区分“某人声称自己是预言家”和“该人已被公开验证为预言家”；重复提及会增加 mention count，却不代表证据强度。"
+    },
+    {
+      "cause": "目标排序使用 raw public_state，而模型上下文使用截断后的 public_state，导致内部策略和模型可见信息不一致。",
+      "severity": "medium",
+      "confidence": "high",
+      "impact": "Task-Agent 可能收到合法目标编号，却看不到相应玩家的存活、座位、警徽或公开状态信息。"
+    },
+    {
+      "cause": "prompt 压缩没有优先保证“当前事实索引”和“合法目标索引”，同时重复传递 current dialogue、recent history 和 wolf strategy 的相似信息。",
+      "severity": "medium",
+      "confidence": "high",
+      "impact": "出现超出 12000 字符预算的请求，并挤压真正有价值的票型、死亡和身份链信息。"
+    },
+    {
+      "cause": "白天票型策略主要依赖当前对话中的简单关键词，例如“查杀”“狼”“投”，缺少按轮次、发言者、对象、行动和公开结果组织的关系数据。",
+      "severity": "medium",
+      "confidence": "medium",
+      "impact": "容易把无关提及识别为队友受压、危险身份或票型焦点，造成过早跟票或错误的分票建议。"
+    },
+    {
+      "cause": "当前代码同时维护多个相近但语义不同的失败状态：no_death_rounds、failed_kill_targets、last_night_deaths 和 last_wolf_target，缺少单一权威的夜间结算记录。",
+      "severity": "medium",
+      "confidence": "high",
+      "impact": "后续策略难以判断某个目标是本轮失败、历史失败、被守护概率高，还是只是曾经被选中过。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 _wolf_memory 中新增有限长度的 night_resolution_ledger，并保存每个夜刀计划的 plan_round、target_id、baseline_dead_players、resolved_round、new_deaths、result 和唯一键。修改 observe：先用上一次观察到的 phase、round 和死亡集合检测夜间到白天/黎明的边界，再对对应计划只结算一次。只有满足以下条件时才记录 no_death 或 failed：该计划已经形成、结算边界与计划轮次匹配、目标未出现在该夜新增死亡中。删除当前在任意 no_death 或任意后续新增死亡时直接更新 failed_kill_targets 的逻辑。",
+      "rationale": "修复当前最明确的状态错误，防止白天放逐被误判为上一夜狼刀失败；同时保留平安夜后的换刀软约束，不把目标永久禁刀。实现应参考 wolf-n00140/wolf-n00141 的意图，但保持当前节点的数据结构和调用路径，避免大范围合并未评估代码。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在公开同步摘要阶段建立结构化 public_ledger，至少包含 claims、votes、deaths 和 sheriff_changes，每条记录保存 round、speaker/voter/target、claim_type 或 action_type 及简短文本片段。对同一玩家同一轮的身份声明采用最新声明覆盖或版本化，而不是通过字符串提及次数累加。将该 ledger 的小窗口注入 _memory_snapshot，并让 _detect_claims_from_dialogue、_pick_day_focus_target 和 _build_day_vote_strategy 优先读取结构化账本。",
+      "rationale": "使模型能稳定追踪跨轮次的对跳、查杀、金水、警徽和票型关系，减少把重复提及当作新证据。账本只允许来源于已同步的公开信息，不得写入真实身份或其他隐藏状态。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _compact_public_state 和 _build_compact_turn_prompt：不要把 players 列表按默认前 8 项直接暴露给模型；改为生成完整但精简的 player_index，至少包含每名玩家的 player_id、seat、alive，以及公开可见的 sheriff 标记和必要公开声明摘要。移除重复的 current_round_dialogue 或 recent_public_history 原文，只保留一份短原文窗口，其他位置只放结构化摘要。",
+      "rationale": "保证高座位玩家不会从模型上下文消失，并使模型看到的玩家索引与 request 中的合法 target_ids 一致。减少重复文本后可降低 prompt 超限概率。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加一个确定性的 _fit_prompt_payload 预算步骤，在序列化 payload 后逐层裁剪：先裁剪重复原文，再裁剪旧的 self history 和旧的 public history，最后才裁剪低优先级策略说明；不得裁剪 request.allowed_actions、target_ids、当前存活索引、当前警长、最近结算结果和狼队身份列表。裁剪结果应确保 payload 本身为 system 与 user instruction 留出安全余量，而不是仅满足 payload 内部大小。",
+      "rationale": "当前统计已出现 7 次 prompt over limit。硬预算顺序可以避免为了保留旧文本而丢失当前合法目标或关键公开事实。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _build_wolf_strategy 的夜间部分：以最新合法 target_ids 为基础，先排除自身、已死亡玩家和已知存活狼队友；再结合结构化公开 ledger、警徽状态、最近夜刀结果和阶段计算 primary/backup。将失败刀记录作为有限惩罚或换层提示，而不是永久排除。保留主刀与备刀的多样性要求，但明确允许残局为收口目标覆盖换刀软约束。",
+      "rationale": "巩固当前节点已表现良好的主刀/备刀框架，同时让其使用可靠的结算事实。不要引入强制覆盖模型合法选择的逻辑。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "改进 _build_day_vote_strategy 的队友受压和危险身份识别：使用按 speaker、round、claim_type、vote target 组织的记录；只在当前轮或最近有效轮次存在明确“对该队友的查杀/放逐压力”时标记 pressured；区分“自己声明预言家”与“被公开查验为狼/好人”这类不同事实。保持最终行动仍由模型选择，不在代码中强制改写一个合法 day_vote。",
+      "rationale": "降低关键词全局匹配造成的误判，尤其避免把谈及“狼”“投票”就视为队友被查杀。也避免像 wolf-n00135/wolf-n00136 那样把合法模型决策统一覆盖为代码计算出的 canonical 目标。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充面向实现的状态约束：公开账本只记录同步确认的事实；夜刀失败必须绑定具体计划和结算边界；平安夜后的换刀是软约束；模型仍需结合当前行动包自行决定合法行动；禁止用代码替代模型做全局票型裁决或强制改写合法目标。",
+      "rationale": "让后续 coding agent 明确哪些是可实现的记忆增强，哪些不能演变成隐藏状态、引擎逻辑或强制策略覆盖。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "同步包可能只提供累计 dead_players，而不提供明确的夜间结算事件；错误的 round/phase 边界检测可能仍会漏记或重复记账。",
+      "mitigation": "使用 plan_round、上次观察 phase、baseline_dead_players 和幂等键联合判断；无法确认结算时宁可不写 failure，不要凭白天死亡推断。"
+    },
+    {
+      "risk": "公开 claims ledger 可能因中文表达多样而漏识别身份声明。",
+      "mitigation": "保留当前可见短原文窗口作为补充；结构化识别只用于摘要和排序提示，不把未识别声明当作确定事实。"
+    },
+    {
+      "risk": "增加 player_index 和 ledger 会提高 prompt 长度。",
+      "mitigation": "使用定长字段、短 ID、每类账本最多保留 4 至 8 条，并实施明确的预算裁剪顺序；必须优先保留当前行动契约和完整合法目标。"
+    },
+    {
+      "risk": "对失败刀施加过强惩罚会错过必须击杀的真预言家或残局收口目标。",
+      "mitigation": "失败只作为有限分数惩罚和换层提示；残局、验人链已暴露或唯一胜负收口时允许覆盖。"
+    },
+    {
+      "risk": "代码层策略过度介入可能取代模型判断，降低跨节点泛化能力。",
+      "mitigation": "只修复事实账本、输入压缩和明显协议安全问题；不强制改写合法模型行动，不修改 Game Engine、规则、可见性或行动 schema。"
+    },
+    {
+      "risk": "当前节点 75% 胜率来自 20 局样本，单个回放不能证明每项改动会提升胜率。",
+      "mitigation": "把本方案视为最小候选修改，重点观察夜刀失败记账准确率、prompt 超限率、合法行动率和残局票型，再与当前节点进行同条件评测。"
+    }
+  ],
+  "code_agent_brief": "请基于当前 wolf-n00102 的 task_agent.py 和 task.md 实施一个最小、可回滚的下一代候选。第一优先级是修复夜刀结算记忆：新增有限长度、幂等的 night_resolution_ledger，把狼刀计划绑定到具体 round、目标、观察到的夜间到白天边界和死亡集合；不得因任意 no_death 或后续白天死亡直接把 last_wolf_target 标成失败。第二优先级是把已同步公开信息整理为短 public_ledger，至少追踪身份声明、投票、死亡和警徽变化，并在白天/夜间策略中使用这些结构化记录。第三优先级是修复 prompt 压缩：为所有玩家生成精简完整的 player_index，避免默认只保留前 8 名；移除重复原文，并在序列化后按优先级裁剪，始终保留 allowed_actions、target_ids、存活索引、当前警长、狼队身份和最近夜间结算。保留现有主刀/备刀、队友识别、模型重试和本地 schema 校验。不要采用会强制覆盖合法模型目标的 wolf-n00135/wolf-n00136 式修复，不要修改 Game Engine、规则、可见性、工具实现、行动 schema、审计或预算。请增加针对以下情形的单元测试或等价 smoke 验证：重复同步同一夜不重复计账；平安夜后下一轮白天放逐他人不把该人误记为狼刀失败；狼刀目标实际死亡时不记 failure；高于 8 号座位的玩家仍出现在模型 payload；payload 在 system/message 总预算下留有余量；当前 target_ids 和行动 JSON 行为保持不变。"
+}

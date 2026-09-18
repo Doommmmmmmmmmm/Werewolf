@@ -1,0 +1,1507 @@
+{
+  "node_id": "witch-base",
+  "role": "witch",
+  "attempt": 1,
+  "required_resources": [
+    "task",
+    "boundaries",
+    "current_agent",
+    "random_game_replay"
+  ],
+  "required_replay_game_index": 15,
+  "tool_trace": [
+    {
+      "tool": "list_resources",
+      "arguments": {},
+      "result": {
+        "required_resources": [
+          "task",
+          "boundaries",
+          "current_agent",
+          "random_game_replay"
+        ],
+        "external_knowledge": {
+          "description": "进化前冻结的狼人杀 Skill 卡片；通过 list_skills/read_skill 按需读取，不直接注入 Task-Agent",
+          "tool": "list_skills/read_skill"
+        },
+        "tools": [
+          {
+            "name": "list_resources",
+            "description": "列出本次诊断可用的只读资料及参数。"
+          },
+          {
+            "name": "read_current_agent",
+            "description": "读取当前节点的 task_agent.py 或 task.md。"
+          },
+          {
+            "name": "read_evolution_path",
+            "description": "读取 base 到当前节点的节点信息和祖先 patch。"
+          },
+          {
+            "name": "read_evolution_tree",
+            "description": "读取当前角色完整进化树索引。"
+          },
+          {
+            "name": "read_evolution_contract",
+            "description": "按需读取本次实验的进化状态机、预算和节点筛选规则。"
+          },
+          {
+            "name": "read_evaluation_summary",
+            "description": "读取当前节点最近一次评测汇总。"
+          },
+          {
+            "name": "read_game_replay",
+            "description": "分页读取当前节点评测中的一局完整审计回放。"
+          },
+          {
+            "name": "read_other_branch",
+            "description": "读取同角色另一节点的 patch、状态和胜负摘要。"
+          },
+          {
+            "name": "read_previous_diagnosis",
+            "description": "读取同角色某节点关联的历史诊断。"
+          },
+          {
+            "name": "list_skills",
+            "description": "列出所有可用 Skill 的名称和短描述，不返回完整攻略。"
+          },
+          {
+            "name": "read_skill",
+            "description": "读取指定 Skill 的完整内容，包括短描述和长描述。"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evaluation_summary",
+      "arguments": {},
+      "result": {
+        "node_id": "witch-base",
+        "role": "witch",
+        "team": "village",
+        "game_count": 20,
+        "complete_game_count": 20,
+        "failed_game_count": 0,
+        "win_count": 4,
+        "loss_count": 16,
+        "win_rate": 0.2,
+        "decision_count": 3256,
+        "fallback_count": 21,
+        "fallback_rate": 0.006449631449631449,
+        "invalid_decision_count": 21,
+        "recommended_status": "discarded",
+        "status_reasons": [
+          "invalid_decisions=21 > 10"
+        ],
+        "results": [
+          {
+            "game_index": 0,
+            "game_id": "s2-witch-base-game0",
+            "seed": "season2-evolution:witch-base:game0",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 140,
+            "fallback_count": 1,
+            "fallback_rate": 0.007142857142857143,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 143,
+              "api_attempt_count": 250,
+              "reported_usage_response_count": 143,
+              "input_tokens": 606159,
+              "output_tokens": 7000,
+              "total_tokens": 613159,
+              "unreported_api_attempt_count": 107
+            }
+          },
+          {
+            "game_index": 1,
+            "game_id": "s2-witch-base-game1",
+            "seed": "season2-evolution:witch-base:game1",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 160,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 162,
+              "api_attempt_count": 295,
+              "reported_usage_response_count": 162,
+              "input_tokens": 716299,
+              "output_tokens": 9766,
+              "total_tokens": 726065,
+              "unreported_api_attempt_count": 133
+            }
+          },
+          {
+            "game_index": 2,
+            "game_id": "s2-witch-base-game2",
+            "seed": "season2-evolution:witch-base:game2",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 157,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 157,
+              "api_attempt_count": 267,
+              "reported_usage_response_count": 157,
+              "input_tokens": 640175,
+              "output_tokens": 7274,
+              "total_tokens": 647449,
+              "unreported_api_attempt_count": 110
+            }
+          },
+          {
+            "game_index": 3,
+            "game_id": "s2-witch-base-game3",
+            "seed": "season2-evolution:witch-base:game3",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 152,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 154,
+              "api_attempt_count": 263,
+              "reported_usage_response_count": 154,
+              "input_tokens": 629528,
+              "output_tokens": 7677,
+              "total_tokens": 637205,
+              "unreported_api_attempt_count": 109
+            }
+          },
+          {
+            "game_index": 4,
+            "game_id": "s2-witch-base-game4",
+            "seed": "season2-evolution:witch-base:game4",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 181,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 185,
+              "api_attempt_count": 319,
+              "reported_usage_response_count": 185,
+              "input_tokens": 787517,
+              "output_tokens": 10481,
+              "total_tokens": 797998,
+              "unreported_api_attempt_count": 134
+            }
+          },
+          {
+            "game_index": 5,
+            "game_id": "s2-witch-base-game5",
+            "seed": "season2-evolution:witch-base:game5",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 222,
+            "fallback_count": 2,
+            "fallback_rate": 0.009009009009009009,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 229,
+              "api_attempt_count": 418,
+              "reported_usage_response_count": 229,
+              "input_tokens": 1020930,
+              "output_tokens": 13222,
+              "total_tokens": 1034152,
+              "unreported_api_attempt_count": 189
+            }
+          },
+          {
+            "game_index": 6,
+            "game_id": "s2-witch-base-game6",
+            "seed": "season2-evolution:witch-base:game6",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 144,
+            "fallback_count": 1,
+            "fallback_rate": 0.006944444444444444,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p10",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 146,
+              "api_attempt_count": 256,
+              "reported_usage_response_count": 146,
+              "input_tokens": 624126,
+              "output_tokens": 7508,
+              "total_tokens": 631634,
+              "unreported_api_attempt_count": 110
+            }
+          },
+          {
+            "game_index": 7,
+            "game_id": "s2-witch-base-game7",
+            "seed": "season2-evolution:witch-base:game7",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 169,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 172,
+              "api_attempt_count": 300,
+              "reported_usage_response_count": 172,
+              "input_tokens": 725018,
+              "output_tokens": 9116,
+              "total_tokens": 734134,
+              "unreported_api_attempt_count": 128
+            }
+          },
+          {
+            "game_index": 8,
+            "game_id": "s2-witch-base-game8",
+            "seed": "season2-evolution:witch-base:game8",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 148,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 149,
+              "api_attempt_count": 248,
+              "reported_usage_response_count": 149,
+              "input_tokens": 590546,
+              "output_tokens": 7470,
+              "total_tokens": 598016,
+              "unreported_api_attempt_count": 99
+            }
+          },
+          {
+            "game_index": 9,
+            "game_id": "s2-witch-base-game9",
+            "seed": "season2-evolution:witch-base:game9",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 151,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round0/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 154,
+              "api_attempt_count": 291,
+              "reported_usage_response_count": 154,
+              "input_tokens": 697335,
+              "output_tokens": 8917,
+              "total_tokens": 706252,
+              "unreported_api_attempt_count": 137
+            }
+          },
+          {
+            "game_index": 10,
+            "game_id": "s2-witch-base-game10",
+            "seed": "season2-evolution:witch-base:game10",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 161,
+            "fallback_count": 3,
+            "fallback_rate": 0.018633540372670808,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              },
+              {
+                "player_id": "p6",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 162,
+              "api_attempt_count": 286,
+              "reported_usage_response_count": 162,
+              "input_tokens": 697966,
+              "output_tokens": 8264,
+              "total_tokens": 706230,
+              "unreported_api_attempt_count": 124
+            }
+          },
+          {
+            "game_index": 11,
+            "game_id": "s2-witch-base-game11",
+            "seed": "season2-evolution:witch-base:game11",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 132,
+            "fallback_count": 1,
+            "fallback_rate": 0.007575757575757576,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 135,
+              "api_attempt_count": 233,
+              "reported_usage_response_count": 135,
+              "input_tokens": 560737,
+              "output_tokens": 6581,
+              "total_tokens": 567318,
+              "unreported_api_attempt_count": 98
+            }
+          },
+          {
+            "game_index": 12,
+            "game_id": "s2-witch-base-game12",
+            "seed": "season2-evolution:witch-base:game12",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 193,
+            "fallback_count": 2,
+            "fallback_rate": 0.010362694300518135,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 200,
+              "api_attempt_count": 350,
+              "reported_usage_response_count": 200,
+              "input_tokens": 856548,
+              "output_tokens": 10232,
+              "total_tokens": 866780,
+              "unreported_api_attempt_count": 150
+            }
+          },
+          {
+            "game_index": 13,
+            "game_id": "s2-witch-base-game13",
+            "seed": "season2-evolution:witch-base:game13",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 135,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 136,
+              "api_attempt_count": 232,
+              "reported_usage_response_count": 136,
+              "input_tokens": 568492,
+              "output_tokens": 6671,
+              "total_tokens": 575163,
+              "unreported_api_attempt_count": 96
+            }
+          },
+          {
+            "game_index": 14,
+            "game_id": "s2-witch-base-game14",
+            "seed": "season2-evolution:witch-base:game14",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 186,
+            "fallback_count": 1,
+            "fallback_rate": 0.005376344086021506,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p4"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 189,
+              "api_attempt_count": 347,
+              "reported_usage_response_count": 189,
+              "input_tokens": 834982,
+              "output_tokens": 10444,
+              "total_tokens": 845426,
+              "unreported_api_attempt_count": 158
+            }
+          },
+          {
+            "game_index": 15,
+            "game_id": "s2-witch-base-game15",
+            "seed": "season2-evolution:witch-base:game15",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 145,
+            "fallback_count": 1,
+            "fallback_rate": 0.006896551724137931,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 150,
+              "api_attempt_count": 273,
+              "reported_usage_response_count": 150,
+              "input_tokens": 663453,
+              "output_tokens": 8471,
+              "total_tokens": 671924,
+              "unreported_api_attempt_count": 123
+            }
+          },
+          {
+            "game_index": 16,
+            "game_id": "s2-witch-base-game16",
+            "seed": "season2-evolution:witch-base:game16",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 164,
+            "fallback_count": 2,
+            "fallback_rate": 0.012195121951219513,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p10",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 166,
+              "api_attempt_count": 291,
+              "reported_usage_response_count": 166,
+              "input_tokens": 703194,
+              "output_tokens": 8828,
+              "total_tokens": 712022,
+              "unreported_api_attempt_count": 125
+            }
+          },
+          {
+            "game_index": 17,
+            "game_id": "s2-witch-base-game17",
+            "seed": "season2-evolution:witch-base:game17",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 185,
+            "fallback_count": 3,
+            "fallback_rate": 0.016216216216216217,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p11"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p11"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p11"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 192,
+              "api_attempt_count": 323,
+              "reported_usage_response_count": 192,
+              "input_tokens": 779549,
+              "output_tokens": 10895,
+              "total_tokens": 790444,
+              "unreported_api_attempt_count": 131
+            }
+          },
+          {
+            "game_index": 18,
+            "game_id": "s2-witch-base-game18",
+            "seed": "season2-evolution:witch-base:game18",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 179,
+            "fallback_count": 3,
+            "fallback_rate": 0.01675977653631285,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 186,
+              "api_attempt_count": 327,
+              "reported_usage_response_count": 186,
+              "input_tokens": 786418,
+              "output_tokens": 10126,
+              "total_tokens": 796544,
+              "unreported_api_attempt_count": 141
+            }
+          },
+          {
+            "game_index": 19,
+            "game_id": "s2-witch-base-game19",
+            "seed": "season2-evolution:witch-base:game19",
+            "focus_node": "witch-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 152,
+            "fallback_count": 1,
+            "fallback_rate": 0.006578947368421052,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p6",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/games/round1/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 156,
+              "api_attempt_count": 270,
+              "reported_usage_response_count": 156,
+              "input_tokens": 647744,
+              "output_tokens": 8336,
+              "total_tokens": 656080,
+              "unreported_api_attempt_count": 114
+            }
+          }
+        ],
+        "model": {
+          "available": true,
+          "model": "qwen3.8-flash",
+          "protocol": "responses",
+          "reasoning_effort": "none",
+          "enable_thinking": false,
+          "max_output_tokens": 900
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_path",
+      "arguments": {},
+      "result": {
+        "lineage": [
+          {
+            "node": {
+              "node_id": "witch-base",
+              "role": "witch",
+              "status": "retained",
+              "parent_id": null,
+              "depth": 0,
+              "children": [
+                "witch-n00001"
+              ],
+              "created_at": "2026-09-04T05:02:49.874919+00:00",
+              "code_hash": "a2dea6c45fa46c7e3d86ea04bd2a03c3f308cf13caa760000d2ce2ef77d08815",
+              "patch_path": null,
+              "diagnosis_path": null,
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/summary.json",
+              "status_reason": "base"
+            },
+            "patch": ""
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evolution_tree",
+      "arguments": {},
+      "result": {
+        "roles": {
+          "witch": {
+            "base_node_id": "witch-base",
+            "node_ids": [
+              "witch-base",
+              "witch-n00001"
+            ],
+            "evolution_count": 1
+          }
+        },
+        "nodes": {
+          "witch-base": {
+            "node_id": "witch-base",
+            "role": "witch",
+            "status": "retained",
+            "parent_id": null,
+            "depth": 0,
+            "children": [
+              "witch-n00001"
+            ],
+            "created_at": "2026-09-04T05:02:49.874919+00:00",
+            "code_hash": "a2dea6c45fa46c7e3d86ea04bd2a03c3f308cf13caa760000d2ce2ef77d08815",
+            "patch_path": null,
+            "diagnosis_path": null,
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-base/summary.json",
+            "status_reason": "base"
+          },
+          "witch-n00001": {
+            "node_id": "witch-n00001",
+            "role": "witch",
+            "status": "pending",
+            "parent_id": "witch-base",
+            "depth": 1,
+            "children": [],
+            "created_at": "2026-09-04T06:15:07.372829+00:00",
+            "code_hash": "a2dea6c45fa46c7e3d86ea04bd2a03c3f308cf13caa760000d2ce2ef77d08815",
+            "patch_path": null,
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T050249-4ccc1d57/branch0/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          }
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_contract",
+      "arguments": {},
+      "result": {
+        "purpose": "Meta-Agent 为当前角色设计下一代 Task-Agent；外部状态机负责评测、建树和预算执行。",
+        "current_node": {
+          "node_id": "witch-base",
+          "role": "witch",
+          "status": "retained",
+          "depth": 0,
+          "parent_id": null,
+          "children": [
+            "witch-n00001"
+          ],
+          "role_evolution_count": 1
+        },
+        "node_states": {
+          "pending": "待评估；先运行配置数量的对局，再决定 retained 或 discarded",
+          "retained": "保留在候选池中；在预算允许时可以生成子节点",
+          "discarded": "舍弃；不进入候选池，也不再生成子节点"
+        },
+        "evaluation": {
+          "games_per_pending_node": 20,
+          "player_count": 12,
+          "game_concurrency": 2,
+          "model_max_in_flight": 4,
+          "max_failed_games": 18,
+          "max_fallback_rate": 0.2,
+          "max_invalid_decisions": 10,
+          "discard_all_losses": true,
+          "focus_role_uses_current_node": true,
+          "other_roles_use_random_retained_candidates": true,
+          "parent_child_comparison_required": false
+        },
+        "evolution_budget": {
+          "children_per_expansion": 3,
+          "max_children_per_node": 3,
+          "max_tree_depth": 6,
+          "max_evolutions_per_role": 20,
+          "role_scheduler": "least_evolved_random",
+          "candidate_pool_extra_limit": null
+        },
+        "process": [
+          "一个 step 选择一个符合资格的 pending 或 retained 节点。",
+          "pending 节点只做评测并决定保留或舍弃。",
+          "retained 节点扩展时固定创建 children_per_expansion 个子节点。",
+          "每个子节点单独调用一次 Meta-Agent 和 Pi；一次扩展抽取不同的游戏回放。",
+          "子节点从父节点快照继承全部祖先修改；其他分支需要通过工具主动读取。",
+          "不要求子节点胜过父节点，也不保证每次修改都是真实改进。"
+        ],
+        "not_evolvable": [
+          "Game Engine",
+          "游戏规则与胜负裁决",
+          "信息可见性与行动 JSON schema",
+          "工具实现、模型网关、审计记录和所有外部预算"
+        ]
+      }
+    },
+    {
+      "tool": "read_previous_diagnosis",
+      "arguments": {
+        "node_id": "witch-n00001"
+      },
+      "result": {
+        "error": "该节点没有关联诊断"
+      }
+    },
+    {
+      "tool": "read_other_branch",
+      "arguments": {
+        "node_id": "witch-n00001"
+      },
+      "result": {
+        "node": {
+          "node_id": "witch-n00001",
+          "role": "witch",
+          "status": "pending",
+          "parent_id": "witch-base",
+          "depth": 1,
+          "children": [],
+          "created_at": "2026-09-04T06:15:07.372829+00:00",
+          "code_hash": "a2dea6c45fa46c7e3d86ea04bd2a03c3f308cf13caa760000d2ce2ef77d08815",
+          "patch_path": null,
+          "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T050249-4ccc1d57/branch0/diagnosis.json",
+          "evaluation_summary_path": null,
+          "status_reason": ""
+        },
+        "patch": "",
+        "evaluation_summary": null
+      }
+    },
+    {
+      "tool": "list_skills",
+      "arguments": {},
+      "result": {
+        "skills": [
+          {
+            "name": "endgame-counting",
+            "short_description": "适用于存活人数减少、警徽改变票权或屠边临界的中后期；要求所有角色把行动放回实际胜利条件和剩余轮次中计算。"
+          },
+          {
+            "name": "information-reliability",
+            "short_description": "适用于处理查验、金水、遗言、毒口、平安夜、警徽和玩家自述等混合信息；避免把所有公开内容当成同等强度的事实。"
+          },
+          {
+            "name": "official-guard-counterknife",
+            "short_description": "适用于已出现悍跳、警徽继承或关键好人带队的中后期；通过分析狼人最想消除的能力来选择守护对象。"
+          },
+          {
+            "name": "official-guard-no-repeat",
+            "short_description": "适用于当前规则禁止连续守同一人的局面；帮助守卫在不能锁定单一目标时，按轮次收益安排保护。"
+          },
+          {
+            "name": "official-guard-protect",
+            "short_description": "适用于守卫选择夜间守护目标时；优先评估目标的存活价值、狼人刀口收益和守护与女巫药效的交互。"
+          },
+          {
+            "name": "official-hunter-anti-bait",
+            "short_description": "适用于狼人可能通过悍跳、假查杀或伪造狼坑诱导猎人开枪时；要求猎人把目标判断建立在多来源证据上。"
+          },
+          {
+            "name": "official-hunter-conceal",
+            "short_description": "适用于猎人在白天仍可发言、且身份尚未必须公开时；通过控制狼面和好人面，增加狼人误刀自己的概率。"
+          },
+          {
+            "name": "official-hunter-shoot",
+            "short_description": "适用于猎人因夜刀、放逐或其他规则触发开枪时；重点是确认能否开枪、选择目标并说明目标依据。"
+          },
+          {
+            "name": "official-witch-information",
+            "short_description": "适用于女巫需要决定何时承认身份、公开救药或解释毒口时；目标是在保留隐蔽性的同时让药效转化为可执行的公共信息。"
+          },
+          {
+            "name": "official-witch-poison",
+            "short_description": "适用于女巫决定使用毒药时；优先处理身份冲突、悍跳核心和能直接改变屠边节奏的位置，同时控制误伤风险。"
+          },
+          {
+            "name": "official-witch-save",
+            "short_description": "适用于女巫得知夜间刀口后决定是否使用解药；重点是评估救人收益、身份暴露和剩余轮次，而不是见死就救。"
+          },
+          {
+            "name": "pocket-idiot-endgame",
+            "short_description": "适用于白痴已经翻牌或进入少数人残局时；重点是计算失去投票、警徽和发言顺序后的实际轮次，不把“免死”误认为无限生存。"
+          },
+          {
+            "name": "pocket-idiot-hidden",
+            "short_description": "适用于白痴尚未被放逐、希望让狼人误判神职结构时；目标是避免白天被轻易推出，同时保留翻牌的最后防线。"
+          },
+          {
+            "name": "pocket-idiot-reveal",
+            "short_description": "适用于白痴因白天投票出局、且当前规则允许翻牌免死时；重点是判断翻牌时机和免死后的发言价值。"
+          },
+          {
+            "name": "pocket-seer-first-day",
+            "short_description": "适用于预言家首个白天发言和警长竞选；帮助模型同时交代查验结果、验人理由、警徽流与当日票口。"
+          },
+          {
+            "name": "pocket-seer-wolf-pool",
+            "short_description": "适用于预言家安排后续查验和警徽流时；强调查验的决策价值、票仓关联和结果出来后的行动，而不是堆砌名单。"
+          },
+          {
+            "name": "pocket-sheriff-speech",
+            "short_description": "适用于警长竞选、警长发言顺序和警徽流安排；适合帮助预言家或其他竞选者表达查验计划，也提醒模型当前项目的警长权限必须以实际规则为准。"
+          },
+          {
+            "name": "pocket-thick-skin-wolf",
+            "short_description": "仅适用于明确加入“厚皮狼”特殊角色及其技能的板子；目标是让猎人误判并在夜间攻击自己，不能直接迁移到普通预女猎守局。"
+          },
+          {
+            "name": "pocket-villager-basics",
+            "short_description": "适用于没有夜间技能、只能依靠公开发言和已公开结果判断的平民；帮助模型避免把平民当成被动听众，也避免假装拥有未获得的信息。"
+          },
+          {
+            "name": "pocket-villager-counterlogic",
+            "short_description": "适用于平民需要在多个可疑玩家之间做判断时；通过“如果他是狼，他为什么这样做”的反事实问题，减少只凭情绪或单条信息投票。"
+          },
+          {
+            "name": "rl-seer-adaptive",
+            "short_description": "适用于对跳、强反票或信息混乱的中后期；借鉴研究中“观察对手态度后切换策略”的思路，避免固定执行单一验人模板。"
+          },
+          {
+            "name": "sheriff-leadership",
+            "short_description": "适用于警长竞选、当选后的日间组织和警徽交接；不绑定某个角色，预言家、狼人或其他好人都可能参与警长博弈。"
+          },
+          {
+            "name": "speech-structure",
+            "short_description": "适用于任何需要公开发言的阶段；帮助模型把零散想法组织成可验证、可回应、可复盘的中文发言。"
+          },
+          {
+            "name": "strategy-switching",
+            "short_description": "适用于对跳、平安夜、关键角色死亡或票型突然转向后；帮助模型从原先的站边、隐藏或冲锋策略切换到新的可解释路线。"
+          },
+          {
+            "name": "te5-gang-wolf",
+            "short_description": "适用于狼队愿意牺牲多名成员、集中资源把一名狼包装成高可信好人的局面；需要评估剩余轮次、神职配置和核心狼独自存活时的发言能力。"
+          },
+          {
+            "name": "te5-hook-wolf",
+            "short_description": "适用于悍跳狼发言或票型已经接近崩盘、狼队需要切断关联时；重点是保持自然的好人判断，而不是为了倒钩而刻意踩队友或站死某一边。"
+          },
+          {
+            "name": "te5-villager-countercheck",
+            "short_description": "适用于平民被悍跳预言家点成查杀时；目标不是重复“我是好人”，而是给出可验证的行为解释、反事实比较和后续投票建议，让其他好人有理由重新评估查杀。"
+          },
+          {
+            "name": "te5-wolf-deep-hide",
+            "short_description": "适用于狼队已有队友承担悍跳或冲锋、某名狼人需要长期隐藏时；不是无脑划水，而是在低暴露的同时持续提供可复盘的判断。"
+          },
+          {
+            "name": "te5-wolf-fake-seer",
+            "short_description": "适用于狼人决定在警上伪装预言家的局面；重点是构造可持续的查验、警徽流和归票叙事，并预先准备被质疑或翻车后的撤退路线。"
+          },
+          {
+            "name": "vote-analysis",
+            "short_description": "适用于白天放逐、警长竞选和关键改票之后；通过同票、反票、弃票和改票分析玩家的收益与关联。"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "official-witch-save"
+      },
+      "result": {
+        "name": "official-witch-save",
+        "short_description": "适用于女巫得知夜间刀口后决定是否使用解药；重点是评估救人收益、身份暴露和剩余轮次，而不是见死就救。",
+        "content": "# 女巫解药：围绕刀口信息管理救人\n\n## 短描述\n\n适用于女巫得知夜间刀口后决定是否使用解药；重点是评估救人收益、身份暴露和剩余轮次，而不是见死就救。\n\n## 攻略\n\n解药价值取决于死者身份可能性、是否能形成白天可信信息，以及救药后女巫是否必须公开身份。高价值目标通常包括可信预言家、关键带队位或能改变屠边节奏的神职；普通外置位则要结合发言和刀口动机判断。\n\n自救、救人和留药都可能正确。若狼人可能自刀骗药，不能只因刀口落在自己身上就自动救；应结合前一日发言、是否存在悍跳链、女巫暴露后狼队收益和下一轮轮次判断。若不救，要准备白天解释为什么保留资源。\n\n解药使用后应记录公开信息变化，但不必立即把所有女巫细节说尽。女巫身份一旦公开，狼人会获得明确刀口；除非规则或局势要求，优先让药效服务于好人整体胜率。\n"
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "official-witch-poison"
+      },
+      "result": {
+        "name": "official-witch-poison",
+        "short_description": "适用于女巫决定使用毒药时；优先处理身份冲突、悍跳核心和能直接改变屠边节奏的位置，同时控制误伤风险。",
+        "content": "# 女巫毒药：用硬结果终止高收益狼线\n\n## 短描述\n\n适用于女巫决定使用毒药时；优先处理身份冲突、悍跳核心和能直接改变屠边节奏的位置，同时控制误伤风险。\n\n## 攻略\n\n毒药是一次性硬结果，目标选择应综合发言、票型、对跳关系和狼队收益。悍跳预言家、假神职或连续推动错误归票的关键位，通常比普通可疑牌更值得考虑；但“声音最大”不等于“最像狼”。\n\n女巫可以在夜间保留毒药，等待查验、遗言或票型补足证据。若局势接近屠边，毒药的轮次价值会上升；若存在猎人、白痴或特殊死亡反应，必须先确认毒口触发后的连锁结算。\n\n毒人后不应只说“我毒对了”，而要解释毒口如何与其他公开信息互相印证。若毒口可能错杀真神，应在遗言或公开发言中留下备选狼坑和后续验证方法。\n"
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "official-witch-information"
+      },
+      "result": {
+        "name": "official-witch-information",
+        "short_description": "适用于女巫需要决定何时承认身份、公开救药或解释毒口时；目标是在保留隐蔽性的同时让药效转化为可执行的公共信息。",
+        "content": "# 女巫隐匿与报药：控制信息释放时机\n\n## 短描述\n\n适用于女巫需要决定何时承认身份、公开救药或解释毒口时；目标是在保留隐蔽性的同时让药效转化为可执行的公共信息。\n\n## 攻略\n\n女巫不一定首日就跳身份。只要解药、毒药和死讯尚未形成关键分歧，可以先用普通好人视角发言，观察谁在利用夜死或平安夜做叙事。公开身份的时机应与“能否改变当天归票、保护真预或阻止错误继承”相关。\n\n报药时要区分事实和推断：事实是昨夜谁被刀、自己是否用药；推断是为什么救、为什么毒以及由此怀疑谁。把两者混为一谈会让狼人借漏洞攻击女巫可信度。\n\n若狼人可能自刀、做平安夜或伪造刀口，女巫需要保留不确定性，不能把一次药效当作完整身份链。药用完后，女巫仍应继续参与票型和发言分析，而不是把责任全部交给预言家。\n"
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "information-reliability"
+      },
+      "result": {
+        "name": "information-reliability",
+        "short_description": "适用于处理查验、金水、遗言、毒口、平安夜、警徽和玩家自述等混合信息；避免把所有公开内容当成同等强度的事实。",
+        "content": "# 信息可信度：按来源和可验证性分层\n\n## 短描述\n\n适用于处理查验、金水、遗言、毒口、平安夜、警徽和玩家自述等混合信息；避免把所有公开内容当成同等强度的事实。\n\n## 攻略\n\n先区分三类内容：引擎直接公布的事实、角色声称获得的私密结果、基于事实做出的推断。引擎事实通常最稳定；角色声称可能真实也可能伪造；推断还要经过行为和后续结果验证。\n\n信息强度还取决于来源是否独立。一个狼人的遗言和其队友的复读不是两条独立证据；女巫毒口、预言家查验和票型若互相印证，可信度才会显著上升。冲突信息不要强行平均，明确哪条来源需要被重新审查。\n\n记录每条信息的首次出现时间、提供者、收益方向和可证伪条件。这样在新结果出现时可以回滚错误链，而不是因为已经说过就继续维护。\n"
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "strategy-switching"
+      },
+      "result": {
+        "name": "strategy-switching",
+        "short_description": "适用于对跳、平安夜、关键角色死亡或票型突然转向后；帮助模型从原先的站边、隐藏或冲锋策略切换到新的可解释路线。",
+        "content": "# 策略切换：根据证据改变打法\n\n## 短描述\n\n适用于对跳、平安夜、关键角色死亡或票型突然转向后；帮助模型从原先的站边、隐藏或冲锋策略切换到新的可解释路线。\n\n## 攻略\n\n策略切换要有触发事件，而不是无理由反复横跳。常见触发包括硬查验、女巫毒口、警徽传递、连续同票、核心队友出局或胜利条件即将达成。切换时说明旧判断被什么证据削弱，新策略准备解决什么问题。\n\n切换后的第一轮不要同时推翻所有旧结论。保留仍然成立的事实，重新排序玩家优先级，并给出一条可验证的下一步计划。这样即使新策略失败，也能知道是触发判断错了还是执行错了。\n\n稳定不等于固执，灵活也不等于随意。任何角色都可以改变策略，但不能改变已经由引擎确定的身份、行动结果或公开记录。\n"
+      }
+    },
+    {
+      "tool": "read_current_agent",
+      "arguments": {
+        "filename": "task.md"
+      },
+      "result": {
+        "node_id": "witch-base",
+        "filename": "task.md",
+        "content": "# 女巫最小任务\n\n你的任务是合理使用药水帮助好人获胜，同时隐藏不应公开的药水和夜间信息。\n\n- 先确认当晚狼刀、药水余量和合法行动，再权衡救人、毒人或保留药水。\n- 毒药应尽量针对有充分依据的狼人；不确定时可以保留资源或选择合法的放弃行动。\n- 白天发言要像普通玩家或自然的神职玩家，不要无理由泄露自己掌握的私密信息。\n- 每次决策都结合前几天的票型和死亡信息，避免固定首夜用药套路。\n"
+      }
+    }
+  ],
+  "diagnosis": {
+    "summary": "witch-base 目前是一个“能跑但不够会玩”的女巫 Task-Agent：它遵守了基本 JSON 契约，但缺少跨回合记忆、缺少女巫专属的用药阈值、也缺少对公开发言中私密信息的明确约束，因此容易把短期直觉当成证据，过早或低置信度地消耗唯一资源。评测上它只有 20% 胜率，整体被判定应 discard；在抽样回放里，女巫第 3 夜对 p10 的毒杀没有形成足够强的硬证据，最终也没有扭转局势。",
+    "evidence": [
+      {
+        "source": "read_evaluation_summary",
+        "fact": "witch-base 的总评测为 20 局，win_count=4，loss_count=16，win_rate=0.2，recommended_status=discarded，status_reasons 包含 invalid_decisions=21 > 10。"
+      },
+      {
+        "source": "random_game_replay / game15",
+        "fact": "第 3 夜女巫执行了 witch_poison，目标是 p10；回放最终显示 p10 的真实身份是 villager，且当时没有形成特别强的硬查验或公开对跳支撑。"
+      },
+      {
+        "source": "current_agent",
+        "fact": "observe(sync_packet) 直接丢弃输入，不保留任何跨回合状态；decide() 只在当前轮新会话里工作。"
+      },
+      {
+        "source": "current_agent",
+        "fact": "TaskAgent 只有一个当前回合发言工具 CURRENT_ROUND_DIALOGUE_TOOL，且注释明确写了 new_session_per_decision，没有内建长期记忆或历史摘要。"
+      },
+      {
+        "source": "task.md",
+        "fact": "任务要求女巫结合前几天票型和死亡信息，并且隐藏不应公开的药水和夜间信息；但当前实现没有把这些要求落成结构化决策规则。"
+      },
+      {
+        "source": "skills / official-witch-save, official-witch-poison, information-reliability, strategy-switching",
+        "fact": "可用技能本来就强调：解药/毒药要看目标价值、信息可信度和策略切换触发点，而不是见刀就救、见可疑就毒。"
+      }
+    ],
+    "root_causes": [
+      {
+        "cause": "没有跨回合记忆，无法稳定复盘票型和死亡链。",
+        "why_it_matters": "女巫任务明确要求结合前几天的票型和死亡信息；但 observe() 不保存任何历史，模型只能依赖当前状态和当前回合对话，天然会丢失多日关联。"
+      },
+      {
+        "cause": "女巫用药没有被显式改写成“高置信度阈值 + 优先级”决策。",
+        "why_it_matters": "当前 task.md 只有原则性描述，没有把“何时救、何时毒、何时 pass”落成可执行的规则，容易导致低证据毒人或过早消耗药水。"
+      },
+      {
+        "cause": "公开发言安全约束不够操作化。",
+        "why_it_matters": "虽然任务说不要泄露药水和夜间信息，但代码里没有专门的发言检查/提示模板来阻止模型把私密信息说成事实。"
+      },
+      {
+        "cause": "现有提示词与代码更像通用最小代理，而不是女巫专用代理。",
+        "why_it_matters": "witch-base 共享了非常通用的决策框架，没有女巫特有的“救药价值评估、毒口门槛、保药条件、身份隐蔽”分层，因此策略质量上限偏低。"
+      }
+    ],
+    "modification_plan": [
+      {
+        "file": "task_agent.py",
+        "change": "在 observe() 中保存压缩后的跨回合状态，例如：最近几轮死亡、投票分布、警长变化、已公开身份/遗言、重要对跳链、以及本角色自己已用过的药水状态；在 decide() 里把这份 compact memory 注入 system 或 user prompt。",
+        "rationale": "恢复对前几天票型和死亡信息的可用性，避免每次决策都只看当前轮导致的短视。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "增加一个女巫专用的决策摘要生成器：对 night_witch 阶段输出结构化建议，例如 heal_candidate / poison_candidate / pass_candidate，并带上简单置信度字段和触发理由；当置信度不足时默认倾向 pass。",
+        "rationale": "把“合理用药”变成可执行策略，而不是只靠模型自由发挥。"
+      },
+      {
+        "file": "task.md",
+        "change": "把女巫任务改写成带优先级的操作规约：先确认刀口与药水余量；救药只救高价值目标或能明显改变轮次者；毒药只打高置信狼或悍跳核心；证据不足时保留资源；白天发言不得提及自己私密夜间信息作为既成事实。",
+        "rationale": "让提示从原则型描述升级为可遵循的行为准则，减少模型在低证据场景下乱用药。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "为公开发言增加一个轻量的安全提示段：显式要求只能基于公开事实发言，禁止提及药水余量、当夜狼刀目标、自己的具体用药结果或未公开身份链。",
+        "rationale": "降低女巫在白天泄露私密信息的概率，同时保持发言自然。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 prompt 侧加入一个简短的“历史复盘模板”，固定要求模型先列：上一轮关键票型、最新死亡、当前自己药水状态、再给行动结论。",
+        "rationale": "把多源信息整合的顺序固定下来，减少模型跳步和遗漏。"
+      }
+    ],
+    "risks": [
+      {
+        "risk": "过强的保守阈值会导致女巫过度 pass，错失毒杀关键狼的窗口。",
+        "impact": "可能降低上限，尤其在需要主动翻盘的局面。"
+      },
+      {
+        "risk": "跨回合记忆压缩不当会把噪声也写入状态。",
+        "impact": "若摘要错误，会把后续决策带偏，比完全无记忆更糟。"
+      },
+      {
+        "risk": "增加历史摘要和规则模板会抬高 prompt 长度。",
+        "impact": "可能挤压模型可用上下文，需要控制摘要长度与字段数量。"
+      },
+      {
+        "risk": "把女巫规则写得太死，可能在特殊局势下缺乏灵活性。",
+        "impact": "例如平安夜、假神职混战或后期屠边临界时，过于模板化会错过关键操作。"
+      }
+    ],
+    "code_agent_brief": "请只改 task_agent.py 和/或 task.md，不要碰引擎、schema 或评测框架。目标是把 witch-base 从通用最小代理升级成有跨回合记忆、女巫专属用药阈值、和发言保密约束的 Task-Agent。具体要求：1) observe() 必须保存一个极简历史摘要，至少包含最近几轮的死亡、票型、公开对跳、警长变化和本角色的药水状态；2) decide() 在 night_witch 阶段要能看到这份摘要，并输出 heal / poison / pass 的明确优先级；3) 当证据不足时默认保留资源而不是强行毒人；4) 白天发言不得把药水余量、夜刀目标、未公开用药结果说成既成事实；5) task.md 里把女巫策略改成带优先级、带保密要求的操作规约。保持现有 JSON 行动契约不变。"
+  },
+  "model": {
+    "available": true,
+    "model": "gpt-5.5",
+    "protocol": "responses",
+    "reasoning_effort": null,
+    "enable_thinking": true,
+    "max_output_tokens": 900
+  },
+  "token_usage": {
+    "input_tokens": 396202,
+    "output_tokens": 14921,
+    "total_tokens": 411123
+  }
+}

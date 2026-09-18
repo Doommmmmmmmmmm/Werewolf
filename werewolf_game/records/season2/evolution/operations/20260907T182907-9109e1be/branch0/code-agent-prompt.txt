@@ -1,0 +1,51 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00044 已经是一个稳定可用的狼人 Task-Agent：20 局全评测中 14 胜 6 负，fallback=0，invalid=0，说明 schema 和决策链路基本可靠。下一代的重点不应是“能跑”，而是把收益从泛化记忆转到更强的阶段识别、证据排序和更紧的白天发言约束上，同时压低 prompt 成本。",
+  "evidence": [
+    "read_evaluation_summary 显示：game_count=20、win_rate=0.7、fallback_rate=0、invalid_decision_count=0、recommended_status=retained，说明当前版本稳定但还有明显胜率提升空间。",
+    "同一评测里 total_token_usage 很高：input_tokens=610995、output_tokens=6570、total_tokens=617565，且有 67 次未报告 API 重试；当前记忆/提示词压缩仍偏重。",
+    "current_agent 代码中，decide() 先构建 memory_snapshot，再交给 `_build_wolf_strategy` 生成 night/day 指导；夜刀和白天发言最终仍主要依赖启发式评分加 LLM 组句，而不是更强的阶段化状态机。",
+    "game4 的失利回放表明：村方最终获胜，狼方在中后期没有把局面压成稳定终局，说明仅靠‘公共威胁分数’不足以覆盖残局切换。",
+    "evolution_tree / previous branch 信息显示，历史上 n00005、n00006 因 fallback / error 被弃用；后续改动必须保持 JSON schema 和 action 校验稳定，不能为了加策略而破坏决策格式。"
+  ],
+  "root_causes": [
+    "夜间目标排序仍偏平面化：主要看公开威胁、票型、发言活跃度和少量夜刀记忆，缺少明确的 early/mid/endgame 切换，因此对空刀、身份暴露、警徽变更的反应不够强。",
+    "白天发言只是把 `day_focus` 等提示交给模型自由成文，没有把“对象 / 证据 / 下一步动作 / 发言目的”固化成更强的结构化约束，容易出现泛化、重复或叙事漂移。",
+    "记忆快照覆盖面过宽：`_compact_snapshot`、`_public_ledger`、`_public_history` 和 `current_round_dialogue` 的组合混入了不少低信号内容，推高 token 成本并稀释关键证据。",
+    "夜刀失败记忆虽然存在，但主要是回填式惩罚，没有和当前回合的死亡、警徽、公开翻牌做足够强的即时重排，因此复杂结算后的纠错力度偏弱。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 `_build_wolf_strategy` / `_rank_targets` / `_score_target` 中加入明确的阶段模式：按 early / mid / endgame 分段评分；对上一晚空刀、被守、被救或主刀未兑现的目标做更强降权；对 sheriff transfer、公开身份链、近期投票聚集、死亡顺序中的关键位加权；保留稳定的 seat/id 作为最终 tie-break。",
+      "rationale": "让夜刀从‘泛化公共威胁’升级为‘基于当前阶段和新证据的重排序’，提升残局适应和失败后的纠错能力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把白天指导从松散的 `day_focus` 改成更结构化的 speech brief，例如 `target`、`evidence_type`、`evidence_text`、`next_action`、`purpose` 五元组，并让 prompt 直接消费这个 brief；同时保留 200 字 / 30 字限制和中文约束。",
+      "rationale": "强制每次公开发言都落到具体对象、具体证据、下一步动作和目的，减少空话和重复模板。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "收紧 `_memory_snapshot` / `_public_ledger`：减少历史项数量，去掉低信号嵌套快照，只保留最近的 claim / vote / death / sheriff-change / night-resolution 关键事实，并避免把过长的对话原文反复塞进 prompt。",
+      "rationale": "降低 token 消耗，减少上下文噪声，让模型更聚焦在决定夜刀和白天叙事的高信号证据上。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充下一代任务约束：明确说明上一晚失败结算后必须把旧主刀降到新证据之后；白天发言优先引用新的 vote / death / sheriff chain，而不是抽象的‘看票型’或‘先听一圈’；若连续引用同一对象，必须切换证据类型。",
+      "rationale": "把代码里的阶段化和证据化要求同步到任务文本，减少模型在不同决策回合中的叙事漂移。"
+    }
+  ],
+  "risks": [
+    "更强的硬规则可能让模型在极端局面下过度收缩候选，错过一些以小博大的刀口。",
+    "继续压缩记忆如果过猛，可能损失对连续警徽链、多轮发言链和复杂夜间结算的可见性。",
+    "白天结构化 brief 若约束过严，公开发言可能变得机械，反而更容易被好人识别。",
+    "新增分阶段评分如果与现有 normalize / decision_error 不兼容，可能引入新的 schema 偏差；必须保持当前行动 JSON 校验逻辑不变。"
+  ],
+  "code_agent_brief": "请在不改动 Game Engine、规则、动作 schema、可见性过滤和模型网关的前提下，升级 wolf-n00044 的 Task-Agent。重点做三件事：1）把夜刀排序改成阶段化、证据化的重排序器，能对空刀/被守/被救/主刀未兑现做即时降权，并把 sheriff 链、公开身份链、近期票型、死亡顺序纳入更强权重；2）把白天发言从松散提示改成结构化 speech brief，强制包含具体对象、具体证据、下一步动作和发言目的；3）收紧记忆快照，减少低信号历史和重复对话，降低 token 成本。同步更新 task.md，把‘失败后立即重排’和‘白天必须引用新证据’写成明确任务约束。"
+}

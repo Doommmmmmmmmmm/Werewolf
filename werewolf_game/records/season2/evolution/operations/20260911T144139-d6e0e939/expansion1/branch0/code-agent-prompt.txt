@@ -1,0 +1,88 @@
+你正在修改狼人杀角色 hunter 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "hunter-n00104 已解决合法性问题（20 局无 fallback/invalid），但胜率仅 25%，主要瓶颈是可见公开信息的结构化利用不足。当前实现给猎人添加了压缩公开记忆和目标排序，但仍过度依赖浅层文本关键词、丢失票型/死亡/遗言链的结构，并且会把玩家声称在简报或发言中滑向“事实”。随机回放中猎人 p4 活到终局、未触发开枪，但其白天发言和投票暴露出两个问题：一是能早期点到狼 p8 的票型异常，说明方向有价值；二是后续又采信混乱的“查杀链”把女巫 p3 投出，说明记忆与证据分层仍不稳。下一代应做最小代码改造：保留当前框架和受限工具，只加强结构化公开记忆、声称抽取、证据分层评分，以及猎人反应阶段的晚局开枪阈值。",
+  "evidence": [
+    "评测汇总：hunter-n00104 game_count=20、complete_game_count=20、failed_game_count=0、win_count=5、loss_count=15、win_rate=0.25；focus fallback_count=0、invalid_decision_count=0。说明问题不是 JSON schema 或运行稳定性，而是决策质量。",
+    "随机回放 game12 中猎人是 p4，最终好人胜利，但 p4 的关键贡献不稳定：R2 发言 seq184 能指出 p8 在 R1 紧跟压 p12 且踩 p5，票型异常；随后 p4 在 R2 投票 seq196 正确投 p8。",
+    "同一回放中 p4 后续出现证据分层错误：R4 发言 seq323 称“R2 p10查杀p3”，并把 p3 列为重点；R4 投票 seq332 跟票出 p3，而最终审计身份显示 p3 是 witch，p10 是 wolf。该错误虽未导致本局失败，但体现当前 agent 容易把混乱玩家声称当成硬链。",
+    "回放中公开事实显示本局死亡不翻牌（rule reveal_role_on_death=false），但多名玩家遗言自称狼或报队友，例如 p8 遗言 seq220、p10 遗言 seq291；这些都只是玩家声称，不能直接等同系统事实。当前代码虽有 source=claim/fact 设计，但简报与评分仍可能因关键词“狼/查杀”放大单一声称。",
+    "当前代码 `_observe_decision_context()` 将 dialogue_records[-5:] + state_records[:1] 合并，每个 entry 最多 6 条；这会让死亡、投票、警徽、遗言等引擎事实被最近几条发言挤掉，尤其长局到第 4~5 轮时更容易丢失早期票型结构。",
+    "当前 `_extract_claim_signals()` 的查验正则主要识别“查杀/金水: pX”“验/查验 pX”，难以覆盖回放中常见句式，如“昨夜验p8是查杀”“给3号金水”“p10查杀p3”“队友p5、p10、p11”。因此结构化信号不全，后续目标排序更依赖模糊全文关键词。",
+    "当前 `_score_hunter_target_with_evidence()` 对命中 target 的记录，只要文本中出现“查杀/狼/对跳/冲票”等词就大幅加分；但它没有充分区分独立来源、反向保护链、已死亡发言者可信度、以及“狼遗言可能自爆也可能搅局”的不确定性。",
+    "祖先路径显示 hunter-n00007 开始引入短记忆和猎人目标排序；当前 hunter-n00104 在此基础上已大幅扩展，但仍沿用压缩记忆 + 字符串启发式的总体路线。其稳定性保留，策略质量仍需针对信息结构改进。"
+  ],
+  "root_causes": [
+    "公开记忆结构仍过平：当前将发言、投票、死亡、警徽、遗言都压成同一种 records，并按数量截断；关键事实可能被普通发言挤掉，导致中后期票型链和死亡链失真。",
+    "声称抽取覆盖不足：常见中文狼人杀句式没有被结构化识别，尤其是“验pX是查杀/金水”“pX被查杀”“队友pX”“今天出/压/票pX”等，导致模型和评分器只能看含混文本。",
+    "证据分层执行不够硬：代码有 claim/fact/inference 标记，但目标评分和简报仍会把玩家话术中的“查杀、狼、事实”等关键词放大，容易产生类似“p10查杀p3”这类错误链。",
+    "票型利用不足：当前评分更重文本指控，缺少按轮记录 individual votes/counts、连续跟票、分票保狼、临界轮投票等结构化特征，因此猎人活着时投票和死亡反应目标选择都不够稳定。",
+    "猎人反应专用阈值仍不够可解释：当前 pass_recommended 已加入晚局积极逻辑，但强证据定义仍由粗糙文本分数决定；在真正触发猎人开枪时，可能因为证据源计数不足而保守 pass，或因为单条狼遗言而误枪。",
+    "发言生成缺少反幻觉护栏：task.md 要求区分事实/声称/推断，但代码简报没有明确禁止把死亡原因、验人结果、角色身份写成系统事实；回放中 p4 的“p5夜刀倒牌”“p10查杀p3”即属于这类风险。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个轻量结构化记忆层，例如 `_public_memory_index` 或在现有 `_recent_public_events` entry 中加入 bounded 字段：`facts.deaths`、`facts.votes`、`facts.sheriff`、`claims.investigations`、`claims.identity`、`claims.wolf_confessions`、`claims.vote_directions`。每轮最多保留少量摘要，例如最近 8 轮、每类最多 6 条；不要注入完整历史。",
+      "rationale": "保持预算不变，但避免关键投票/死亡/警徽/遗言被普通发言挤掉。猎人判断尤其依赖死亡链和票型链，必须比原始对话有更稳定的结构化保留。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写或扩展 `_extract_claim_signals()`：支持 `验了?pX.*(查杀|狼|金水|好人)`、`pX.*(查杀|金水)`、`给pX发?金水`、`首验pX`、`昨夜验pX`、`队友pX/pX一起的/还剩pX`、`今天|全票|归票|先出|压|票 pX` 等句式；所有来自发言/遗言的内容统一标记 `source='claim'`，并增加 `claim_subtype` 和 `speaker`。",
+      "rationale": "当前正则漏掉大量真实局内表达，导致评分器既看不见结构化证据，又会被全文关键词误导。增强抽取能减少“p10查杀p3”这类错误链。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 `_extract_priority_public_facts()`，在 `observe()` 和 `_observe_decision_context()` 中优先提取公开事实类事件/状态：`VOTE_CAST`、`DAY_VOTE_RESOLVED`、`PLAYER_ELIMINATED/PLAYER_DIED`、`DAWN_ANNOUNCED`、`SHERIFF_ELECTED/TRANSFERRED/DESTROYED`、`PLAYER_LAST_WORDS`。合并 entry 时按类别去重，而不是简单 `records[:6]`。",
+      "rationale": "投票结果和死亡结果是引擎公开事实，应该在简报中优先于普通发言。当前只取 state_records[:1] 会严重压缩事实信息。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "调整 `_build_decision_brief()` 的输出模板：固定输出三层摘要——`系统事实`、`玩家声称`、`推断排序`；在玩家声称前显式标注“未翻牌不可当真”。对死亡只写“公开死亡/出局”，除非行动包或公开状态明确给出 cause，否则禁止写“夜刀/毒/枪”。",
+      "rationale": "让模型在发言和投票时少把声称当事实，直接针对回放中 p4 错称死亡原因和查杀链的问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 `_score_hunter_target_with_evidence()`：把分数拆成多类 evidence：`seer_claim_against`、`independent_preclaim_suspicion`、`vote_anomaly`、`wolf_confession_or_teammate_claim`、`death_badge_chain`、`protective_gold_or_trusted_chain`。同一 speaker 同一轮最多贡献一次主分；来自已出局狼式遗言的队友点名只给中等分，必须和票型/独立发言至少一类交叉才算强证据。",
+      "rationale": "降低单条关键词或单人遗言造成的误杀，同时在多来源一致时提高开枪和投票果断性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 day_vote 增加 `_rank_day_vote_targets()` 或在现有 ranking 中按模式区分：白天投票优先跟随“可信预言家查杀 + 独立票型异常 + 多人解释一致”的目标；对单一未证实查杀、死人遗言队友点名、广撒网点名降权。`_build_decision_brief()` 在 day_vote 模式给出 top2 和反证提醒。",
+      "rationale": "猎人多数时间并不会触发开枪，白天票投错同样影响胜率。随机回放中 p4 R4 误投 p3，正是 day_vote 目标排序问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "改进猎人反应识别：除 phase 文本外，也检查 allowed_actions 中是否存在含 target_ids 的 `hunter`/`shoot`/`shot` 类 kind 或与 pass 并列的目标类行动；只有此模式启用开枪阈值。晚局（round>=3 或 alive<=6）若 top target 具备至少两类独立证据且没有强保护链，则 `pass_recommended=False`；若仅单一声称或分差低则 pass。",
+      "rationale": "防止把普通 day_vote 当猎人反应，也让真正死亡反应阶段更符合任务要求：中后期有多源强证据时积极用枪，证据单薄时跳过。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修正简报中的事实来源文案：`_evidence_layer_summary()` 不应把 record 中的 `claim` 字段天然归为引擎事实；只有明确来自 public_state 的死亡、投票、警徽、公开 reveal 才放入 `引擎事实`。玩家发言 payload 即使包含“事实/查验事实”等词，也必须保持 `玩家声称`。",
+      "rationale": "当前 `_mapping_to_public_record()` 对含 claim/vote/death/sheriff 的记录容易标 fact；若来源实际是发言，会误导模型。需要用 source 而非字段名决定可信度。"
+    },
+    {
+      "file": "task.md",
+      "change": "加入猎人专用补充：白天发言和投票不得把未翻牌死亡者身份、玩家自称查验、遗言自爆队友写成系统事实；必须用“X自称/遗言声称/我推测”。若同一目标只有一条查杀或一条遗言点名，先找票型或独立发言交叉验证。",
+      "rationale": "用 prompt 层进一步约束模型语言和证据口径，减少回放中出现的事实/声称混淆。"
+    },
+    {
+      "file": "task.md",
+      "change": "加入残局规则：round>=3 或存活<=6 时，猎人活着发言要主动点出“当前最可能狼坑 top2 + 每人的证据类型”；猎人反应时若 top1 同时满足身份冲突/票型异常/死亡警徽链冲突中两项，优先开枪，否则说明跳过理由。",
+      "rationale": "让模型更一致地使用代码简报中的结构化证据，避免晚局泛泛要求别人报票而自己不落目标。"
+    }
+  ],
+  "risks": [
+    "结构化记忆过多可能推高 prompt 长度；实现时必须保持每类摘要有硬上限，最终 decision_brief 仍截断在约 900 字以内。",
+    "增强正则可能误抽取否定句，例如“不要出p8”“p8不是查杀”；需要加入简单否定过滤，至少识别“不是/别/不要/不出/不投”。",
+    "狼遗言自爆队友在本环境中可能常常有效，但规则允许欺骗；若过度相信会被反向利用，所以只能作为 claim，必须与票型或独立发言交叉。",
+    "过度积极开枪可能误杀关键神职；猎人反应阈值应要求多类证据，并保留强保护链降权。",
+    "如果外部 public sync 不包含完整历史投票事件，新增事实提取只能利用当前 turn_packet 和已有 sync 中可见字段；不得尝试读取审计或隐藏状态。",
+    "修改 `_mapping_to_public_record()` 的 source 逻辑可能影响现有简报排序，需要保持 schema 合法性和所有辅助函数的容错。"
+  ],
+  "code_agent_brief": "请只修改 hunter 候选的 task_agent.py 和 task.md。不要改引擎、规则、工具、预算或访问外部文件/网络。目标是在 hunter-n00104 现有稳定框架上做最小策略升级：1) 在 task_agent.py 中加入 bounded 的结构化公开记忆，按系统事实（死亡、投票、警徽、公开 reveal）和玩家声称（查验、身份、遗言、自爆队友、归票）分开保存；不要拼接完整历史。2) 扩展 `_extract_claim_signals()`，覆盖“验pX是查杀/金水”“pX查杀/金水”“给pX发金水”“队友pX/还剩pX”“今天出/压/票pX”等常见句式，并处理“不是/别/不要/不投”等否定。3) 调整 `_observe_decision_context()` 和 `observe()`，优先保留公开事实和 last_words 信号，避免 dialogue_records 把 state/vote/death 挤掉。4) 重构 hunter/day_vote 目标评分，将分数拆成身份冲突、票型异常、独立预先怀疑、狼遗言/队友声称、死亡/警徽链、好人保护链；同一 speaker 单轮不要重复叠太多分，单一声称不能形成强证据。5) 改进 `_build_decision_brief()`，固定区分“系统事实 / 玩家声称 / 推断排序”，并提醒未翻牌和玩家查验都不是系统事实；死亡原因不可臆造。6) 猎人反应阶段仅在 allowed_actions/phase 明确是 hunter shoot/reaction 时启用；round>=3 或 alive<=6 时，若 top1 有至少两类独立证据且无强保护链，则推荐开枪，否则 pass。7) 在 task.md 加入对应的事实/声称分层和残局猎人反应规则。保持 TaskAgent 接口、JSON 行动契约、本地校验和工具预算不变，并自行检查 Python 语法。"
+}

@@ -1,0 +1,443 @@
+--- witch-n00023/task_agent.py
++++ witch-n00081/task_agent.py
+@@ -221,6 +221,7 @@
+ 
+         self._update_private_state(private)
+         system = self._system_prompt(private)
++        witch_summary = self._witch_decision_summary(turn_packet)
+         prompt = {
+             "game": turn_packet["game"],
+             "public_rules": turn_packet["public_rules"],
+@@ -230,7 +231,9 @@
+             "request": turn_packet["request"],
+             "compact_memory": self._render_compact_memory(),
+             "self_resource_state": dict(self._known_private_state),
+-            "witch_decision_summary": self._witch_decision_summary(turn_packet),
++            "witch_decision_summary": witch_summary,
++            "decision_brief": witch_summary.get("decision_brief", {}),
++            "speech_guidance": witch_summary.get("speech_guidance", ""),
+             "speech_safety": (
+                 "所有发言只能基于公开事实；不要把药水余量、夜刀目标、自己未公开的用药结果、"
+                 "或未公开身份链说成既成事实。"
+@@ -246,7 +249,7 @@
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+-        system = system + "\n\n【女巫专用决策规约】\n先复盘最近票型与死亡，再看自己药水状态。救药优先保留给能明显改变轮次的高价值夜死；毒药只在强对跳、稳定票型压缩、公开身份链冲突或终局倒计时等高置信情形下优先使用。证据不足时默认保留资源。公开发言只谈公开事实，不得泄露药水余量、夜间目标或自己未公开的用药结果。"
++        system = system + "\n\n【女巫专用决策规约】\n先复盘最近票型与死亡，再看自己药水状态。救药优先保留给能明显改变轮次的高价值夜死；毒药只在强对跳、稳定票型压缩、公开身份链冲突或终局倒计时等高置信情形下优先使用。证据不足时默认保留资源。若 decision_brief 标记 terminal_pressure、high_value_claim_conflict 或 self_at_risk，应优先解释并执行其中建议，不能机械 pass。公开发言只谈公开事实，不得泄露药水余量、夜间目标或自己未公开的用药结果。"
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -293,6 +296,12 @@
+             action = normalize_decision(raw, turn_packet["request"])
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
++                action = self._apply_witch_critical_fallback(turn_packet, action, witch_summary)
++                fallback_error = decision_error(action, turn_packet["request"])
++                if fallback_error is not None:
++                    # 安全修正只能产生当前请求已经允许的行动；若候选摘要有误，
++                    # 保留模型原答而不是让纠错逻辑破坏行动契约。
++                    action = normalize_decision(raw, turn_packet["request"])
+                 self._remember_witch_action(turn_packet, action)
+                 return action
+             if _attempt >= self.max_decision_retries:
+@@ -432,7 +441,7 @@
+         recent = self._compact_history[-4:]
+         return json.dumps(recent, ensure_ascii=False, separators=(",", ":"))
+ 
+-    def _summarize_public_sync(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
++    def _legacy_summarize_public_sync(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
+         def pick(source: Mapping[str, Any], *names: str) -> Any:
+             for name in names:
+                 if name in source:
+@@ -518,7 +527,7 @@
+         }
+         self._known_private_state["last_witch_action"] = dict(self._last_witch_action)
+ 
+-    def _witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
++    def _legacy_witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+         game = turn_packet.get("game") or {}
+         public_state = turn_packet.get("public_state") or {}
+@@ -731,6 +740,368 @@
+         }
+         return summary
+ 
++    @staticmethod
++    def _public_sources(packet: Mapping[str, Any]) -> list[Mapping[str, Any]]:
++        """返回公开包的几个合法载体；不递归读取私有信息。"""
++        sources: list[Mapping[str, Any]] = []
++        for source in (
++            packet.get("public_state"),
++            packet.get("payload"),
++            packet.get("game"),
++            packet,
++        ):
++            if isinstance(source, Mapping):
++                sources.append(source)
++                nested = source.get("public_state")
++                if isinstance(nested, Mapping):
++                    sources.append(nested)
++                nested_payload = source.get("payload")
++                if isinstance(nested_payload, Mapping):
++                    sources.append(nested_payload)
++        return sources
++
++    @staticmethod
++    def _public_value(sources: list[Mapping[str, Any]], *names: str) -> Any:
++        for source in sources:
++            for name in names:
++                value = source.get(name)
++                if value not in (None, ""):
++                    return value
++        return None
++
++    def _summarize_public_sync(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
++        """压缩公开同步；PUBLIC_STATE_SYNC 可能把内容放在三层不同载体中。"""
++        sources = self._public_sources(sync_packet)
++        summary: dict[str, Any] = {}
++        aliases = {
++            "round": ("round", "game_round", "day_round"),
++            "phase": ("phase", "public_phase", "stage"),
++            "deaths": ("deaths", "dead_players", "night_deaths", "death_events"),
++            "votes": ("votes", "voting", "vote_results", "vote_events"),
++            "sheriff": ("sheriff", "police", "警长", "captain", "sheriff_id"),
++            "claims": ("claims", "reveals", "public_claims", "role_claims", "counterclaims"),
++            "players": ("players", "alive_players", "living_players", "survivors"),
++        }
++        for output_key, names in aliases.items():
++            value = self._public_value(sources, *names)
++            if value in (None, "", []):
++                continue
++            summary[output_key] = (
++                self._compact_entities(value) if isinstance(value, list) else self._compact_value(value)
++            )
++        return summary
++
++    def _alive_player_ids(self, public_state: Mapping[str, Any]) -> list[str]:
++        records = self._public_value(
++            self._public_sources(public_state),
++            "alive_players", "living_players", "survivors", "players",
++        )
++        if not isinstance(records, list):
++            return []
++        result: list[str] = []
++        for record in records:
++            if not isinstance(record, Mapping):
++                continue
++            player_id = record.get("player_id", record.get("id"))
++            if player_id in (None, ""):
++                continue
++            alive = record.get("alive")
++            if alive is None:
++                status = str(record.get("status") or "").lower()
++                alive = status not in {"dead", "dead_player", "eliminated", "killed", "deceased"}
++            if self._coerce_bool(alive):
++                result.append(str(player_id))
++        return list(dict.fromkeys(result))
++
++    def _known_public_dead_roles(self, public_state: Mapping[str, Any]) -> list[str]:
++        sources = self._public_sources(public_state)
++        records = self._public_value(sources, "deaths", "dead_players", "death_events", "players")
++        if not isinstance(records, list):
++            return []
++        roles: list[str] = []
++        for record in records:
++            if not isinstance(record, Mapping):
++                continue
++            alive = record.get("alive")
++            status = str(record.get("status") or "").lower()
++            if alive is True or status in {"alive", "living"}:
++                continue
++            role = record.get("revealed_role", record.get("public_role", record.get("role")))
++            if role not in (None, ""):
++                roles.append(str(role))
++        return list(dict.fromkeys(roles))
++
++    def _allowed_action_info(self, request: Mapping[str, Any]) -> dict[str, Any]:
++        info: dict[str, Any] = {"kinds": [], "targets": {}}
++        actions = request.get("allowed_actions")
++        if not isinstance(actions, list):
++            return info
++        for item in actions:
++            if not isinstance(item, Mapping) or not item.get("kind"):
++                continue
++            kind = str(item["kind"])
++            info["kinds"].append(kind)
++            targets = item.get("target_ids")
++            info["targets"][kind] = (
++                {str(target) for target in targets if target not in (None, "")}
++                if isinstance(targets, list) else set()
++            )
++        return info
++
++    def _dialogue_signals(self, dialogue: Any) -> dict[str, Any]:
++        """只抽取当前轮的短公开信号，原文仍由受限工具提供给模型核对。"""
++        records = dialogue if isinstance(dialogue, list) else []
++        role_words = {
++            "seer": ("预言家", "跳预", "真预", "假预", "seer"),
++            "hunter": ("猎人", "hunter"),
++            "guard": ("守卫", "guard"),
++            "witch": ("女巫", "witch"),
++            "villager": ("平民", "民牌", "villager"),
++        }
++        speakers: list[dict[str, Any]] = []
++        conflicts: list[dict[str, Any]] = []
++        attacks: dict[str, int] = {}
++        for item in records[:8]:
++            if isinstance(item, Mapping):
++                speaker = item.get("speaker_id", item.get("player_id", item.get("id", "")))
++                text = str(item.get("text", item.get("content", item.get("message", ""))))
++            else:
++                speaker, text = "", str(item)
++            text = text[:240]
++            lower = text.lower()
++            claims = [role for role, words in role_words.items() if any(word in lower for word in words)]
++            evidence = [term for term in ("查验", "金水", "查杀", "验人", "查到") if term in text]
++            denial = any(term in text for term in ("没跳过", "没有跳", "不是", "否认", "对不上", "不成立"))
++            conflict = denial or any(term in text for term in ("悍跳", "对跳", "冲突", "假预", "伪造"))
++            targets = re.findall(r"(?:攻击|怀疑|投|归票|查杀|金水)[：: ]*([A-Za-z]?\d+)", text)
++            for target in targets:
++                attacks[target] = attacks.get(target, 0) + 1
++            signal = {
++                "speaker_id": str(speaker) if speaker not in (None, "") else "",
++                "claims": claims[:3],
++                "evidence": evidence[:3],
++                "denial_or_conflict": conflict,
++                "attack_targets": targets[:3],
++            }
++            if signal["speaker_id"] or claims or evidence or conflict or targets:
++                speakers.append(signal)
++            if conflict:
++                conflicts.append(signal)
++        top_suspects = [
++            {"target_id": target, "mentions": count}
++            for target, count in sorted(attacks.items(), key=lambda pair: (-pair[1], pair[0]))[:3]
++        ]
++        return {"speakers": speakers[:8], "conflicts": conflicts[:5], "top_suspects": top_suspects}
++
++    def _witch_decision_summary(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
++        request = turn_packet.get("request") or {}
++        game = turn_packet.get("game") or {}
++        public_state = turn_packet.get("public_state") or {}
++        sources = self._public_sources(turn_packet)
++        phase = str(game.get("public_phase", game.get("phase", "")))
++        action_info = self._allowed_action_info(request)
++        kinds = action_info["kinds"]
++        heal_kind = next((kind for kind in kinds if "heal" in kind or "antidote" in kind), None)
++        poison_kind = next((kind for kind in kinds if "poison" in kind), None)
++        pass_kind = next((kind for kind in kinds if "pass" in kind or kind == "wait"), None)
++        deaths = self._public_value(sources, "deaths", "dead_players", "night_deaths", "death_events")
++        votes = self._public_value(sources, "votes", "voting", "vote_results", "vote_events")
++        claims = self._public_value(sources, "claims", "reveals", "public_claims", "role_claims", "counterclaims")
++        deaths = deaths if isinstance(deaths, list) else []
++        votes = votes if isinstance(votes, list) else []
++        claims = claims if isinstance(claims, list) else []
++        dialogue = ((turn_packet.get("tool_context") or {}).get("current_round_dialogue") or [])
++        dialogue_signals = self._dialogue_signals(dialogue)
++        alive_ids = self._alive_player_ids(public_state)
++        alive_count = self._public_value(sources, "alive_count", "living_count", "survivor_count")
++        if alive_count is None and alive_ids:
++            alive_count = len(alive_ids)
++        alive_count = self._nonnegative_int(alive_count, fallback=None)
++        dead_roles = self._known_public_dead_roles(public_state)
++        dead_power_roles = [role for role in dead_roles if any(word in role.lower() for word in ("seer", "预言", "hunter", "猎人", "guard", "守卫"))]
++
++        def record_id(record: Any, *keys: str) -> str | None:
++            if not isinstance(record, Mapping):
++                return None
++            for key in keys + ("target_id", "player_id", "id", "speaker_id", "voter_id", "vote_target_id", "target"):
++                value = record.get(key)
++                if value not in (None, ""):
++                    return str(value)
++            return None
++
++        vote_totals: dict[str, int] = {}
++        for record in votes:
++            target = record_id(record, "vote_target_id", "target_id", "target")
++            if target:
++                count = self._nonnegative_int(record.get("count") if isinstance(record, Mapping) else 1, fallback=1) or 1
++                vote_totals[target] = vote_totals.get(target, 0) + count
++        self_votes = vote_totals.get(self.player_id, 0)
++        max_votes = max(vote_totals.values(), default=0)
++        self_at_risk = self_votes >= 2 or (self_votes > 0 and self_votes == max_votes)
++
++        claimed_roles: dict[str, set[str]] = {}
++        claim_conflicts: list[dict[str, Any]] = []
++        for record in claims:
++            if not isinstance(record, Mapping):
++                continue
++            speaker = record_id(record, "claimant_id", "owner_id")
++            blob = json.dumps(record, ensure_ascii=False).lower()
++            role = str(record.get("role", record.get("claimed_role", ""))).lower()
++            for role_name, words in {
++                "seer": ("seer", "预言家", "预言"), "hunter": ("hunter", "猎人"),
++                "guard": ("guard", "守卫"), "witch": ("witch", "女巫"),
++            }.items():
++                if any(word in role or word in blob for word in words) and speaker:
++                    claimed_roles.setdefault(role_name, set()).add(speaker)
++            if any(term in blob for term in ("counterclaim", "challenge", "conflict", "悍跳", "对跳", "冲突")):
++                claim_conflicts.append({"speaker_id": speaker, "evidence": self._compact_value(record)})
++        for signal in dialogue_signals["conflicts"]:
++            claim_conflicts.append(signal)
++            speaker = signal.get("speaker_id")
++            if speaker:
++                claimed_roles.setdefault("conflict", set()).add(speaker)
++
++        high_value_roles = {player for role in ("seer", "hunter", "guard") for player in claimed_roles.get(role, set())}
++        conflict_speakers = {item.get("speaker_id") for item in claim_conflicts if item.get("speaker_id")}
++        attack_counts = {item["target_id"]: item["mentions"] for item in dialogue_signals["top_suspects"]}
++        poison_store: dict[str, dict[str, Any]] = {}
++
++        def add_candidate(target: str | None, points: int, reason: str) -> None:
++            if not target or target == self.player_id:
++                return
++            allowed = action_info["targets"].get(poison_kind or "", set())
++            if allowed and target not in allowed:
++                return
++            item = poison_store.setdefault(target, {"kind": poison_kind, "target_id": target, "score": 0, "reasons": []})
++            item["score"] += points
++            if reason not in item["reasons"]:
++                item["reasons"].append(reason)
++
++        for target, count in vote_totals.items():
++            # 票多只是弱信号，不能单独把好人送进毒药候选。
++            add_candidate(target, min(15, count * 5), f"票型聚集 {count} 票")
++        for target in conflict_speakers:
++            add_candidate(str(target), 45, "公开身份链冲突/对跳")
++            if target in high_value_roles:
++                add_candidate(str(target), 30, "公开神职声明牵涉冲突")
++        for signal in dialogue_signals["speakers"]:
++            speaker = signal.get("speaker_id")
++            if not speaker:
++                continue
++            if signal.get("evidence") and signal.get("denial_or_conflict"):
++                add_candidate(speaker, 35, "验人链与否认互相矛盾")
++            if "seer" in signal.get("claims", []) and signal.get("evidence"):
++                add_candidate(speaker, 15, "公开跳预并给出验人链")
++        for target, mentions in attack_counts.items():
++            if mentions >= 2:
++                add_candidate(target, 15, "当前轮被集中点名")
++        for target, roles in claimed_roles.items():
++            if target == "conflict":
++                continue
++            for speaker in roles:
++                if target == "seer" or target == "hunter":
++                    continue
++                add_candidate(speaker, 30, "公开身份声明值得核对")
++        poison_candidates = [
++            {"kind": item["kind"], "target_id": item["target_id"], "score": min(150, item["score"]), "reason": "；".join(item["reasons"])}
++            for item in sorted(poison_store.values(), key=lambda value: (-value["score"], value["target_id"]))[:3]
++        ]
++
++        heal_candidates: list[dict[str, Any]] = []
++        heal_allowed = action_info["targets"].get(heal_kind or "", set())
++        for index, record in enumerate(deaths[:3]):
++            target = record_id(record)
++            if not target or (heal_allowed and target not in heal_allowed):
++                continue
++            public_role = str(record.get("revealed_role", record.get("public_role", record.get("role", "")))) if isinstance(record, Mapping) else ""
++            high_value = any(word in public_role.lower() for word in ("seer", "预言", "hunter", "猎人", "guard", "守卫"))
++            heal_candidates.append({"kind": heal_kind, "target_id": target, "score": 110 if high_value else 80 - index * 10, "high_value_public_role": high_value, "reason": "公开高价值神职" if high_value else "最近夜死"})
++
++        poison_available = self._coerce_bool(self._known_private_state.get("poison_available", self._known_private_state.get("can_poison"))) is True
++        terminal_pressure = bool(
++            poison_available and ((alive_count is not None and alive_count <= 9) or len(dead_power_roles) >= 2 or self_at_risk)
++        )
++        speech_guidance = "仅基于公开事实发言。"
++        if self_at_risk or terminal_pressure or claim_conflicts:
++            speech_guidance = "以自然神职/强好人视角明确复盘公开票型，给出归票目标并反对无依据跟风；不要透露夜刀、药水余量或未公开用药。"
++        if str(request.get("kind") or "") in {"speak", "last_words"}:
++            speech_guidance += " 遗言也要交代公开逻辑链和怀疑列表，不要说‘没什么可留’。"
++        board_snapshot = {
++            "alive_count": alive_count,
++            "estimated_max_wolves": 4,
++            "wolf_pressure": "high" if (alive_count is not None and alive_count <= 9) else "normal",
++            "public_dead_power_roles": dead_power_roles[:5],
++            "sheriff_id": self._public_value(sources, "sheriff_id", "sheriff", "police", "captain"),
++            "self_vote_pressure": self_votes,
++            "self_at_risk": self_at_risk,
++            "seer_claims": sorted(claimed_roles.get("seer", set()))[:4],
++            "hunter_claims": sorted(claimed_roles.get("hunter", set()))[:4],
++            "guard_claims": sorted(claimed_roles.get("guard", set()))[:4],
++            "witch_claims": sorted(claimed_roles.get("witch", set()))[:4],
++            "claim_conflicts": claim_conflicts[:5],
++            "dialogue_signals": dialogue_signals,
++            "recent_deaths": [self._compact_value(item) for item in deaths[:3]],
++            "vote_clusters": [{"target_id": target, "count": count} for target, count in sorted(vote_totals.items(), key=lambda pair: (-pair[1], pair[0]))[:3]],
++            "resource_state": dict(self._known_private_state),
++        }
++        decision_brief = {
++            "terminal_pressure": terminal_pressure,
++            "high_value_claim_conflict": bool(claim_conflicts),
++            "self_at_risk": self_at_risk,
++            "recommended_priority": "检查高分毒候选，残局不要机械 pass" if terminal_pressure else "核对公开链后再决定，低信息可保留资源",
++        }
++        return {
++            "phase": phase,
++            "request_kind": request.get("kind"),
++            "board_snapshot": board_snapshot,
++            "decision_brief": decision_brief,
++            "speech_guidance": speech_guidance,
++            "candidate_ranking": {
++                "heal": heal_candidates[:2],
++                "poison": poison_candidates,
++                "pass": {"kind": pass_kind or "pass", "score": 10 if (terminal_pressure or poison_candidates) else 40, "reason": "残局或高冲突时不要机械 pass" if terminal_pressure else "证据不足时保留资源"},
++            },
++        }
++
++    def _apply_witch_critical_fallback(
++        self, turn_packet: Mapping[str, Any], action: dict[str, Any], witch_summary: Mapping[str, Any]
++    ) -> dict[str, Any]:
++        """只修正最危险的残局留毒；不接管模型已经作出的合法非 pass 决策。"""
++        if action.get("kind") not in {"pass", "wait"} and "pass" not in str(action.get("kind") or "").lower():
++            return action
++        request = turn_packet.get("request") or {}
++        phase = str((turn_packet.get("game") or {}).get("public_phase", (turn_packet.get("game") or {}).get("phase", ""))).lower()
++        if "witch" not in phase and "witch" not in str(request.get("kind") or "").lower():
++            return action
++        brief = witch_summary.get("decision_brief") or {}
++        if not brief.get("terminal_pressure"):
++            return action
++        ranking = witch_summary.get("candidate_ranking") or {}
++        for candidate in ranking.get("poison", []) if isinstance(ranking.get("poison"), list) else []:
++            if int(candidate.get("score", 0)) < 90:
++                continue
++            target = candidate.get("target_id")
++            if not target:
++                continue
++            for allowed in request.get("allowed_actions", []):
++                if isinstance(allowed, Mapping) and "poison" in str(allowed.get("kind", "")).lower():
++                    targets = allowed.get("target_ids")
++                    if isinstance(targets, list) and target in targets:
++                        return {"request_id": request.get("request_id", action.get("request_id")), "player_id": request.get("player_id", action.get("player_id", self.player_id)), "kind": str(allowed["kind"]), "target_id": str(target)}
++        heal_available = self._coerce_bool(
++            self._known_private_state.get("antidote_available", self._known_private_state.get("can_heal"))
++        ) is True
++        for candidate in ranking.get("heal", []) if isinstance(ranking.get("heal"), list) else []:
++            if not heal_available or int(candidate.get("score", 0)) < 100 or not candidate.get("high_value_public_role"): 
++                continue
++            target = candidate.get("target_id")
++            for allowed in request.get("allowed_actions", []):
++                if isinstance(allowed, Mapping) and ("heal" in str(allowed.get("kind", "")).lower() or "antidote" in str(allowed.get("kind", "")).lower()):
++                    targets = allowed.get("target_ids")
++                    if isinstance(targets, list) and target in targets:
++                        return {"request_id": request.get("request_id", action.get("request_id")), "player_id": request.get("player_id", action.get("player_id", self.player_id)), "kind": str(allowed["kind"]), "target_id": str(target)}
++        return action
++
+     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:
+         if self.request_coordinator is not None:
+             return await self.request_coordinator.complete_json(
+--- witch-n00023/task.md
++++ witch-n00081/task.md
+@@ -23,3 +23,10 @@
+ - 保持像正常玩家或自然的神职玩家。
+ - 先看公开票型与死亡，再决定救、毒或 pass。
+ - 宁可保留关键资源，也不要因为短期直觉过早消耗唯一药水。
++
++## 残局例外与白天纪律
++- “证据不足就保留资源”不是永远 pass 的规则：当存活人数不超过 9、好人神职已连续死亡、自己成为主要票口，或公开身份链出现强冲突时，必须重新衡量药水的轮次价值。
++- 若进入终局压力且有多条公开信号共同指向某个合法目标，不能仅因票数或单一怀疑点就机械保留毒药；应优先解释公开逻辑，并考虑对高置信冲突目标用毒。
++- 白天尽量保护可信的真预言家、金水与警长，投票不要在有明确归票依据时 pass；普通低信息首日仍可保留行动。
++- 发言可以基于公开票型、身份声明、查验链和矛盾强势归票，也要在自己成为票口时给出清晰的公开推理。遗言应交代逻辑链和怀疑列表，不要说“没什么可留”。
++- 任何阶段都不得泄露夜刀目标、药水余量、未公开的用药结果或仅女巫可知的夜间事实；保密不等于沉默。

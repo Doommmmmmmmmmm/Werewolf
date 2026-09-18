@@ -1,0 +1,399 @@
+--- wolf-n00020/task_agent.py
++++ wolf-n00044/task_agent.py
+@@ -210,11 +210,15 @@
+             "death_order": [],
+             "recent_votes": [],
+             "wolf_plan": None,
++            "resolved_night_memory": [],
+             "_claim_state": {},
+             "_vote_state": {},
+             "_dead_state": [],
+             "_known_sheriff_id": None,
+             "_recent_vote_state": [],
++            "_last_observed_round": None,
++            "_last_observed_phase": None,
++            "_last_observed_dead_players": [],
+         }
+         self._public_ledger: dict[str, list[dict[str, Any]]] = {
+             "claims": [],
+@@ -236,6 +240,13 @@
+ 
+         self._update_public_ledger(sync_packet, summary)
+ 
++        self._update_night_resolution(
++            summary,
++            previous_phase=self._game_memory.get("_last_observed_phase"),
++            previous_round=self._game_memory.get("_last_observed_round"),
++            previous_dead_players=list(self._game_memory.get("_last_observed_dead_players") or []),
++        )
++
+         for key in ("round", "phase", "sheriff_id"):
+             value = summary.get(key)
+             if value is not None:
+@@ -251,6 +262,10 @@
+         public_texts = summary.get("public_texts") or []
+         self._recent_public_texts.extend(public_texts)
+         self._recent_public_texts = self._recent_public_texts[-_MAX_HISTORY_ITEMS:]
++
++        self._game_memory["_last_observed_round"] = summary.get("round")
++        self._game_memory["_last_observed_phase"] = summary.get("phase")
++        self._game_memory["_last_observed_dead_players"] = list(summary.get("dead_players") or [])
+ 
+         self._public_history.append(summary)
+         self._public_history = self._public_history[-_MAX_HISTORY_ITEMS:]
+@@ -426,27 +441,144 @@
+         self._self_history.append(summary)
+         self._self_history = self._self_history[-_MAX_HISTORY_ITEMS:]
+ 
++    def _update_night_resolution(
++        self,
++        summary: Mapping[str, Any],
++        *,
++        previous_phase: Any,
++        previous_round: Any,
++        previous_dead_players: list[Any],
++    ) -> None:
++        if not self._is_night_phase(previous_phase):
++            return
++        current_phase = str(summary.get("phase") or "")
++        if self._is_night_phase(current_phase):
++            return
++        plan = self._game_memory.get("wolf_plan")
++        if not isinstance(plan, Mapping):
++            return
++        target_id = self._target_ref_text(plan.get("primary_target"))
++        backup_id = self._target_ref_text(plan.get("backup_target"))
++        if not target_id and not backup_id:
++            return
++        current_dead_players = [str(item) for item in summary.get("dead_players") or []]
++        previous_dead_players = [str(item) for item in previous_dead_players]
++        dawn_deaths = [item for item in current_dead_players if item not in set(previous_dead_players)]
++        if target_id and target_id in dawn_deaths:
++            outcome = "success"
++            risk_tag = "主刀命中"
++            reason = "夜刀命中，主目标不必继续降权"
++        elif not dawn_deaths:
++            outcome = "no_death"
++            risk_tag = "疑似被守/被救"
++            reason = "上一晚无死亡，主目标与备刀都应明显降权"
++        else:
++            outcome = "other_death"
++            risk_tag = "主刀未兑现"
++            reason = "本晚死亡未落在主刀目标上，需要重新排序"
++        resolved = self._game_memory.setdefault("resolved_night_memory", [])
++        resolved.append(
++            {
++                "round": summary.get("round", previous_round),
++                "wolf_target": target_id,
++                "backup_target": backup_id,
++                "dawn_deaths": dawn_deaths,
++                "outcome": outcome,
++                "risk_tag": risk_tag,
++                "reason": reason,
++                "previous_phase": previous_phase,
++                "current_phase": current_phase,
++            }
++        )
++        if len(resolved) > _MAX_HISTORY_ITEMS:
++            del resolved[:-_MAX_HISTORY_ITEMS]
++
++    @staticmethod
++    def _is_night_phase(phase: Any) -> bool:
++        phase_text = str(phase or "").lower()
++        return "night" in phase_text or "夜" in phase_text
++
++    @staticmethod
++    def _target_ref_text(value: Any) -> str | None:
++        if isinstance(value, Mapping):
++            for key in ("player_id", "target_id", "id", "seat", "seat_id"):
++                if key in value and value[key] is not None:
++                    return str(value[key])
++            return None
++        if value is None:
++            return None
++        return str(value)
++
++    @staticmethod
++    def _latest_night_resolution(memory_snapshot: Mapping[str, Any]) -> Mapping[str, Any] | None:
++        entries = memory_snapshot.get("night_resolution") or []
++        for item in reversed(entries):
++            if isinstance(item, Mapping):
++                return item
++        return None
++
++    def _night_target_adjustment(
++        self,
++        target_id: str,
++        memory_snapshot: Mapping[str, Any],
++    ) -> tuple[int, list[str]]:
++        penalty = 0
++        reasons: list[str] = []
++        recent_failures = 0
++        for idx, entry in enumerate(reversed(memory_snapshot.get("night_resolution") or []), start=1):
++            if not isinstance(entry, Mapping):
++                continue
++            weight = max(2, 8 - idx * 2)
++            outcome = str(entry.get("outcome") or "")
++            primary = self._target_ref_text(entry.get("wolf_target"))
++            backup = self._target_ref_text(entry.get("backup_target"))
++            if target_id == primary:
++                if outcome == "success":
++                    reasons.append("近期刀口已兑现")
++                    penalty -= 1
++                elif outcome:
++                    penalty += weight
++                    recent_failures += 1
++                    reasons.append(str(entry.get("risk_tag") or "上一晚刀口失败"))
++            elif target_id == backup and outcome != "success":
++                penalty += max(1, weight // 2)
++                reasons.append("备刀曾被用于失败回合")
++        if recent_failures >= 2:
++            penalty += 3
++            reasons.append("连续夜刀失败")
++        return penalty, reasons
++
+     def _memory_snapshot(self) -> dict[str, Any]:
+         night_plan = self._game_memory.get("wolf_plan")
+         if isinstance(night_plan, Mapping):
+             signature = night_plan.get("signature") if isinstance(night_plan.get("signature"), Mapping) else {}
+             phase = str(self._game_memory.get("phase") or "")
+-            if signature.get("round") != self._game_memory.get("round") or ("night" not in phase.lower() and "夜" not in phase):
++            if signature.get("round") != self._game_memory.get("round") or not self._is_night_phase(phase):
+                 night_plan = None
++            else:
++                night_plan = {
++                    "primary_target": night_plan.get("primary_target"),
++                    "backup_target": night_plan.get("backup_target"),
++                    "tie_break_reason": night_plan.get("tie_break_reason"),
++                    "switch_conditions": night_plan.get("switch_conditions"),
++                    "last_failed_kill_reason": night_plan.get("last_failed_kill_reason"),
++                    "candidate_order": night_plan.get("candidate_order", [])[:3],
++                }
+         snapshot = {
+             "game": {
+                 key: self._game_memory.get(key)
+                 for key in ("round", "phase", "sheriff_id", "alive_players", "dead_players", "death_order")
+             },
+             "public_ledger": {
+-                "claims": self._public_ledger["claims"][-3:],
+-                "votes": self._public_ledger["votes"][-3:],
+-                "deaths": self._public_ledger["deaths"][-3:],
+-                "sheriff_changes": self._public_ledger["sheriff_changes"][-2:],
++                "claims": self._public_ledger["claims"][-2:],
++                "votes": self._public_ledger["votes"][-2:],
++                "deaths": self._public_ledger["deaths"][-2:],
++                "sheriff_changes": self._public_ledger["sheriff_changes"][-1:],
+             },
+-            "recent_vote_summary": self._game_memory.get("recent_votes", [])[-2:],
+-            "recent_public_texts": self._recent_public_texts[-3:],
+-            "recent_self_texts": self._recent_self_texts[-2:],
++            "recent_vote_summaries": self._game_memory.get("recent_votes", [])[-3:],
++            "recent_public_claims": self._public_ledger["claims"][-3:],
++            "recent_self_summary": self._self_history[-3:],
++            "night_resolution": self._game_memory.get("resolved_night_memory", [])[-3:],
+             "night_plan": night_plan,
+             "anti_template_notes": self._anti_template_notes(),
+         }
+@@ -553,15 +685,37 @@
+             ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions)
+             primary = ranked_targets[0] if ranked_targets else None
+             backup = ranked_targets[1] if len(ranked_targets) > 1 else None
++            latest_resolution = self._latest_night_resolution(memory_snapshot)
++            last_failed_kill_reason = ""
++            if isinstance(latest_resolution, Mapping) and str(latest_resolution.get("outcome") or "") != "success":
++                last_failed_kill_reason = str(latest_resolution.get("reason") or latest_resolution.get("risk_tag") or "")
++            switch_conditions = [
++                "若主刀合法性变化或出现新的公开身份链，则重新排序",
++                "若上一晚空刀/被守目标仍无新证据变化，则优先切换备刀",
++            ]
++            if last_failed_kill_reason:
++                switch_conditions.insert(0, "上一晚失败记忆优先降权同一目标")
++            night_plan = {
++                "primary_target": primary,
++                "backup_target": backup,
++                "tie_break_reason": primary.get("reason") if isinstance(primary, Mapping) else "优先高威胁公共目标，再按座位/ID固定顺序",
++                "candidate_order": ranked_targets[:3],
++                "switch_conditions": switch_conditions[:3],
++                "last_failed_kill_reason": last_failed_kill_reason,
++                "signature": signature,
++            }
+             plan = {
+                 "stage": "night",
+                 "objective": "锁定一个主刀和一个备刀，并在重试时复用同一计划",
++                "night_plan": night_plan,
+                 "primary_target": primary,
+                 "backup_target": backup,
+-                "tie_break_reason": primary.get("reason") if isinstance(primary, Mapping) else "优先高威胁公共目标，再按座位/ID固定顺序",
++                "tie_break_reason": night_plan["tie_break_reason"],
+                 "candidate_order": ranked_targets,
+                 "notes": self._night_notes(memory_snapshot, current_dialogue),
+                 "signature": signature,
++                "last_failed_kill_reason": last_failed_kill_reason,
++                "switch_conditions": switch_conditions[:3],
+             }
+             self._game_memory["wolf_plan"] = {
+                 "signature": signature,
+@@ -575,8 +729,8 @@
+             day_focus = self._select_day_focus(turn_packet, memory_snapshot, current_dialogue, speech_actions)
+             return {
+                 "stage": "day",
+-                "objective": "用具体对象、具体证据和下一步动作维持可解释叙事",
+-                "must_include": ["具体对象", "具体证据", "下一步动作"],
++                "objective": "用具体对象、具体证据、下一步动作和发言目的维持可解释叙事",
++                "must_include": ["具体对象", "具体证据", "下一步动作", "保票/分票/切叙事"],
+                 "day_focus": day_focus,
+                 "pressure_points": self._day_pressure_points(memory_snapshot),
+                 "dialogue_focus": self._dialogue_focus(current_dialogue),
+@@ -789,6 +943,12 @@
+         if mentions:
+             score += min(3, mentions)
+             reasons.append(f"近期被提及{mentions}次")
++        night_penalty, night_reasons = self._night_target_adjustment(target_id, memory_snapshot)
++        if night_penalty:
++            score -= night_penalty
++            reasons.extend(night_reasons[:2])
++        elif night_reasons:
++            reasons.extend(night_reasons[:1])
+         if self._is_alive_record(record) is False:
+             score -= 50
+             if "已死亡" not in reasons:
+@@ -814,10 +974,10 @@
+         for pid, record in records.items():
+             if pid == self.player_id:
+                 continue
++            if self._is_alive_record(record) is False:
++                continue
+             score = 0
+             reasons: list[str] = []
+-            if self._is_alive_record(record) is False:
+-                continue
+             if record.get("is_sheriff") or record.get("sheriff"):
+                 score += 8
+                 reasons.append("警长位")
+@@ -843,25 +1003,54 @@
+             if any(entry.get("to") == pid or entry.get("from") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:]):
+                 score += 2
+                 reasons.append("警徽链")
++            if any(str(entry.get("player_id") or entry.get("voter") or "") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("votes", [])[-3:]):
++                score += 1
++                reasons.append("近期票线")
+             candidates.append(
+                 {
+                     "player_id": pid,
+                     "score": score,
+-                    "reason": ",".join(reasons[:3]) if reasons else "默认公共压力",
++                    "reason": ",".join(reasons[:4]) if reasons else "默认公共压力",
+                     "claim": claim_text,
++                    "signals": len(reasons),
+                 }
+             )
+         candidates.sort(key=lambda item: (-int(item["score"]), self._seat_sort_value(records.get(item["player_id"], {}), item["player_id"]), item["player_id"]))
+         chosen = candidates[0] if candidates else {}
++        runner_up = candidates[1] if len(candidates) > 1 else {}
++        pressure_gap = int(chosen.get("score", 0)) - int(runner_up.get("score", 0)) if chosen else 0
++        chosen_reason = str(chosen.get("reason") or "")
++        chosen_signals = int(chosen.get("signals") or 0)
++        mode = "attack"
++        mode_reason = "默认压最高公共压力点"
++        if chosen:
++            if int(chosen.get("score", 0)) >= 14 and chosen_signals >= 3 and ("票型" in chosen_reason or "警长" in chosen_reason or chosen.get("claim")):
++                mode = "sacrifice"
++                mode_reason = "高压对象已足够成势，优先用牺牲叙事换整体局面"
++            elif pressure_gap <= 2 and (chosen.get("claim") or "警徽链" in chosen_reason or "最新身份链" in chosen_reason):
++                mode = "deflect"
++                mode_reason = "头部压力接近，改用分票和转移叙事"
++            elif int(chosen.get("score", 0)) >= 8:
++                mode_reason = "存在稳定高压点，继续攻击更划算"
++            elif any("警徽链" in item.get("reason", "") or item.get("claim") for item in candidates[:3]):
++                mode = "deflect"
++                mode_reason = "前排证据更适合拿来分票"
+         evidence = self._select_day_evidence(chosen.get("player_id"), records, memory_snapshot, current_dialogue)
+-        next_action = self._day_next_action(evidence.get("kind"))
++        next_action_map = {
++            "attack": "继续压票并逼出破绽",
++            "deflect": "把压力转到更能分票的对象或链条",
++            "sacrifice": "承认局部代价，切断与该对象的绑定",
++        }
+         anti_repeat = self._recent_self_texts[-1] if self._recent_self_texts else ""
+         return {
++            "mode": mode,
++            "mode_reason": mode_reason,
+             "target": chosen,
+             "evidence": evidence,
+-            "next_action": next_action,
++            "next_action": next_action_map.get(mode, "继续围绕具体对象和证据推进"),
+             "anti_repeat": anti_repeat,
+             "candidates": candidates[:3],
++            "pressure_gap": pressure_gap,
+             "speech_budget": speech_actions[0].get("max_chars") if speech_actions else None,
+         }
+ 
+@@ -922,7 +1111,15 @@
+         claims = public_ledger.get("claims") or []
+         if claims:
+             notes.append("优先处理公开身份链")
+-        recent_votes = memory_snapshot.get("recent_vote_summary") or []
++        latest_resolution = self._latest_night_resolution(memory_snapshot)
++        if isinstance(latest_resolution, Mapping):
++            reason = str(latest_resolution.get("reason") or "")
++            risk_tag = str(latest_resolution.get("risk_tag") or "")
++            if reason:
++                notes.append(self._clip_text(reason, 40))
++            if risk_tag:
++                notes.append(self._clip_text(risk_tag, 18))
++        recent_votes = memory_snapshot.get("recent_vote_summaries") or []
+         if recent_votes:
+             notes.append("结合最近票型收敛刀口")
+         if current_dialogue:
+@@ -941,9 +1138,14 @@
+             last = sheriff_changes[-1]
+             if isinstance(last, Mapping):
+                 points.append(f"警徽变化：{last.get('from')}→{last.get('to')}")
+-        recent_votes = memory_snapshot.get("recent_vote_summary") or []
++        recent_votes = memory_snapshot.get("recent_vote_summaries") or []
+         if recent_votes:
+             points.append("根据上一轮票型调整站边")
++        night_resolution = memory_snapshot.get("night_resolution") or []
++        if night_resolution:
++            latest = next((item for item in reversed(night_resolution) if isinstance(item, Mapping)), None)
++            if latest:
++                points.append(self._clip_text(str(latest.get("risk_tag") or latest.get("reason") or ""), 28))
+         return points[:3]
+ 
+     def _dialogue_focus(self, current_dialogue: list[dict[str, Any]]) -> list[str]:
+@@ -1067,7 +1269,7 @@
+             return []
+         items = dialogue if isinstance(dialogue, list) else [dialogue]
+         snippets: list[dict[str, Any]] = []
+-        for item in items[-_MAX_HISTORY_ITEMS:]:
++        for item in items[-3:]:
+             if isinstance(item, Mapping):
+                 speaker = self._first_value(item, ("speaker", "speaker_id", "player_id", "from", "by"))
+                 text = self._first_value(item, ("text", "content", "utterance", "speech", "message"))
+@@ -1085,7 +1287,7 @@
+                 snippets.append({"text": self._clip_text(item, _MAX_SNIPPET_LENGTH)})
+             else:
+                 snippets.append({"text": self._clip_text(str(item), _MAX_SNIPPET_LENGTH)})
+-        return snippets[-_MAX_HISTORY_ITEMS:]
++        return snippets[-3:]
+ 
+     def _extract_text_snippets(self, value: Any) -> list[str]:
+         snippets: list[str] = []
+--- wolf-n00020/task.md
++++ wolf-n00044/task.md
+@@ -5,6 +5,7 @@
+ ## 夜间
+ - 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标。
+ - 每次夜间决策都要显式锁定主刀与备刀；同一夜重试时优先复用上一次锁定结果，只有候选合法性变化时再重新排序。
++- 如果上一晚无死亡，或刀口明显被化解，下一晚必须把这一失败结算当作新证据，重新排序，不能继续沿用同一目标。
+ - 首夜优先处理公开威胁高、发言强、容易带队的人。
+ - 如果有人已经明显暴露身份、对跳、被查杀或成为票型焦点，优先把这些信息纳入刀口判断。
+ - 队友意见不一致时，按“高威胁公共目标 > 警长/神职概率高 > 更难被队友解释 > 固定座位/最后一致目标”收敛。
+@@ -12,6 +13,7 @@
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序和警徽变化再表态，不要只讲泛泛原则。
+ - 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
++- 还要明确这段发言的目的：保票、分票，还是切换叙事。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
+ 

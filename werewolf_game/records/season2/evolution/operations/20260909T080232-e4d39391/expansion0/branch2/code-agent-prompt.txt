@@ -1,0 +1,169 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00029 已通过结构化行动校验，但实际胜率仅为 3/20=0.15，明显低于其父节点 villager-n00012 的 6/20=0.30。下一代不应继续堆叠泛化提示词，而应优先修复公开状态解析、死亡/存活台账、票型记录和警徽链可信度判断，使模型能在残局和继承警徽后重新审计证据，而不是机械保护未验证的链。",
+  "evidence": [
+    {
+      "type": "evaluation_fact",
+      "detail": "villager-n00029 完成20局，胜3负17，胜率0.15；focus_role_only 下无 fallback、无 invalid decision，说明主要问题不是行动 schema 或执行失败，而是决策质量。"
+    },
+    {
+      "type": "parent_comparison",
+      "detail": "父节点 villager-n00012 完成20局，胜6负14，胜率0.30。n00029 虽然加入了跨轮公共台账和更强的候选提示，但结果下降，说明当前台账实现可能提供了错误或低质量上下文。"
+    },
+    {
+      "type": "replay_fact",
+      "detail": "预选回放 s2-villager-n00029-game17 以 wolf 获胜结束。公开事件中 p1 自称预言家并报 p6 金水，p6 后续公开翻为猎人，p1 的金水链因此得到部分支持；p1 死后警徽先转给 p6，p6 死后又转给 p10。p10 实际是狼人，但仍获得并保有警徽。"
+    },
+    {
+      "type": "replay_fact",
+      "detail": "该回放中 p2 在第一天弃票，第二天投出女巫 p4，第三天投中狼人 p11，第四天投出守卫 p7；最终存活的 p10、p12 为狼人，村民未能在残局重新审计警徽继承、发言和票型。"
+    },
+    {
+      "type": "replay_fact",
+      "detail": "回放中第4轮 p10 已成为警长且没有公开查验链，只通过点名 p7、p11、p12 等方式带队；p2 仍明确表示暂不投 p10，随后把票投给 p7。这个行为符合当前提示中“优先保护警徽传递链”的副作用。"
+    },
+    {
+      "type": "code_fact",
+      "detail": "当前代码的 _extract_player_ids 会递归收集 players 中所有 player_id，但不检查玩家记录里的 alive=false；combined_alive 主要依赖减去 dead_ids，而 dead_ids 不能稳定从 players 的 alive 字段生成。因此死亡玩家可能继续进入存活候选池。"
+    },
+    {
+      "type": "code_fact",
+      "detail": "公共台账只在 observe(sync_packet) 时更新，而 runner_events 显示公开同步发生在每轮开头，不是每个公开发言或投票事件之后。若 turn_packet 的 public_state 不含完整事件历史，当前代码无法从 observe 阶段可靠保留上一轮的逐票、逐发言和警徽转移细节。"
+    },
+    {
+      "type": "code_fact",
+      "detail": "_snapshot_mapping 将包含 target_id、target 或 vote 字段的映射广泛归类为 vote_like；这会把不同类型的目标行动、警徽转移、声明或其他结构混成投票快照，缺少明确事件类型和阶段过滤。"
+    },
+    {
+      "type": "code_fact",
+      "detail": "task_agent.py 中存在多组重复定义，例如 _collect_claim_block、_render_turn_summary、_render_vote_summary、_render_speak_summary、_rank_candidates、_score_candidate、_candidate_pool 等。后定义覆盖前定义，增加了维护和验证困难，也使祖先 patch 的真实生效逻辑不直观。"
+    },
+    {
+      "type": "prompt_fact",
+      "detail": "当前清单把“警徽传递链”列为默认保护对象，但没有充分区分“警徽属于谁”和“该玩家是否有可验证查验链”。在回放中这使得 p10 继承警徽后获得过高保护。"
+    },
+    {
+      "type": "uncertainty",
+      "detail": "提供的完整回放包含所有玩家事件，但没有逐个标注 villager-n00029 的实际模型请求上下文和每次模型输出，因此不能把回放中所有村民发言都归因于同一个内部决策。可以确定的是 p2、p5、p7、p9 属于该 focus 节点，而其中至少存在与当前规则明显相关的错误保护和错误投票模式。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "存活/死亡台账不可靠",
+      "explanation": "代码把玩家 ID 的出现当作存活证据，却没有优先解析 players[].alive 或其他权威公开存活字段；死亡玩家、已出局玩家和仍可投票玩家可能混在同一候选池中。"
+    },
+    {
+      "cause": "结构化事件分类过宽",
+      "explanation": "snapshot_mapping 通过字段是否存在推断 vote_like、claim_like、sheriff_like 和 death_like，且 vote_like 优先级较高。不同事件只要包含 target_id 就可能被记录成投票，造成错误票型、错误查验链或错误警徽信息。"
+    },
+    {
+      "cause": "历史覆盖不完整且没有明确的事实层级",
+      "explanation": "每次模型会话是新会话，工具只提供当前轮对话；跨轮台账依赖有限的 PUBLIC_STATE_SYNC。现有 ledger 只保存截断的文本快照，不保存按轮次、事件类型、发言者、目标、公开翻牌和警徽转移组织的结构化记录。"
+    },
+    {
+      "cause": "警徽保护规则过度泛化",
+      "explanation": "提示词把警徽传递链和可信预言家放在相近的保护层级，但警徽只是玩家行动结果，不是身份或查验结果。狼人可以继承警徽并利用其投票权，尤其在前任持徽者死亡后必须重新评估，而不是默认保护。"
+    },
+    {
+      "cause": "模型缺少残局触发器",
+      "explanation": "虽然提示词要求残局复盘，但代码只给出粗粒度的存活、已死和候选摘要，未提供“剩余人数、已知狼人数量下界、警徽持有者是否有查验链、最近两轮票型”的强制结构化比较框架。"
+    },
+    {
+      "cause": "候选评分是关键词计数而非事件推理",
+      "explanation": "_score_candidate 对包含玩家 ID 的文本按关键词加减分。同一条包含多个玩家的发言可能同时影响多个候选；“狼”“警徽”“预言家”等词的出现并不表示该玩家真实身份或可信度，容易把叙述内容误当成针对目标的证据。"
+    },
+    {
+      "cause": "代码组织退化",
+      "explanation": "重复方法定义和祖先 patch 叠加使实际调用路径难以审计。即使不改变功能，也需要先合并为单一实现，避免后续修复只改到被覆盖的旧定义。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "先删除重复定义，只保留一份 _render_turn_summary、_render_vote_summary、_render_speak_summary、_collect_claim_block、_rank_candidates、_score_candidate、_candidate_pool、_extract_public_notes、_snapshot_mapping 及相关辅助方法；保持现有公开接口和行动 schema 不变。",
+      "rationale": "当前后定义覆盖前定义，必须先建立唯一真实执行路径，否则后续状态修复难以验证，且可能误改未生效的祖先逻辑。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增一个只读的结构化公开事实解析层，例如 _parse_public_snapshot(payload)，优先解析明确字段：game_id、round、phase、players、alive/dead 集合、publicly_revealed_roles、sheriff、death_order、votes、claims、badge transfers。解析 players 时根据 alive 字段分别更新 alive_ids 和 dead_ids；明确的 dead_player_ids、PLAYER_DIED、PLAYER_ELIMINATED、DAWN_ANNOUNCED 事件优先级高于推测。",
+      "rationale": "修复当前把所有 player_id 当作存活候选的问题，并让权威公开状态覆盖旧台账，而不是简单集合并集。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "将 ledger 改为按事实类别保存有界结构化记录：players/alive_ids/dead_ids、public_reveals、claim_records、vote_records、badge_records、death_records、recent_speeches。每条记录至少包含 round、phase、actor/player_id、target_id、text 摘要和 source=system_public 或 player_statement；系统事件和玩家声明分开保存。",
+      "rationale": "模型需要知道某条信息是系统公开结果、玩家自报还是推测，不能继续依赖扁平文本关键词。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _snapshot_mapping 的分类优先级：先根据明确 event/type/stage 判断死亡、投票、警徽、公开身份和发言；只有在没有明确类型时才使用字段启发式。投票记录必须满足 vote event 或明确 ballot/voter_id/vote_target；警徽记录必须单独记录 from_player_id/to_player_id；发言记录必须保留 speaker_id 和 text。",
+      "rationale": "避免 target_id 字段导致非投票事件被误记为 vote snapshot，减少错误票型和错误候选评分。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在每次 _render_turn_summary 中生成固定的“证据审计”区块，内容包括：当前轮次和阶段、存活/已死、公开翻牌、最近两轮逐轮票型、警徽持有者及来源、持徽者是否有持续查验链、当前至少两个可投候选及各自的系统事实/声明/推测证据。优先使用结构化记录，文本摘要仅作补充。",
+      "rationale": "将提示从关键词排名升级为可审计比较，特别支持残局和警徽继承后的重新判断。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _score_candidate 为类别化评分而非单纯关键词计数：系统死亡/公开翻牌/实际投票记录最高权重；被公开查验支持或被硬查杀分别记录；玩家自称和遗言只进入 statement evidence；警徽持有本身不提供好人分；事实错误、前后矛盾和异常票型只在能绑定到具体 actor 和具体事件时加分。输出每个候选的最多两条可核验理由。",
+      "rationale": "降低“发言中出现狼字样”“拥有警徽”“提到预言家”等文本噪声对候选排序的影响。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 vote summary 中增加显式规则：不能因为警徽继承、被前任警长支持或“暂无对跳”自动保护；只有持徽者同时具备持续且相互一致的公开查验链、被其他公开事实支持且无硬矛盾时才提高保护权重。若持徽者无查验链、归票与历史事实矛盾或继承来源本身未验证，必须把其与至少一个其他候选并列比较。",
+      "rationale": "针对回放中 p10 作为狼人继承警徽后仍被保护的核心失败模式。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _render_turn_summary 中增加残局模式，但只使用公开事实触发：alive_count <= 6，或狼阵营公开信息/胜负压力明显时。残局摘要必须列出未被公开链覆盖的存活玩家、持徽者、最近一次正确/错误票型，以及“若今天投错是否可能达到狼人胜利”的风险提示；不要读取隐藏身份。",
+      "rationale": "让模型在少人阶段停止沿用早期的默认保护策略，优先复盘可验证事实和投票后果。"
+    },
+    {
+      "file": "task.md",
+      "change": "将公共台账要求具体化为四类：系统事实、玩家声明、推测、待核对矛盾；明确规定 alive/dead 和公开翻牌必须覆盖旧台账，玩家自报不能改变系统事实。将警徽规则改为“警徽是投票权，不是身份认证；继承者必须重新审计”，并要求投票时至少比较两个候选的具体事实、具体声明和具体票型。",
+      "rationale": "让模型在自然语言层面获得与代码一致的证据层级，避免把“有警徽”误读为“可信”。"
+    },
+    {
+      "file": "task.md",
+      "change": "增加残局和继承警徽的可执行模板：先报存活/已死，再报公开翻牌和查验链，再报警徽来源与持有者是否有查验支持，最后比较两个候选；若只有玩家声明而无系统支持，必须标为声明而非事实。",
+      "rationale": "把最容易失败的阶段转换成固定输出顺序，减少模型在长上下文中遗漏警徽来源和历史票型。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "保留当前受限工具、请求预算、行动校验和公开可见性边界；不要新增工具、不要把完整历史自动注入模型。对当前轮 dialogue 仅做有界摘要，并将其与跨轮结构化台账合并。",
+      "rationale": "符合不可修改的 Runtime 契约，避免通过扩大上下文或隐藏状态访问掩盖推理缺陷。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "public_state 的具体 schema 可能在不同阶段不完全一致，过度依赖某个字段名会导致台账为空或误判。",
+      "mitigation": "解析器应支持已有代码中出现的字段别名，但只把明确的 alive/dead、event/type、player_id/target_id 等字段作为事实；缺失时保留未知，不自行推断。"
+    },
+    {
+      "risk": "更强的警徽怀疑规则可能误伤真实预言家或真实好人警长。",
+      "mitigation": "不要把持徽者直接列为狼，只取消自动保护并要求与第二候选比较；只有硬矛盾、事实错误、票型异常或缺少支持链时提高怀疑。"
+    },
+    {
+      "risk": "结构化摘要和更详细的证据审计可能增加 prompt 长度，触及每次请求12000字符限制。",
+      "mitigation": "所有记录有界保存；优先保留当前阶段、最近两轮、死亡/翻牌、警徽链和候选相关事件，使用固定短字段而不是完整历史文本。"
+    },
+    {
+      "risk": "纠正错误的 alive/dead 集合可能改变候选池，导致模型更少比较明显但已死亡的玩家；如果现有引擎状态字段不完整，可能出现候选不足。",
+      "mitigation": "候选池以 allowed_actions.target_ids 为最终可行动集合，公开台账只用于排序和理由，不改变引擎允许的 target_ids。"
+    },
+    {
+      "risk": "删除重复方法时可能意外删除祖先中唯一仍被调用的辅助逻辑。",
+      "mitigation": "coding agent 应先通过静态搜索确认调用关系，再合并为单一实现；保留现有方法名和外部接口，并增加最小 smoke tests 覆盖 observe、decide、summary 和 normalize_decision。"
+    },
+    {
+      "risk": "仅凭一局 replay 无法证明所有失败都来自同一 bug，n00029 的低胜率也可能包含模型随机性和其他角色节点差异。",
+      "mitigation": "将本次修改视为针对高置信代码缺陷和回放模式的最小实验，不声称保证胜率；重点比较后续20局中的残局错误投票、错误保护和存活台账准确率。"
+    }
+  ],
+  "code_agent_brief": "请在候选工作区基于 villager-n00029 的当前快照实现下一代 villager Task-Agent，严格只修改 task_agent.py 和 task.md，不修改 Engine、规则、可见性、工具、行动 schema、模型客户端或预算。第一步清理 task_agent.py 中重复定义，确认最终实际执行路径。第二步修复公开事实解析：从 players[].alive、alive/dead 集合、公开死亡事件和公开翻牌构造可靠的 alive_ids/dead_ids，不能把所有出现过的 player_id 当作存活。第三步将公开信息按 system_public、player_statement、inference 分层，并按 round/phase 保存有界的死亡、公开翻牌、发言、自报、投票和警徽转移记录；不要仅靠包含 target_id 或关键词来分类事件。第四步重写候选摘要和评分，系统死亡/翻牌/真实投票高于玩家声明，警徽持有本身不得增加好人可信度；警徽继承者若无持续查验链、存在事实错误或票型矛盾，必须与至少一个其他候选明确比较。第五步增加残局摘要，列出存活、已死、公开翻牌、警徽来源、最近两轮票型、未被公开链覆盖的玩家和两个候选的具体理由。第六步更新 task.md，明确警徽不是身份认证、玩家自报不是系统事实、残局和投票必须重新审计。保持现有 observe/decide/normalize_decision 接口、工具调用上限、请求长度上限和行动校验不变。完成后至少做静态检查和最小 smoke test，验证：新游戏台账重置；alive=false 玩家不进入存活列表；警徽转移不被记成投票；缺失字段不会抛异常；所有 decide 输出仍通过原有合法行动校验。"
+}

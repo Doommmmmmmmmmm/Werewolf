@@ -1,0 +1,78 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00025 的主要问题不是 schema 稳定性，而是把真实查验转化为公共压力的链路不稳定。随机回放中预言家 p12 首夜验出 p3 好人并成功拿警徽、白天放逐 p4 狼；第二夜又验出 p5 狼，但第二天公开发言只重复 p3 金水，并把票压 p5 的理由说成“警上话最模糊”，没有公开关键查杀事实，导致全场票型转向 p1 守卫，后续预言家死亡后好人信息链断裂并最终狼胜。代码层面存在两个高概率根因：一是查验结果记忆解析可能漏掉引擎实际的 SEER_RESULT/private_information 字段，二是 risk_mode 在已暴露或竞选语境下强制只释放 1 个事实，可能把最新查杀事实截断。另一个放大因素是当前轮发言摘要只取前 6 条，后置位预言家经常丢失最近发言和矛盾焦点。",
+  "evidence": [
+    "评测汇总：seer-n00025 最近 20 局 win_count=6, loss_count=14, win_rate=0.3；focus_fallback_count=0，说明失败主要不是预言家自身非法行动或 fallback，而是策略/信息转化问题。",
+    "随机回放 game4：p12 是 seer；实际查验记录为 p3=village、p5=wolf、p2=village，最终 winner=wolf。",
+    "game4 seq35-36：p12 首夜查验 p3，结果 village；seq65 警上发言公开“我是预言家，昨晚验了3号，金水”，并成功在 seq93 当选警长。",
+    "game4 seq164-165：p12 第二夜查验 p5，结果 wolf；但 seq190 第二天发言为“事实：我验过3号，金水。方向：今天票先压p5，他警上话最模糊。”没有说出 p5 查杀/狼结果。",
+    "game4 seq202-214：p12 自己投 p5，但全场多数票投 p1，p1 守卫被放逐；如果 p5 查杀被明确公开，p12 的警长身份和前一日带队成功可能更容易把票集中到 p5。",
+    "game4 seq243-249：p12 第三夜死亡后把警徽给 p3 金水，这是合理兜底，但由于 p5 查杀未形成公共事实链，后续场上开始围绕警徽转移产生大量错误推断。",
+    "当前代码 _update_inspection_records 只从 private_information/private/self.private_information 中寻找 inspect_target/target_id 与 inspect_result/check_result 等字段；回放私有事件 payload 是 target_id/team，实际 turn_packet 的 private_information 是否包含这些字段不确定。若只包含 role_state.inspections 或 latest seer result，则当前解析会漏记。",
+    "当前代码 _turn_instruction 在 risk_active 且 speech mode 时将 facts=facts[:1]；_risk_mode_summary 又把竞选/警长阶段、公开声明多等情况判为高风险。预言家一旦已有多个查验，最新查杀可能被硬截断，只剩较早金水。",
+    "当前代码 _summarize_dialogue 对当前轮发言只保留前 6 条；game4 中 p12 多次作为后置位发言，前 6 条不能覆盖 p7-p11 的近期质疑和传话错误，容易造成发言只回应过时焦点。",
+    "game4 seq180-190：多人要求 p12 报完整 R1/R2 查验链；p12 却只报 R1 p3 金水并给出弱理由压 p5，说明提示没有强制“有最新查杀时必须优先公开查杀事实”。"
+  ],
+  "root_causes": [
+    "查验结果摄取不够兼容实际数据结构：只解析少数字段名，可能漏掉 private_information 中的 role_state.inspections、inspections 映射、last_result 或 target_id/team 组合，导致 seer_memory.facts 没有最新 p5=wolf。",
+    "风险发言模式过度保守且截断顺序错误：在预言家已跳身份/拿警徽/被要求交代时仍只允许 1 个事实，且 _seer_facts_summary 按历史顺序输出，facts[:1] 会优先保留旧金水而隐藏最新查杀。",
+    "缺少“查杀优先公开”的强约束：投票和发言提示虽有事实优先，但没有将 wolf 查验结果提升为最高优先级公开事实，导致模型用发言模糊、警上行为等弱理由替代真实查验。",
+    "当前轮发言摘要偏向开头而非最近/关键发言：后置位预言家在 day_speech 时拿不到尾部玩家的最新要求和矛盾，容易给出不完整回应。",
+    "票型/声明记忆缺少结构化可信度区分：声明提取会记录公开“跳身份/传话”，但没有标记被金水、被查杀、已放逐狼、已死亡等硬事实优先级，后续公共链容易被警徽交接、传话误差等软信息污染。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "增强 _update_inspection_records：除现有字段外，兼容 private_information.inspections / private_information.role_state.inspections / private_information.seer.inspections 这类 target->team 映射；兼容 latest_result、last_inspection、seer_result 为 dict 且含 target_id/target/team/result 的结构；当找到 team='wolf' 或 'village' 时写入 inspected，并去重时按 target 更新最新结果。",
+      "rationale": "确保模型提示里的 seer_memory.facts 一定包含全部真实查验，尤其是最新查杀，避免像 game4 R2 那样明明验出 p5 狼却公共发言只剩旧金水。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 _critical_inspection_facts 或在 _seer_facts_summary 中重排事实：未公开/最新的 wolf 查验排在第一，其次最新查验，再其次旧金水、警长和票型。可在 SeerMemory 中增加 announced_inspections 集合，依据自己公开发言 text 粗略标记已报过的 target=result。",
+      "rationale": "即使 risk_mode 仍限制事实数量，也应优先释放最能改变票型的查杀，而不是历史最早的金水。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _turn_instruction 的 risk_active 逻辑：当 facts 中存在 '=wolf' 或 '查杀' 时，不执行 facts[:1] 的盲截断；改为保留所有 wolf 查验事实加最多 1 个最新金水。并加入明确指令：若有未公开的 wolf 查验，白天发言必须先报该查验，再给投票方向，不得用“发言模糊”等弱理由替代查验理由。",
+      "rationale": "预言家已暴露或作为警长被要求报验人时，隐藏查杀的生存收益低于公共票型收益；需要把风险模式从“少说事实”改成“少说推理但必须说关键查验”。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "调整 _risk_mode_summary：竞选期可以精简，但已当选警长、已公开跳预言家、或当天发言中多人要求报查验时，risk_mode.rule 改为“公开完整查验链中的查杀和最新结果，压缩其他推理”，而不是“只说 1 个已知事实”。",
+      "rationale": "game4 中 p12 已公开预言家并拿警徽，继续隐藏第二夜查杀只会让好人失去信息优势。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _summarize_dialogue：在长度限制内同时保留前 2 条和后 4 条，或优先保留包含 self、预言家、查验、查杀、金水、对跳、归票、票、质疑等关键词的发言，再补最近发言；工具返回 summary 也使用同一策略。",
+      "rationale": "后置位发言需要看到最新质疑和归票焦点。只取前 6 条会丢失尾部玩家要求“报完整查验链”的上下文。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_seer_brief 中加入 public_plan 字段：包含 inspect_chain、must_announce、vote_target_from_inspection。若存在 wolf 查验且目标在 allowed vote targets 中，vote_target_from_inspection 直接设为该目标；若是发言阶段，must_announce 写明“先报 X=wolf，再归票 X”。",
+      "rationale": "把关键策略从自然语言泛化指令变成结构化提示，降低模型忽略查杀事实的概率。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 vote mode 的提示中增加硬优先级：若有 alive 且 allowed 的 wolf 查验目标，必须投该目标；只有目标不合法/已死时才退回对跳、票型或自保规则。",
+      "rationale": "当前 p12 虽投了 p5，但其他局可能仍被软逻辑带偏；预言家投票应最大化真实查验的票型压力。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充一段角色专用执行规则：‘已公开跳预言家或持警徽后，查到狼时白天必须公开查杀和轮次；风险控制只压缩推理，不隐藏查杀。发言格式优先：查验链 -> 今日归票 -> 反驳当前误传。’",
+      "rationale": "让系统 prompt 与代码侧 brief 一致，防止模型继续把“最小事实集”理解为只报旧金水。"
+    }
+  ],
+  "risks": [
+    "更积极公开查杀会提高夜间被刀概率；但在已经跳预言家或持警徽的场景下，身份基本暴露，隐藏查杀的边际生存收益很低。",
+    "兼容更多 private_information 字段时要严格只读取 turn_packet 中已给当前玩家的私有信息，不能使用审计状态或隐藏角色信息；实现时不得引用 replay/audit roles。",
+    "如果 announced_inspections 通过自己公开发言文本粗略识别，可能因措辞差异漏标或误标；应只用于排序，不用于删除真实查验事实。",
+    "关键词优先摘要可能挤掉一些普通发言的细节；但比固定前 6 条更适合后置位预言家处理归票和对跳。",
+    "强制 wolf 查验优先可能在极少数自保临界票型下显得单线条；可保留例外：目标不在 allowed_targets、已死亡、或引擎允许弃票且查杀目标无法被投。"
+  ],
+  "code_agent_brief": "请只修改 seer 节点候选工作区的 task_agent.py 和必要的 task.md，不改 Game Engine、规则、schema、工具实现或可见性。目标是修复 seer-n00025 把查验信息转公共压力不稳定的问题。具体实现：1) 扩展 _update_inspection_records，兼容 private_information 中 inspections 映射、role_state.inspections、seer.inspections、latest_result/last_inspection/seer_result dict 等结构，将 target->team/result 正确写入 self._seer_memory.inspected；只使用 turn_packet/observe packet 中当前玩家可见字段。2) 重排 _seer_facts_summary 或新增 critical facts，使 alive/最新的 wolf 查验永远排在旧金水前。3) 修改 risk_mode 下的发言截断：不要盲目 facts[:1]；若存在 wolf 查验，保留所有 wolf 查验和最多一个最新金水，并在发言指令中明确‘先报 X=wolf/查杀，再归票 X，压缩其他推理’。4) 已跳预言家、持警徽、或当前发言多人要求报验人时，风险模式应公开关键查验链而不是隐藏查杀。5) 改 _summarize_dialogue，从固定前 6 条改为关键词优先 + 最近发言，至少保留尾部若干条，关键词包括预言家、查验、查杀、金水、对跳、归票、投票、质疑和自身 player_id。6) 在 seer_brief 中加入 public_plan/must_announce/vote_target_from_inspection，vote mode 若有合法存活 wolf 查验目标则必须投该目标。7) 在 task.md 增加简短规则：已公开跳预言家或持警徽后，查到狼必须公开轮次和目标，风险控制只压缩推理不隐藏查杀。保持现有 JSON 合约校验与预算不变。"
+}

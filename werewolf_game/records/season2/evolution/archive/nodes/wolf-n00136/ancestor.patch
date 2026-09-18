@@ -1,0 +1,560 @@
+--- wolf-n00043/task_agent.py
++++ wolf-n00136/task_agent.py
+@@ -210,6 +210,7 @@
+             "death_order": [],
+             "recent_votes": [],
+             "wolf_plan": None,
++            "resolved_night_memory": [],
+             "_claim_state": {},
+             "_vote_state": {},
+             "_dead_state": [],
+@@ -234,6 +235,7 @@
+         if not summary:
+             return
+ 
++        self._resolve_previous_night_plan(summary)
+         self._update_public_ledger(sync_packet, summary)
+ 
+         for key in ("round", "phase", "sheriff_id"):
+@@ -313,6 +315,15 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            action = self._repair_wolf_vote_action(
++                action,
++                turn_packet,
++                memory_snapshot,
++                current_dialogue,
++                wolf_strategy=self._build_wolf_strategy(
++                    turn_packet, memory_snapshot, current_dialogue
++                ),
++            )
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 self._record_self_action(turn_packet, action)
+@@ -327,6 +338,128 @@
+                     validation_error=error,
+                 )
+             feedback = f"上一次行动未通过校验：{error}"
++
++    def _repair_wolf_vote_action(
++        self,
++        action: dict[str, Any],
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++        wolf_strategy: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        """只对狼刀投票做角色特定的目标修复，不改变其它行动路径。"""
++        request = turn_packet.get("request") or {}
++        if action.get("kind") != "wolf_kill_vote":
++            return action
++        allowed_actions = request.get("allowed_actions")
++        if not isinstance(allowed_actions, list) or not any(
++            isinstance(item, Mapping) and item.get("kind") == "wolf_kill_vote"
++            for item in allowed_actions
++        ):
++            return action
++        plan = self._sanitize_wolf_plan(
++            wolf_strategy, request, memory_snapshot, current_dialogue
++        )
++        locked = plan.get("locked_plan") if isinstance(plan, Mapping) else {}
++        locked = locked if isinstance(locked, Mapping) else {}
++        legal = self._legal_target_ids(request, "wolf_kill_vote")
++        dead = {
++            str(item)
++            for item in ((memory_snapshot.get("game") or {}).get("dead_players") or [])
++        }
++        legal = [item for item in legal if item != self.player_id and item not in dead]
++        if not legal:
++            return action
++        primary = locked.get("primary_target_id")
++        backup = locked.get("backup_target_id")
++        replacement = next((item for item in (primary, backup) if item in legal), None)
++        if replacement is None:
++            replacement = sorted(legal, key=self._stable_target_key)[0]
++        chosen = action.get("target_id")
++        explicit = bool((plan.get("discussion_signal") or {}).get("explicit_consensus"))
++        consensus = (plan.get("discussion_signal") or {}).get("consensus_target")
++        # 合法但分歧的模型输出也统一到锁定主刀；只有最近讨论明确拍板了另一个
++        # 合法目标时，才允许该新共识覆盖旧锁定。
++        canonical = (
++            consensus if explicit and consensus in legal
++            else replacement
++        )
++        if chosen not in legal or chosen != canonical:
++            repaired = dict(action)
++            repaired["target_id"] = canonical
++            self._record_wolf_vote_repair(
++                turn_packet,
++                chosen=chosen,
++                replacement=canonical,
++                reason="非法目标" if chosen not in legal else "未遵循最后一致主刀",
++            )
++            stored = self._game_memory.get("wolf_plan")
++            if isinstance(stored, dict):
++                stored["fallback_occurred"] = chosen not in legal
++            return repaired
++        return action
++
++    def _record_wolf_vote_repair(
++        self,
++        turn_packet: Mapping[str, Any],
++        *,
++        chosen: object,
++        replacement: str,
++        reason: str,
++    ) -> None:
++        self._self_history.append({
++            "round": self._safe_get(turn_packet.get("game"), "round"),
++            "phase": self._safe_get(turn_packet.get("request"), "phase"),
++            "kind": "wolf_vote_repair",
++            "chosen_target_id": None if chosen is None else str(chosen),
++            "replacement_target_id": replacement,
++            "reason": reason,
++        })
++        self._self_history = self._self_history[-_MAX_HISTORY_ITEMS:]
++
++    def _resolve_previous_night_plan(self, summary: Mapping[str, Any]) -> None:
++        plan_state = self._game_memory.get("wolf_plan")
++        if not isinstance(plan_state, dict) or plan_state.get("resolved"):
++            return
++        plan_round = plan_state.get("plan_round")
++        current_round = summary.get("round")
++        phase = str(summary.get("phase") or "").lower()
++        is_day = phase and not any(token in phase for token in ("night", "夜"))
++        if current_round == plan_round and not is_day:
++            return
++        raw_dead = summary.get("dead_players") or []
++        current_dead = {str(item) for item in raw_dead}
++        start_dead = {
++            str(item) for item in plan_state.get("start_dead_players", [])
++        }
++        if current_dead:
++            new_dead_set = current_dead - start_dead
++        else:
++            start_alive = {str(item) for item in plan_state.get("start_alive_players", [])}
++            current_alive = {str(item) for item in (summary.get("alive_players") or [])}
++            new_dead_set = start_alive - current_alive if start_alive and current_alive else set()
++        new_dead = sorted(new_dead_set, key=self._stable_target_key)
++        primary = plan_state.get("primary_target_id")
++        backup = plan_state.get("backup_target_id")
++        if primary in new_dead:
++            result = "success"
++        elif new_dead:
++            result = "other_death"
++        else:
++            result = "no_death"
++        memory = {
++            "round": plan_round,
++            "primary_target_id": primary,
++            "backup_target_id": backup,
++            "legal_target_ids": list(plan_state.get("legal_target_ids") or []),
++            "deaths": new_dead,
++            "result": result,
++            "fallback": bool(plan_state.get("fallback_occurred")),
++        }
++        resolved = self._game_memory.setdefault("resolved_night_memory", [])
++        resolved.append(memory)
++        self._game_memory["resolved_night_memory"] = resolved[-_MAX_HISTORY_ITEMS:]
++        plan_state["resolved"] = True
+ 
+     def agent_manifest(self) -> dict[str, Any]:
+         return {
+@@ -448,6 +581,7 @@
+             "recent_public_texts": self._recent_public_texts[-3:],
+             "recent_self_texts": self._recent_self_texts[-2:],
+             "night_plan": night_plan,
++            "resolved_night_memory": self._game_memory.get("resolved_night_memory", [])[-4:],
+             "anti_template_notes": self._anti_template_notes(),
+         }
+         return snapshot
+@@ -540,20 +674,37 @@
+             token in channel_lower for token in ("night", "wolf")
+         )
+         if is_night and target_actions:
+-            candidate_ids = self._collect_target_ids(target_actions)
++            # 狼刀计划只以 wolf_kill_vote 的候选集为准；若测试包没有该 kind，
++            # 才退回夜间唯一的目标行动。这样不会把其他能力的 target_ids 混进狼刀协议。
++            vote_actions = [
++                item for item in target_actions if item.get("kind") == "wolf_kill_vote"
++            ]
++            plan_actions = vote_actions or target_actions
++            candidate_ids = self._legal_target_ids(
++                request, "wolf_kill_vote" if vote_actions else str(plan_actions[0].get("kind"))
++            )
++            if not candidate_ids:
++                candidate_ids = self._collect_target_ids(plan_actions)
+             discussion_signal = self._parse_wolf_discussion(current_dialogue, candidate_ids)
+-            signature = self._night_plan_signature(turn_packet, target_actions, discussion_signal)
++            signature = self._night_plan_signature(turn_packet, plan_actions, discussion_signal)
+             cached_plan = self._game_memory.get("wolf_plan")
+             if isinstance(cached_plan, Mapping) and cached_plan.get("signature") == signature:
+                 plan = cached_plan.get("strategy")
+                 if isinstance(plan, Mapping):
+-                    return dict(plan)
+-            ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions, current_dialogue)
++                    sanitized = self._sanitize_wolf_plan(
++                        plan, request, memory_snapshot, current_dialogue
++                    )
++                    self._store_wolf_plan(sanitized, signature)
++                    return sanitized
++            ranked_targets = self._rank_targets(turn_packet, memory_snapshot, plan_actions, current_dialogue)
+             primary = ranked_targets[0] if ranked_targets else None
+             backup = ranked_targets[1] if len(ranked_targets) > 1 else None
+             locked_plan = {
+                 "primary_target_id": primary.get("player_id") if isinstance(primary, Mapping) else None,
+                 "backup_target_id": backup.get("player_id") if isinstance(backup, Mapping) else None,
++                "legal_target_ids": list(candidate_ids),
++                "plan_round": self._safe_get(turn_packet.get("game"), "round"),
++                "plan_signature": signature,
+                 "consensus_target_id": discussion_signal.get("consensus_target"),
+                 "discussion_primary_target_id": discussion_signal.get("primary_target"),
+                 "discussion_backup_target_id": discussion_signal.get("backup_target"),
+@@ -567,16 +718,16 @@
+                 "candidate_order": ranked_targets,
+                 "discussion_signal": discussion_signal,
+                 "locked_plan": locked_plan,
++                "legal_target_ids": list(candidate_ids),
++                "plan_round": locked_plan["plan_round"],
++                "start_dead_players": list((memory_snapshot.get("game") or {}).get("dead_players") or []),
++                "start_alive_players": list((memory_snapshot.get("game") or {}).get("alive_players") or []),
+                 "notes": self._night_notes(memory_snapshot, current_dialogue, discussion_signal),
++                "wolf_vote_instruction": self._wolf_vote_instruction(locked_plan),
+                 "signature": signature,
+             }
+-            self._game_memory["wolf_plan"] = {
+-                "signature": signature,
+-                "primary_target_id": locked_plan.get("primary_target_id"),
+-                "backup_target_id": locked_plan.get("backup_target_id"),
+-                "consensus_target_id": locked_plan.get("consensus_target_id"),
+-                "strategy": plan,
+-            }
++            plan = self._sanitize_wolf_plan(plan, request, memory_snapshot, current_dialogue)
++            self._store_wolf_plan(plan, signature)
+             return plan
+         if speech_actions:
+             day_focus = self._select_day_focus(turn_packet, memory_snapshot, current_dialogue, speech_actions)
+@@ -617,6 +768,7 @@
+                 "consensus_target": signal.get("consensus_target"),
+                 "locked_target": signal.get("locked_target"),
+                 "has_disagreement": bool(signal.get("has_disagreement")),
++                "explicit_consensus": bool(signal.get("explicit_consensus")),
+                 "candidate_targets": list(signal.get("candidate_targets") or [])[:3],
+             },
+         }
+@@ -629,6 +781,140 @@
+                 if target not in target_ids:
+                     target_ids.append(target)
+         return target_ids
++
++    @staticmethod
++    def _player_id_pattern(player_id: str) -> str:
++        target = str(player_id)
++        if re.fullmatch(r"[A-Za-z0-9_]+", target):
++            return rf"(?<![A-Za-z0-9_]){re.escape(target)}(?![A-Za-z0-9_])"
++        return rf"(?<!\w){re.escape(target)}(?!\w)"
++
++    @classmethod
++    def _player_id_in_text(cls, text: str, player_id: str) -> bool:
++        """按 token 匹配 ID，避免 p1 命中 p10/p11。"""
++        target = str(player_id)
++        return bool(target) and re.search(cls._player_id_pattern(target), str(text)) is not None
++
++    def _legal_target_ids(self, request: Mapping[str, Any], kind: str) -> list[str]:
++        """返回本次行动包中该 kind 的原始合法候选，保持引擎顺序。"""
++        actions = request.get("allowed_actions")
++        if not isinstance(actions, list):
++            return []
++        for action in actions:
++            if not isinstance(action, Mapping) or str(action.get("kind") or "") != str(kind):
++                continue
++            raw = action.get("target_ids")
++            if not isinstance(raw, list):
++                return []
++            result: list[str] = []
++            for target_id in raw:
++                target = str(target_id)
++                if target and target != self.player_id and target not in result:
++                    result.append(target)
++            return result
++        return []
++
++    def _is_legal_target(self, target_id: object, request: Mapping[str, Any], kind: str) -> bool:
++        return str(target_id) in self._legal_target_ids(request, kind)
++
++    @staticmethod
++    def _stable_target_key(target_id: str) -> tuple[int, str]:
++        match = re.search(r"\d+", str(target_id))
++        return (int(match.group()) if match else 10**9, str(target_id))
++
++    def _sanitize_wolf_plan(
++        self,
++        plan: Mapping[str, Any],
++        request: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++    ) -> dict[str, Any]:
++        """把夜刀计划绑定到当前行动包；计划中的 target_id 不得越过这层。"""
++        result = dict(plan)
++        vote_kind = "wolf_kill_vote"
++        legal = self._legal_target_ids(request, vote_kind)
++        if not legal:
++            actions = request.get("allowed_actions")
++            target_actions = [
++                item for item in actions or []
++                if isinstance(item, Mapping) and item.get("target_ids")
++            ] if isinstance(actions, list) else []
++            legal = self._collect_target_ids(target_actions)
++        dead = {
++            str(item)
++            for item in ((memory_snapshot.get("game") or {}).get("dead_players") or [])
++        }
++        legal = [target for target in legal if target != self.player_id and target not in dead]
++        signal = result.get("discussion_signal")
++        if not isinstance(signal, Mapping):
++            signal = self._parse_wolf_discussion(current_dialogue, legal)
++        legal_set = set(legal)
++        old_locked = result.get("locked_plan")
++        old_locked = dict(old_locked) if isinstance(old_locked, Mapping) else {}
++        ranked = result.get("candidate_order")
++        ranked_ids = [
++            str(item.get("player_id")) for item in ranked or []
++            if isinstance(item, Mapping) and str(item.get("player_id")) in legal_set
++        ]
++        discussion_ids = [
++            str(signal.get(key)) for key in
++            ("consensus_target", "primary_target", "backup_target")
++            if signal.get(key) is not None and str(signal.get(key)) in legal_set
++        ]
++        old_ids = [
++            str(old_locked.get(key)) for key in ("primary_target_id", "backup_target_id")
++            if old_locked.get(key) is not None and str(old_locked.get(key)) in legal_set
++        ]
++        order: list[str] = []
++        # 只有明确的最后一致信号才越过已有 ranking；普通提及仍服从已锁计划。
++        if signal.get("explicit_consensus"):
++            order.extend(discussion_ids[:1])
++        order.extend(old_ids[:1])
++        order.extend(ranked_ids)
++        order.extend(discussion_ids)
++        order.extend(old_ids[1:])
++        order.extend(sorted(legal, key=self._stable_target_key))
++        ordered = list(dict.fromkeys(item for item in order if item in legal_set))
++        primary = ordered[0] if ordered else None
++        backup = next((item for item in ordered[1:] if item != primary), None)
++        locked = dict(old_locked)
++        locked.update({
++            "primary_target_id": primary,
++            "backup_target_id": backup,
++            "legal_target_ids": list(legal),
++            "plan_round": old_locked.get("plan_round", result.get("plan_round")),
++            "plan_signature": old_locked.get("plan_signature", result.get("signature")),
++        })
++        result["locked_plan"] = locked
++        result["primary_target"] = next((item for item in ranked or [] if isinstance(item, Mapping) and item.get("player_id") == primary), {"player_id": primary} if primary else None)
++        result["backup_target"] = next((item for item in ranked or [] if isinstance(item, Mapping) and item.get("player_id") == backup), {"player_id": backup} if backup else None)
++        result["legal_target_ids"] = list(legal)
++        result["plan_round"] = locked.get("plan_round")
++        result["wolf_vote_instruction"] = self._wolf_vote_instruction(locked)
++        return result
++
++    @staticmethod
++    def _wolf_vote_instruction(locked_plan: Mapping[str, Any]) -> str:
++        return (
++            "kind=wolf_kill_vote 时只提交 locked_plan.primary_target_id；"
++            "若其不在 legal_target_ids 才提交 backup_target_id；"
++            "两者都不合法才提交 legal_target_ids[0]。"
++        )
++
++    def _store_wolf_plan(self, plan: Mapping[str, Any], signature: Mapping[str, Any]) -> None:
++        locked = plan.get("locked_plan") if isinstance(plan, Mapping) else {}
++        locked = locked if isinstance(locked, Mapping) else {}
++        self._game_memory["wolf_plan"] = {
++            "signature": dict(signature),
++            "primary_target_id": locked.get("primary_target_id"),
++            "backup_target_id": locked.get("backup_target_id"),
++            "legal_target_ids": list(locked.get("legal_target_ids") or []),
++            "plan_round": locked.get("plan_round"),
++            "start_dead_players": list(plan.get("start_dead_players") or []),
++            "start_alive_players": list(plan.get("start_alive_players") or []),
++            "consensus_target_id": locked.get("consensus_target_id"),
++            "strategy": dict(plan),
++        }
+ 
+     def _parse_wolf_discussion(
+         self,
+@@ -647,6 +933,7 @@
+                 "disagreement_targets": [],
+                 "discussion_lines": [],
+                 "has_disagreement": False,
++                "explicit_consensus": False,
+             }
+         target_mentions: Counter[str] = Counter()
+         primary_mentions: Counter[str] = Counter()
+@@ -656,12 +943,16 @@
+         primary_target: str | None = None
+         backup_target: str | None = None
+         consensus_target: str | None = None
++        explicit_consensus = False
+         for item in current_dialogue[-6:]:
+             text = item.get("text") or item.get("content") or item.get("message")
+             if not text:
+                 continue
+             text_value = str(text)
+-            hits = [candidate for candidate in candidate_ids if candidate in text_value]
++            hits = [
++                candidate for candidate in candidate_ids
++                if self._player_id_in_text(text_value, candidate)
++            ]
+             if not hits:
+                 continue
+             discussion_lines.append(self._clip_text(text_value, 48))
+@@ -676,6 +967,7 @@
+             if any(keyword in text_value for keyword in ("定", "锁", "一致", "统一", "拍板", "最后", "就刀", "就打")):
+                 consensus_target = hits[0]
+                 consensus_mentions[hits[0]] += 2
++                explicit_consensus = True
+         if primary_target is None and primary_mentions:
+             primary_target = primary_mentions.most_common(1)[0][0]
+         if primary_target is None and target_mentions:
+@@ -703,6 +995,7 @@
+             "disagreement_targets": disagreement_targets[:3],
+             "discussion_lines": discussion_lines[-3:],
+             "has_disagreement": len(target_mentions) > 1,
++            "explicit_consensus": explicit_consensus,
+         }
+ 
+     def _update_public_ledger(self, sync_packet: Mapping[str, Any], summary: Mapping[str, Any]) -> None:
+@@ -815,13 +1108,21 @@
+         public_state = turn_packet.get("public_state")
+         players = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
+         candidate_ids = self._collect_target_ids(target_actions)
++        dead_ids = {
++            str(item)
++            for item in ((memory_snapshot.get("game") or {}).get("dead_players") or [])
++        }
++        candidate_ids = [
++            target for target in candidate_ids
++            if target != self.player_id and target not in dead_ids
++        ]
+         discussion_signal = self._parse_wolf_discussion(current_dialogue, candidate_ids)
+         candidates: list[dict[str, Any]] = []
+         seen: set[str] = set()
+         for action in target_actions:
+             for target_id in action.get("target_ids") or []:
+                 target = str(target_id)
+-                if target in seen:
++                if target not in candidate_ids or target in seen:
+                     continue
+                 seen.add(target)
+                 record = players.get(target, {})
+@@ -939,6 +1240,16 @@
+         if isinstance(death_order, list) and target_id in {str(item) for item in death_order[-2:]}:
+             score += 1
+             reasons.append("延续已有压力")
++        for entry in (memory_snapshot.get("resolved_night_memory") or [])[-3:]:
++            if not isinstance(entry, Mapping) or entry.get("primary_target_id") != target_id:
++                continue
++            result = entry.get("result")
++            if result == "no_death":
++                score -= 4
++                reasons.append("连续失败刀口")
++            elif result == "other_death":
++                score -= 2
++                reasons.append("主刀未命中")
+         if not reasons:
+             reasons.append("默认公共威胁")
+         return score, ",".join(reasons[:3])
+@@ -1169,7 +1480,7 @@
+         corpus = " ".join(self._recent_public_texts[-6:] + self._recent_self_texts[-3:])
+         if not corpus:
+             return 0
+-        return corpus.count(str(target_id))
++        return len(re.findall(self._player_id_pattern(str(target_id)), corpus))
+ 
+     def _extract_current_round_dialogue(self, turn_packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+         tool_context = turn_packet.get("tool_context") or {}
+@@ -1184,6 +1495,9 @@
+                 "primary": wolf_strategy.get("primary_target"),
+                 "backup": wolf_strategy.get("backup_target"),
+                 "discussion_lock": (wolf_strategy.get("discussion_signal") or {}).get("consensus_target"),
++                "legal_target_ids": wolf_strategy.get("legal_target_ids", []),
++                "locked_plan": wolf_strategy.get("locked_plan"),
++                "wolf_vote_instruction": wolf_strategy.get("wolf_vote_instruction"),
+                 "reason": wolf_strategy.get("tie_break_reason"),
+             }
+         if stage == "day":
+@@ -1557,3 +1871,59 @@
+         return "、".join(str(item) for item in values if item is not None)
+ 
+ 
++def run_wolf_smoke_tests() -> None:
++    """无外部依赖的最小回归 smoke；供候选工作区或 CI 显式调用。"""
++    assert TaskAgent._player_id_in_text("主刀 p10，备刀 p11", "p10")
++    assert not TaskAgent._player_id_in_text("主刀 p10，备刀 p11", "p1")
++    assert TaskAgent._player_id_in_text("锁定p1", "p1")
++
++    agent = TaskAgent.__new__(TaskAgent)
++    agent.player_id = "p5"
++    agent._game_memory = {"wolf_plan": None}
++    agent._self_history = []
++    dialogue = [{"text": "p1x 看起来像神职"}, {"text": "主刀 p10，备刀 p11"}]
++    signal = agent._parse_wolf_discussion(dialogue, ["p1", "p10", "p11"])
++    assert signal["mention_counts"] == {"p10": 1, "p11": 1}
++    assert signal["primary_target"] == "p10"
++
++    request = {
++        "allowed_actions": [{"kind": "wolf_kill_vote", "target_ids": ["p1", "p2", "p3"]}]
++    }
++    snapshot = {"game": {"dead_players": ["p1"]}}
++    plan = {
++        "stage": "night",
++        "candidate_order": [{"player_id": "p1"}, {"player_id": "p2"}],
++        "locked_plan": {
++            "primary_target_id": "p1",
++            "backup_target_id": "p2",
++        },
++        "discussion_signal": {},
++    }
++    sanitized = agent._sanitize_wolf_plan(plan, request, snapshot, [])
++    assert sanitized["locked_plan"]["primary_target_id"] == "p2"
++    assert sanitized["locked_plan"]["primary_target_id"] in {"p2", "p3"}
++
++    packet = {"request": request, "game": {"round": 1}}
++    repaired = agent._repair_wolf_vote_action(
++        {"kind": "wolf_kill_vote", "target_id": "p99"},
++        packet,
++        snapshot,
++        [],
++        sanitized,
++    )
++    assert repaired["target_id"] == "p2"
++    request["allowed_actions"][0]["target_ids"] = ["p3"]
++    changed = agent._sanitize_wolf_plan(sanitized, request, snapshot, [])
++    assert changed["locked_plan"]["primary_target_id"] == "p3"
++
++    # 同一计划和讨论给两名狼相同 canonical vote，确保不会产生 1-1 分票。
++    packet["request"] = request
++    a = agent._repair_wolf_vote_action(
++        {"kind": "wolf_kill_vote", "target_id": "p2"}, packet, snapshot, [], changed
++    )
++    b = agent._repair_wolf_vote_action(
++        {"kind": "wolf_kill_vote", "target_id": "p1"}, packet, snapshot, [], changed
++    )
++    assert a["target_id"] == b["target_id"] == "p3"
++
++
+--- wolf-n00043/task.md
++++ wolf-n00136/task.md
+@@ -4,7 +4,10 @@
+ 
+ ## 夜间
+ - 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标。
++- 狼队讨论中的玩家 ID 必须按完整 ID 匹配：不能把 p1 当作 p10 或 p11；不得凭前缀猜测玩家。
++- `wolf_kill_vote` 只能使用本次行动包 `target_ids` 中的目标；计划目标死亡或不在当前候选集中时，立即按当前合法主刀、备刀和稳定座位/ID 顺序重新收敛。
+ - 每次夜间决策都要显式锁定主刀与备刀；同一夜重试时优先复用上一次锁定结果，只有候选合法性变化时再重新排序。
++- 同一轮狼队投票默认使用最近一致的合法主刀；只有狼队讨论出现明确且合法的新拍板目标时，才覆盖旧计划。
+ - 首夜优先处理公开威胁高、发言强、容易带队的人。
+ - 如果有人已经明显暴露身份、对跳、被查杀或成为票型焦点，优先把这些信息纳入刀口判断。
+ - 当狼队讨论给出明确主刀/备刀时，Task-Agent 以该共识作为第一排序信号，只有与公共威胁明显冲突时才改写；白天发言必须显式复用最近一次票型或警徽链里的新证据。

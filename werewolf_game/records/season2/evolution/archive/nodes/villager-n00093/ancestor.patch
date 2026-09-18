@@ -1,0 +1,441 @@
+--- villager-n00083/task_agent.py
++++ villager-n00093/task_agent.py
+@@ -415,11 +415,17 @@
+             "alive_ids": set(),
+             "dead_ids": set(),
+             "known_player_ids": set(),
++            # These mappings are derived only from the public players list.  A seat
++            # is never treated as a player id unless the mapping is unique.
++            "player_seats": {},
++            "seat_to_player_id": {},
+             "events": [],
++            "verified_public_facts": [],
+             "claims": [],
+             "role_claims": [],
+             "inspection_claims": [],
+             "votes": [],
++            "sheriff_votes": [],
+             "deaths": [],
+             "supports": [],
+             "oppositions": [],
+@@ -431,16 +437,29 @@
+     def _ingest_public_packet(self, payload: Any) -> None:
+         if not isinstance(payload, Mapping):
+             return
+-        self._public_ledger["known_player_ids"].update(self._extract_player_ids(payload, include_collections=True))
+-        self._public_ledger["alive_ids"].update(self._collect_id_collection(payload, self._ALIVE_KEYS()))
+-        self._public_ledger["dead_ids"].update(self._collect_id_collection(payload, self._DEAD_KEYS()))
++        self._update_player_mapping(payload)
++        self._public_ledger["known_player_ids"].update(
++            self._normalize_id_set(self._extract_player_ids(payload, include_collections=True))
++        )
++        self._public_ledger["alive_ids"].update(self._normalize_id_set(self._collect_id_collection(payload, self._ALIVE_KEYS())))
++        self._public_ledger["dead_ids"].update(self._normalize_id_set(self._collect_id_collection(payload, self._DEAD_KEYS())))
+         for record in self._extract_public_records(payload):
+             self._store_record(record)
+ 
+     def _store_record(self, record: dict[str, Any]) -> None:
+-        event_type = record.get("event_type", "unknown")
++        """Store a de-duplicated, public record in a typed long-lived ledger."""
++        record = dict(record)
++        for field in ("round", "speaker", "voter", "target", "text", "source_kind"):
++            record.setdefault(field, "")
++        for field in ("speaker", "voter", "target", "source"):
++            if record.get(field):
++                record[field] = self._normalize_player_ref(record[field])
++        record["text"] = self._trim_text(record.get("text", ""), _PUBLIC_NOTE_CHAR_LIMIT)
++        event_type = str(record.get("event_type", "unknown"))
+         if event_type == "vote":
+             bucket = "votes"
++        elif event_type == "sheriff_vote":
++            bucket = "sheriff_votes"
+         elif event_type == "death":
+             bucket = "deaths"
+             target = record.get("target") or record.get("speaker")
+@@ -450,24 +469,23 @@
+             bucket = "claims"
+         elif event_type in {"support", "opposition"}:
+             bucket = event_type + "s"
+-        elif event_type == "badge":
+-            bucket = "badges"
++        elif event_type in {"badge", "hunter_shot"}:
++            bucket = "badges" if event_type == "badge" else "verified_public_facts"
++        elif record.get("source_kind") == "system":
++            bucket = "verified_public_facts"
+         else:
+             bucket = "events"
+-        record = dict(record)
+-        # Uniform fields make the ledger auditable without forcing the model to
+-        # guess whether a target belonged to a vote, a claim, or a badge edge.
+-        for field in ("round", "speaker", "voter", "target", "text", "source_kind"):
+-            record.setdefault(field, "")
+-        record["text"] = self._trim_text(record.get("text", ""), _PUBLIC_NOTE_CHAR_LIMIT)
+-        # Keep a small global event stream and a small per-kind claim stream.
+         key = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+         existing = self._public_ledger[bucket]
+         if not any(json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) == key for item in existing):
+-            self._append_bounded(existing, record, 12 if bucket != "events" else 18)
++            # Keep history by category rather than a recent-24 global window.  The
++            # renderer still applies a strict character budget before model input.
++            self._append_bounded(existing, record, 500 if bucket in {"events", "verified_public_facts"} else 240)
+         if event_type in {"role_claim", "inspection_claim"}:
+-            self._append_bounded(self._public_ledger[event_type + "s"], record, 10)
+-        self._append_bounded(self._public_ledger["events"], record, 24)
++            self._append_bounded(self._public_ledger[event_type + "s"], record, 240)
++        if record.get("source_kind") == "system":
++            self._append_bounded(self._public_ledger["verified_public_facts"], record, 500)
++        self._append_bounded(self._public_ledger["events"], record, 500)
+         for value in (record.get("speaker"), record.get("voter"), record.get("target"), record.get("source")):
+             if value and self._looks_like_player_id(str(value)):
+                 self._public_ledger["known_player_ids"].add(str(value))
+@@ -499,7 +517,8 @@
+ 
+     def _record_from_mapping(self, mapping: Mapping[str, Any]) -> dict[str, Any] | None:
+         data = {str(k).lower(): v for k, v in mapping.items()}
+-        event = self._first_scalar(data, ("event_type", "event", "type", "action", "kind")).lower()
++        raw_event = self._first_scalar(data, ("event_type", "event", "type", "action", "kind"))
++        event = raw_event.lower()
+         text = self._first_scalar(data, ("text", "content", "message", "speech", "reason"))
+         speaker = self._first_scalar(data, ("speaker_id", "claimer_id", "player_id", "actor_id", "source_id"))
+         voter = self._first_scalar(data, ("voter_id", "voter", "ballot_by"))
+@@ -508,11 +527,24 @@
+             target = self._infer_target_from_text(text)
+         round_text = self._first_scalar(data, ("round", "day", "turn"))
+         lower_event = event.lower()
+-        has_vote = "vote" in lower_event or any(k in data for k in ("voter_id", "voter", "vote_target", "ballot_by", "ballot"))
+-        has_death = any(t in lower_event for t in ("death", "dead", "kill", "eliminat", "out", "死亡", "出局")) or any(k in data for k in ("dead_id", "dead_player_id"))
++        # Explicit engine event names take precedence over keyword heuristics.
++        no_death = "no_one_died" in lower_event or "no_death" in lower_event or "无人死亡" in text
++        explicit_sheriff_vote = "sheriff_vote_cast" in lower_event or lower_event in {"sheriff_vote", "警长投票"}
++        explicit_vote = "vote_cast" in lower_event or lower_event in {"vote", "day_vote", "放逐投票"}
++        explicit_death = any(x in lower_event for x in ("player_died", "player_eliminated", "hunter_shot_fired"))
++        explicit_badge = any(x in lower_event for x in ("sheriff_elected", "badge_transferred", "badge_passed"))
++        if explicit_sheriff_vote:
++            return {"round": round_text, "event_type": "sheriff_vote", "voter": voter or speaker, "target": target, "text": text, "source_kind": "system"}
++        if explicit_vote:
++            return {"round": round_text, "event_type": "vote", "voter": voter or speaker, "target": target, "text": text, "source_kind": "system"}
++        if explicit_death and not no_death:
++            dead = self._first_scalar(data, ("dead_id", "dead_player_id", "player_id", "target_id", "target"))
++            return {"round": round_text, "event_type": "death", "speaker": dead, "target": dead, "text": text, "source_kind": "system"}
++        if explicit_badge:
++            return {"round": round_text, "event_type": "badge", "speaker": speaker, "target": target, "source": self._first_scalar(data, ("from_id", "badge_from")), "text": text, "source_kind": "system"}
++        has_vote = not no_death and ("vote" in lower_event or any(k in data for k in ("voter_id", "voter", "vote_target", "ballot_by", "ballot")))
++        has_death = not no_death and (any(t in lower_event for t in ("death", "dead", "kill", "eliminat", "out", "死亡", "出局")) or any(k in data for k in ("dead_id", "dead_player_id")))
+         has_badge = any(t in lower_event for t in ("sheriff", "badge", "警徽", "警长")) or any(k in data for k in ("badge_holder", "badge_holder_id", "badge_from", "badge_to"))
+-        # Only explicit speech/claim records enter the claim ledger. A free-form
+-        # mapping containing a target is never silently converted into a vote.
+         has_speech = bool(text) and (speaker or any(t in lower_event for t in ("speak", "speech", "claim", "say", "发言", "声明")))
+         if has_vote:
+             return {"round": round_text, "event_type": "vote", "voter": voter or speaker, "target": target, "text": text, "source_kind": "system"}
+@@ -531,8 +563,10 @@
+         return {"round": round_text, "event_type": claim_type, "speaker": speaker, "target": target, "claimed_role": claimed_role, "claimed_alignment": claimed_alignment, "text": text, "source_kind": "player_statement", "independent_verification": False}
+ 
+     def _infer_target_from_text(self, text: str) -> str:
+-        match = re.search(r"(?:查杀|查验|验人|金水|银水|怀疑|反对|支持|投)\\s*(p?\\d+)", str(text), re.IGNORECASE)
+-        return match.group(1) if match else ""
++        match = re.search(r"(?:查杀|查验|验人|金水|银水|怀疑|反对|支持|投)\s*(?:玩家|选手)?\s*([pP]?\d+|\d+号)", str(text), re.IGNORECASE)
++        if not match:
++            return ""
++        return self._normalize_player_ref(match.group(1))
+ 
+     def _classify_claim(self, text: str, data: Mapping[str, Any]) -> tuple[str | None, str, str]:
+         role = self._first_scalar(data, ("claim_role", "claimed_role", "role_claim"))
+@@ -554,22 +588,17 @@
+         return None, "", ""
+ 
+     def _records_for_turn(self, turn_packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+-        records = list(self._public_ledger["events"])
+-        seen = {json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) for record in records}
++        # Ingest the visible snapshot as well; deduplication makes repeated snapshots
++        # harmless.  Do not discard early votes/claims: the renderer aggregates them.
++        self._update_player_mapping(turn_packet.get("public_state"))
+         for record in self._extract_public_records(turn_packet.get("public_state")):
+-            normalized = dict(record)
+-            for field in ("round", "speaker", "voter", "target", "text", "source_kind"):
+-                normalized.setdefault(field, "")
+-            key = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+-            if key not in seen:
+-                seen.add(key)
+-                records.append(normalized)
+-        return records[-30:]
++            self._store_record(record)
++        return list(self._public_ledger["events"])
+ 
+     def _render_turn_summary(self, turn_packet: Mapping[str, Any], request: Mapping[str, Any]) -> str:
+         public_state = turn_packet.get("public_state")
+         records = self._records_for_turn(turn_packet)
+-        current_ids = self._extract_player_ids(public_state, include_collections=True)
++        current_ids = self._normalize_id_set(self._extract_player_ids(public_state, include_collections=True))
+         alive = self._sort_player_ids((set(self._public_ledger["alive_ids"]) | current_ids) - set(self._public_ledger["dead_ids"]))
+         dead = self._sort_player_ids(set(self._public_ledger["dead_ids"]))
+         candidate_pool = self._candidate_pool(request, alive, self._sort_player_ids(list(self._public_ledger["known_player_ids"])))
+@@ -584,9 +613,9 @@
+     def _decision_audit(self, records: list[dict[str, Any]], alive: list[str], dead: list[str], candidates: list[str]) -> str:
+         facts: list[str] = []
+         claims: list[str] = []
+-        for record in records[-20:]:
++        for record in records:
+             kind = record.get("event_type")
+-            if record.get("source_kind") == "system" and kind in {"vote", "death", "badge"}:
++            if record.get("source_kind") == "system" and kind in {"vote", "sheriff_vote", "death", "badge", "hunter_shot"}:
+                 who = record.get("voter") or record.get("speaker") or "?"
+                 target = record.get("target") or "?"
+                 facts.append(f"{kind} {who}->{target} r={record.get('round') or '?'}")
+@@ -600,26 +629,64 @@
+         coordination = self._coordination_players(records)
+         lines = ["【公开证据审计】", "1）系统事实：存活=" + self._join_ids(alive, limit=10) + "；死亡=" + self._join_ids(dead, limit=10)]
+         lines.append("事件：" + (" | ".join(facts[-5:]) if facts else "无明确公开投票/死亡/警徽事件"))
++        vote_table = self._render_vote_table(records)
++        lines.append("公开票型表（按轮次，日票/警长票分开）：" + (vote_table or "无"))
+         lines.append("2）玩家声明：" + (" | ".join(claims[-6:]) if claims else "无结构化声明"))
+         lines.append("3）声明冲突/对跳：" + (" | ".join(conflicts[:4]) if conflicts else "未识别；仍须核对原话"))
+         lines.append("4）票型与死亡：死亡只证明死亡，不验证查验；对跳者被击杀也不验证存活者。" + (" 票型=" + " | ".join(facts[-3:]) if facts else ""))
+         if coordination:
+             lines.append("重复发言线索（弱协调，不是可信度加分）：" + "、".join(coordination[:5]))
+         lines.append("5）当前至少两个候选：" + ("、".join(candidates[:4]) if candidates else "无合法候选"))
+-        lines.append("硬规则：目标死亡不验证查验；击杀对跳者不验证存活者；警徽/票型支持只是支持证据；两个未验证预言家不能仅凭持续报验定性。")
++        lines.append("硬规则：目标死亡不验证查验；击杀对跳者不验证存活者；警徽/票型支持只是支持证据；两个未验证预言家不能仅凭持续报验定性。先用verified facts和票表，再用claims，最后才看当前对话与推测。")
+         return self._trim_text("\n".join(lines), _PUBLIC_BLOCK_CHAR_LIMIT)
+ 
++    def _render_vote_table(self, records: list[dict[str, Any]]) -> str:
++        rows: dict[str, dict[str, list[str]]] = {}
++        for record in records:
++            kind = record.get("event_type")
++            if kind not in {"vote", "sheriff_vote"} or not record.get("voter") or not record.get("target"):
++                continue
++            round_key = str(record.get("round") or "?")
++            label = "日票" if kind == "vote" else "警长票"
++            rows.setdefault(round_key, {}).setdefault(label, []).append(f"{record['voter']}->{record['target']}")
++        rendered: list[str] = []
++        for round_key in sorted(rows, key=lambda x: (int(x) if x.isdigit() else 10**9, x)):
++            groups = rows[round_key]
++            rendered.append(f"r{round_key} " + ";".join(f"{label}:{','.join(values[-8:])}" for label, values in groups.items()))
++        return " | ".join(rendered[-10:])
++
+     def _claim_conflicts(self, records: list[dict[str, Any]]) -> list[str]:
++        """Report actual, typed conflicts; multiple reports alone are not a conflict."""
+         claims = [r for r in records if r.get("event_type") == "inspection_claim"]
+         result: list[str] = []
+-        for left in claims:
+-            for right in claims:
+-                if left is right or left.get("speaker") == right.get("speaker"):
+-                    continue
+-                if left.get("speaker") and right.get("speaker") and left.get("speaker") != right.get("speaker"):
+-                    result.append(f"{left.get('speaker')} 与 {right.get('speaker')} 对跳/声明未验证")
+-                    break
+-        return self._dedupe_preserve_order(result)
++        by_target: dict[str, list[dict[str, Any]]] = {}
++        by_role: dict[str, list[dict[str, Any]]] = {}
++        for claim in claims:
++            target = str(claim.get("target") or "未解析目标")
++            by_target.setdefault(target, []).append(claim)
++            role = str(claim.get("claimed_role") or "预言家")
++            by_role.setdefault(role, []).append(claim)
++        for target, group in by_target.items():
++            alignments = {str(x.get("claimed_alignment") or "unknown") for x in group}
++            if len(alignments) > 1:
++                speakers = self._join_ids(self._sort_player_ids([str(x.get("speaker")) for x in group if x.get("speaker")]), limit=4)
++                result.append(f"同目标{target}的相反查验：{speakers}，结论={','.join(sorted(alignments))}（均未验证）")
++        for role, group in by_role.items():
++            speakers = self._sort_player_ids([str(x.get("speaker")) for x in group if x.get("speaker")])
++            if len(speakers) > 1:
++                first_rounds = [(str(x.get("round") or "?"), str(x.get("speaker") or "?"), str(x.get("target") or "未解析")) for x in group]
++                detail = ",".join(f"{s}@r{r}->{t}" for r, s, t in first_rounds[:4])
++                result.append(f"{role}多来源声明需对比首条/顺序：{detail}（非自动对跳）")
++        for speaker in self._dedupe_preserve_order([str(x.get("speaker")) for x in claims if x.get("speaker")]):
++            own = [x for x in claims if str(x.get("speaker")) == speaker]
++            seen: dict[str, str] = {}
++            for claim in own:
++                target = str(claim.get("target") or "未解析")
++                alignment = str(claim.get("claimed_alignment") or "unknown")
++                if target in seen and seen[target] != alignment:
++                    result.append(f"{speaker} 对{target}前后结论矛盾：{seen[target]}->{alignment}")
++                seen[target] = alignment
++        return self._dedupe_preserve_order(result)[:8]
+ 
+     def _coordination_players(self, records: list[dict[str, Any]]) -> list[str]:
+         speech = [r for r in records if r.get("text") and r.get("speaker")]
+@@ -645,14 +712,14 @@
+         legal = [pid for pid in self._sort_player_ids(alive_ids) if pid in candidate_pool and pid not in dead_ids and pid != self.player_id]
+         for pid in legal:
+             if pid not in {item[0] for item in ranked}:
+-                ranked.append((pid, 0, "未知；没有独立保护事实"))
++                ranked.append((pid, 0, "组件均无明显信号", "声明和票型均未独立验证"))
+         ranked = ranked[:2]
+-        lines = ["【本轮投票比较模板】"]
++        lines = ["【本轮逐候选票型审计】（仅比较当前合法 target_id）"]
+         if len(ranked) >= 2:
+             for label, item in zip(("候选A", "候选B"), ranked):
+-                lines.append(f"{label}={item[0]}：依据={item[2]}；反证/未验证点={item[3]}")
+-            lines.append(f"为什么A优于B：比较硬矛盾、对跳冲突、票型和协调线；未验证查验不能当保护。最终票：选择一个合法目标。")
+-            lines.append("不要pass：已有两个以上合法目标且存在矛盾、查杀指向或强协调线时，不能因真假预言家未定而回避。仅候选几乎等价，或投票会明确误伤独立事实保护对象时才考虑pass（以合法行动为准）。")
++                lines.append(f"{label}={item[0]}：组件依据={item[2]}；反证/未验证={item[3]}")
++            lines.append("为什么A优于B：只在事实矛盾/未验证查杀/多轮票型较强时拉开差距；警徽仅是票权，复制发言只作微小tie-breaker。最终必须选择一个合法目标。")
++            lines.append("不要pass：有两个以上合法目标且存在可解释差异时投票；只有证据近乎等价或会误伤独立系统事实保护对象才考虑pass。")
+         elif ranked:
+             lines.append(f"唯一候选={ranked[0][0]}：{ranked[0][2]}；{ranked[0][3]}。按合法行动决定，不臆造第二目标。")
+         else:
+@@ -688,35 +755,66 @@
+         return ranked
+ 
+     def _score_candidate(self, candidate: str, records: list[Any]) -> tuple[int, list[str], list[str]]:
++        """Use public, componentized evidence; declarations never become facts."""
+         records = self._coerce_records(records)
+         score = 0
+         reasons: list[str] = []
+         unknown: list[str] = []
+         claims = [r for r in records if r.get("event_type") in {"role_claim", "inspection_claim", "support", "opposition"}]
++        inspections = [r for r in claims if r.get("event_type") == "inspection_claim"]
+         for record in claims:
+             speaker, target = str(record.get("speaker") or ""), str(record.get("target") or "")
+             text = self._trim_text(record.get("text", ""), 70)
+             if record.get("event_type") == "inspection_claim" and target == candidate and record.get("claimed_alignment") == "wolf":
+                 score += 2
+-                reasons.append(f"被{speaker or '?'}未验证查杀")
+-                unknown.append("查验仍是玩家声明")
++                reasons.append(f"claim+2：{speaker or '?'}在r{record.get('round') or '?'}报未验证查杀")
++                unknown.append("该查验仍是玩家声明，未被系统独立验证")
+             if speaker == candidate and record.get("event_type") in {"role_claim", "inspection_claim"}:
+                 unknown.append("本人神职/查验声明未被系统确认")
+             if target == candidate and record.get("event_type") == "support":
+                 score -= 1
+-                reasons.append(f"有{speaker or '?'}公开支持（仅弱保护）")
++                reasons.append(f"claim-1：{speaker or '?'}公开支持（仅弱保护）")
+             if speaker == candidate and record.get("event_type") == "opposition":
+                 score += 1
+-                reasons.append(f"公开反对/投向声明：{text}")
++                reasons.append(f"claim+1：公开反对/投向声明：{text}")
++
++        day_votes = [r for r in records if r.get("event_type") == "vote" and r.get("voter") and r.get("target")]
++        received = [r for r in day_votes if str(r.get("target")) == candidate]
++        if received:
++            amount = min(3, len(received))
++            score += amount
++            detail = ",".join(f"{r.get('voter')}@r{r.get('round') or '?'}" for r in received[-4:])
++            reasons.append(f"vote+{amount}：获得公开日票({detail})")
++        # Day votes and sheriff votes are separate.  A public badge holder gives
++        # voting power, not identity protection; matching them is only moderate.
++        holders = [str(r.get("target") or r.get("speaker")) for r in records if r.get("event_type") == "badge" and (r.get("target") or r.get("speaker"))]
++        holder = holders[-1] if holders else ""
++        if holder:
++            together = [r for r in day_votes if str(r.get("voter")) == candidate and any(
++                str(h.get("voter")) == holder and str(h.get("round")) == str(r.get("round")) and str(h.get("target")) == str(r.get("target")) for h in day_votes
++            )]
++            if together:
++                amount = min(2, len(together))
++                score += amount
++                detail = ",".join(f"r{r.get('round') or '?'}->{r.get('target')}" for r in together[-3:])
++                reasons.append(f"vote+{amount}：与警徽持有者{holder}同票({detail})，仅中等线索")
++        claimant_ids = {str(r.get("speaker")) for r in inspections if r.get("speaker")}
++        against_claimant = [r for r in day_votes if str(r.get("voter")) == candidate and str(r.get("target")) in claimant_ids]
++        if against_claimant:
++            score += 1
++            detail = ",".join(f"r{r.get('round') or '?'}->{r.get('target')}" for r in against_claimant[-3:])
++            reasons.append(f"vote+1：公开日票投向查验声明者({detail})，需核对首条声明")
++        if candidate in {str(r.get("target")) for r in records if r.get("event_type") == "death"}:
++            unknown.append("候选死亡/出局只证明死亡，不能验证任何查验")
++
+         coordination = self._coordination_players(records)
+         if candidate in coordination:
+-            score += 1
+-            reasons.append("与他人高度重复发言（弱协调线）")
+-            unknown.append("重复也可能是正常复述")
++            reasons.append("coord+微弱：与他人高度重复发言")
++            unknown.append("复制发言只能作微弱参考，不能单独定票")
+         if not reasons:
+-            reasons.append("无硬矛盾；公开信息有限")
++            reasons.append("组件均无硬矛盾；公开信息有限")
+         if not unknown:
+-            unknown.append("没有独立系统保护事实")
++            unknown.append("没有独立系统保护事实；玩家声明仍未验证")
+         return score, reasons, unknown
+ 
+     def _candidate_pool(self, request: Mapping[str, Any], alive_ids: list[str], known_ids: list[str]) -> list[str]:
+@@ -769,6 +867,73 @@
+     def _format_record(self, record: Mapping[str, Any]) -> str:
+         return self._trim_text(json.dumps(dict(record), ensure_ascii=False, separators=(",", ":")), _PUBLIC_NOTE_CHAR_LIMIT)
+ 
++    def _update_player_mapping(self, payload: Any) -> None:
++        """Read only public ``players`` entries and retain unambiguous seat mappings."""
++        if not isinstance(payload, Mapping):
++            return
++        players = payload.get("players")
++        if not isinstance(players, list):
++            state = payload.get("public_state")
++            if isinstance(state, Mapping):
++                players = state.get("players")
++        if not isinstance(players, list):
++            return
++        candidates: dict[str, set[str]] = {}
++        for item in players:
++            if not isinstance(item, Mapping):
++                continue
++            lower = {str(k).lower(): v for k, v in item.items()}
++            pid = self._first_scalar(lower, ("player_id", "id"))
++            seat = self._first_scalar(lower, ("seat", "seat_id", "number", "player_number", "index"))
++            if pid and seat:
++                seat_key = self._seat_number(seat)
++                if seat_key:
++                    candidates.setdefault(seat_key, set()).add(self._normalize_known_id(pid))
++        for seat, ids in candidates.items():
++            if len(ids) != 1:
++                continue
++            pid = next(iter(ids))
++            old = self._public_ledger["seat_to_player_id"].get(seat)
++            if old and old != pid:
++                # A changing/non-unique public mapping must not lead to guessing.
++                self._public_ledger["seat_to_player_id"].pop(seat, None)
++                self._public_ledger["player_seats"].pop(old, None)
++                continue
++            self._public_ledger["seat_to_player_id"][seat] = pid
++            self._public_ledger["player_seats"][pid] = seat
++            self._public_ledger["known_player_ids"].add(pid)
++
++    @staticmethod
++    def _seat_number(value: Any) -> str:
++        match = re.fullmatch(r"\s*(?:seat\s*)?(\d+)(?:号)?\s*", str(value), re.IGNORECASE)
++        return match.group(1) if match else ""
++
++    def _normalize_known_id(self, value: Any) -> str:
++        text = str(value).strip()
++        if re.fullmatch(r"[pP]\d+", text):
++            return "p" + text[1:]
++        return text
++
++    def _normalize_player_ref(self, value: Any) -> str:
++        text = str(value).strip().strip("()[]{}<>，。,:：")
++        if not text:
++            return ""
++        if re.fullmatch(r"[pP]\d+", text):
++            return "p" + text[1:]
++        seat = ""
++        match = re.fullmatch(r"(?:玩家|选手)?\s*(\d+)号?", text, re.IGNORECASE)
++        if match:
++            seat = match.group(1)
++        elif text.isdigit():
++            seat = text
++        if seat:
++            mapped = self._public_ledger["seat_to_player_id"].get(seat)
++            return mapped or text
++        return text
++
++    def _normalize_id_set(self, values: set[str]) -> set[str]:
++        return {self._normalize_player_ref(value) for value in values if value}
++
+     def _extract_player_ids(self, payload: Any, *, include_collections: bool = False) -> set[str]:
+         ids: set[str] = set()
+         def walk(obj: Any) -> None:
+--- villager-n00083/task.md
++++ villager-n00093/task.md
+@@ -10,9 +10,9 @@
+   - “我是预言家”“我查杀/金水某人”只是声明，除非有明确的、独立的系统公开事件，否则标记为**未验证**。
+   - 目标死亡只能证明目标死亡，**不验证查验为真**；预言家对跳者被夜间击杀，也**不能单独证明存活的另一方**。
+   - 警徽、票型支持、连续报验和他人复述只能算支持证据；狼人同样可以获得票型支持、继承警徽、持续报验或主动清除对跳者。
+-  - 出现两个未被系统验证的预言家时，不得仅凭“持续报验”定性。逐项比较首条声明、目标是否合法、时间顺序、后续是否自洽、票型、重复发言，以及谁从冲突中获益。
++  - 出现两个未被系统验证的预言家或多个神职声明冲突时，不得仅凭“持续报验”定性。逐项比较首条声明、规范化查验目标、声明轮次、时间顺序、后续是否自洽、公开票型，以及谁从冲突中获益；后续重复报验不能自动保护任何一方。
+   - 多人高度相似或复制发言是**弱协调/抱团线索**，不是可信度加分，也不能单独决定投票。
+-- 公开信息通常按以下顺序使用：系统死亡/存活/投票 > 清晰且仍需核验的声明链 > 遗言与普通发言 > 自己的推测。不要把抽取失败、印象或模型判断说成系统事实。
++- 公开信息通常按以下顺序使用：系统死亡/存活/投票 > 清晰且仍需核验的声明链 > 遗言与普通发言 > 自己的推测。公开票型必须按轮次和目标记录，日票与警长票分开审计；警徽只提供投票权，不提供身份保护。不要把抽取失败、印象或模型判断说成系统事实。
+ - 投票前必须列出至少两个**合法**候选，并使用模板：
+   - 候选A：具体公开依据；反证/未验证点。
+   - 候选B：具体公开依据；反证/未验证点。

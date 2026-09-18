@@ -1,0 +1,95 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00060 is operationally stable but strategically weak: it passes the broad filter, has no schema/fallback problems, yet only wins 7/20 games. The main issue is not action validity but decision quality—especially a too-conservative, text-snippet-based witch planner that underuses poison and sometimes misses high-value rescue/poison opportunities.",
+  "evidence": [
+    {
+      "source": "read_evaluation_summary",
+      "fact": "20 complete games, 7 wins, 13 losses, win_rate=0.35; invalid_decision_count=0; fallback_count=0."
+    },
+    {
+      "source": "read_game_replay game2",
+      "fact": "The witch player p2 finished dead with both antidote_available=true and poison_available=true in role_state, while wolves won."
+    },
+    {
+      "source": "read_game_replay game11",
+      "fact": "The witch player p3 passed every night and ended with poison still available; the village won without witch intervention, showing the agent often defaults to pass even when poison remains unused."
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "Witch target selection is driven by regex/snippet heuristics over concatenated JSON plus a small suspicion ledger, not by a structured public-evidence model."
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "_high_confidence_targets requires score>=4 or multiple combined signals; this is a high bar for a one-shot poison resource and likely delays or suppresses use."
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "Poison policy is too conservative.",
+      "detail": "The current thresholding logic only poisons when the target already appears highly certain by heuristic scoring. In many witch games, that means poison is never spent until too late, or not at all."
+    },
+    {
+      "cause": "Evidence extraction is noisy and incomplete.",
+      "detail": "The agent mines player IDs from keyword snippets in serialized text. This misses structured signals such as vote convergence, revealed roles, and clean contradiction chains, while also inheriting noise from unrelated JSON fragments."
+    },
+    {
+      "cause": "No explicit structured decision ladder for witch actions.",
+      "detail": "The model is asked to infer rescue/poison/pass from a compressed summary, but the code does not compute a canonical candidate set from public facts first. That makes the model over-rely on vague heuristics."
+    },
+    {
+      "cause": "Memory is compact but not semantically organized.",
+      "detail": "The agent stores recent digests and a small suspicion ledger, but not a stable claim/vote/reveal timeline. Late-game witch decisions therefore lose important evidence context."
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "Replace the current snippet-driven witch candidate generation with a structured public-evidence cache: track explicit claims, revealed roles, vote targets, sheriff votes, deaths, and day-by-day contradiction edges in compact objects.",
+      "rationale": "This gives the witch a reliable, low-noise evidence base for deciding when a rescue or poison is actually justified."
+    },
+    {
+      "file": "task_agent.py",
+      "change": "Add a deterministic witch decision ladder before model sampling: if there is a real night death and the target is a key public chain / sheriff / confirmed power role, auto-prioritize heal; if there is a direct seer-like hard claim conflict or majority vote convergence against one living target, auto-prioritize poison; otherwise pass.",
+      "rationale": "Witch is a scarce-resource role; explicit policy should prevent missed saves and late poison waste."
+    },
+    {
+      "file": "task_agent.py",
+      "change": "Lower or replace the current score>=4 poison gate with a small evidence-weighted ranker that can trigger on fewer but stronger signals, and make the ranker consult only canonical facts rather than raw keyword snippets.",
+      "rationale": "The current threshold is too strict for a single poison action and appears to suppress useful kills in losing games."
+    },
+    {
+      "file": "task_agent.py",
+      "change": "Keep the pass fallback, but make it a true last resort after the structured ladder and not the default outcome of missing/weak text heuristics; also ensure self-save is recognized as a special case when the night death target is the witch itself.",
+      "rationale": "Preserves safety while reducing silent underuse of witch powers."
+    },
+    {
+      "file": "task.md",
+      "change": "Rewrite the witch task guidance to emphasize structured evidence over feeling-based suspicion: poison only on explicit hard conflict or converged public pressure; rescue only on actual night death with clear chain value; keep pass as default when evidence is weak.",
+      "rationale": "The prompt should align the model with the new deterministic planner and reduce reliance on vague inference."
+    }
+  ],
+  "risks": [
+    {
+      "risk": "Over-aggressive poison triggers could trade one mistake for another.",
+      "mitigation": "Keep the poison ladder limited to explicit conflicts, converged votes, or repeated hard accusations from public evidence."
+    },
+    {
+      "risk": "Adding more structured memory may increase prompt size.",
+      "mitigation": "Store only compact canonical facts and cap the history window by round and event type."
+    },
+    {
+      "risk": "Deterministic heuristics may miss subtle bluff lines.",
+      "mitigation": "Use the model only to break ties among structurally similar candidates rather than to invent candidates from scratch."
+    },
+    {
+      "risk": "Improper state reset could leak stale suspicion between games.",
+      "mitigation": "Keep the existing game_id reset path and extend it to all new structured caches."
+    }
+  ],
+  "code_agent_brief": "In witch task_agent.py, implement a structured witch planner instead of relying on keyword snippets: maintain compact per-game caches for claims, revealed roles, vote pressure, death chain, and contradiction edges; generate heal/poison/pass candidates from those facts; auto-heal on real night deaths when the victim is a key public chain or critical role; auto-poison only on explicit hard conflict or converged public pressure; keep pass as the fallback after the planner, not as the default when text heuristics are weak. Update task.md so the prompt tells the model to use the same structured rules, avoid public leakage, and treat poison as a scarce high-confidence action. Do not change engine rules, schemas, tools, or visibility semantics."
+}

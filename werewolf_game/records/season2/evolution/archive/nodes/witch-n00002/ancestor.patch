@@ -1,0 +1,234 @@
+--- witch-base/task_agent.py
++++ witch-n00002/task_agent.py
+@@ -147,6 +147,23 @@
+             return "target_id 必须是 target_ids 中的一项"
+     elif action.get("target_id"):
+         return "该行动不能提供 target_id"
++    return None
++
++
++def _dig_path(source: Any, path: tuple[str, ...]) -> Any:
++    current = source
++    for key in path:
++        if not isinstance(current, Mapping):
++            return None
++        current = current.get(key)
++    return current
++
++
++def _first_nonempty_path(source: Any, *paths: tuple[str, ...]) -> Any:
++    for path in paths:
++        value = _dig_path(source, path)
++        if value not in (None, "", [], {}, ()):
++            return value
+     return None
+ 
+ 
+@@ -202,6 +219,8 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         system = self._system_prompt(private)
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
+         prompt = {
+             "game": turn_packet["game"],
+             "public_rules": turn_packet["public_rules"],
+@@ -216,9 +235,14 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
+-
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue") or []
++        if self.profile.role == "witch":
++            prompt["role_private_summary"] = self._witch_private_summary(
++                private=private,
++                request=turn_packet["request"],
++                tool_context=tool_context,
++            )
++            prompt["strategy_hints"] = self._witch_strategy_hints()
++            prompt["role_public_speech_hints"] = self._witch_public_speech_hints()
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -263,6 +287,7 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            action = self._safe_witch_action(action, turn_packet)
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 return action
+@@ -270,6 +295,10 @@
+                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+                 # Runner 可将该行动存入管理员审计记录，便于定位 schema / 长度等问题，
+                 # 而不会泄露给公开记录。
++                if self.profile.role == "witch":
++                    pass_action = self._build_pass_action(turn_packet["request"])
++                    if decision_error(pass_action, turn_packet["request"]) is None:
++                        return pass_action
+                 raise RuleViolationError(
+                     f"模型返回非法行动：{error}",
+                     attempted_action=action,
+@@ -309,6 +338,133 @@
+             max_tool_calls=self.max_tool_calls_per_decision,
+             max_tool_result_tokens=self.max_tool_result_tokens,
+             max_prompt_chars=self.max_prompt_chars,
++        )
++
++    @staticmethod
++    def _is_witch_night_request(request: Mapping[str, Any]) -> bool:
++        tokens = [request.get(key) for key in ("phase", "kind", "channel", "action")]
++        for token in tokens:
++            text = str(token or "").lower()
++            if text in {"night_witch", "witch_night"}:
++                return True
++            if "night" in text and "witch" in text:
++                return True
++        return False
++
++    def _build_pass_action(self, request: Mapping[str, Any]) -> dict[str, Any]:
++        return {
++            "request_id": request["request_id"],
++            "player_id": request["player_id"],
++            "kind": "pass",
++        }
++
++    def _safe_witch_action(
++        self,
++        action: dict[str, Any],
++        turn_packet: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        if self.profile.role != "witch":
++            return action
++        private = turn_packet.get("private_information") or {}
++        request = turn_packet.get("request") or {}
++        if str(private.get("role")) != "witch" or not self._is_witch_night_request(request):
++            return action
++        if action.get("kind") != "witch_poison":
++            return action
++        allowed_actions = request.get("allowed_actions")
++        if not isinstance(allowed_actions, list) or not any(
++            isinstance(item, Mapping) and item.get("kind") == "pass" for item in allowed_actions
++        ):
++            return action
++        wolf_target = _first_nonempty_path(
++            private,
++            ("wolf_target",),
++            ("current_wolf_target",),
++            ("night", "wolf_target"),
++            ("night", "current_wolf_target"),
++            ("night", "target_id"),
++            ("night_target",),
++            ("current_night_target",),
++        )
++        target_id = action.get("target_id")
++        current_dialogue = (turn_packet.get("tool_context") or {}).get("current_round_dialogue") or []
++        if target_id is not None and wolf_target is not None and str(target_id) == str(wolf_target):
++            return self._build_pass_action(request)
++        if not current_dialogue:
++            return self._build_pass_action(request)
++        return action
++
++    def _witch_private_summary(
++        self,
++        *,
++        private: Mapping[str, Any],
++        request: Mapping[str, Any],
++        tool_context: Mapping[str, Any],
++    ) -> str:
++        allowed_actions = request.get("allowed_actions")
++        allowed_list = [item for item in allowed_actions if isinstance(item, Mapping)] if isinstance(allowed_actions, list) else []
++        antidote_available = _first_nonempty_path(
++            private,
++            ("antidote_available",),
++            ("heal_available",),
++            ("antidote",),
++            ("night", "antidote_available"),
++            ("items", "antidote_available"),
++        )
++        poison_available = _first_nonempty_path(
++            private,
++            ("poison_available",),
++            ("venom_available",),
++            ("night", "poison_available"),
++            ("items", "poison_available"),
++        )
++        wolf_target = _first_nonempty_path(
++            private,
++            ("wolf_target",),
++            ("current_wolf_target",),
++            ("night", "wolf_target"),
++            ("night", "current_wolf_target"),
++            ("night_target",),
++            ("current_night_target",),
++        )
++        legal_bits: list[str] = []
++        for kind in ("witch_heal", "witch_poison", "pass"):
++            allowed = next((item for item in allowed_list if str(item.get("kind") or "") == kind), None)
++            if allowed is None:
++                continue
++            target_ids = allowed.get("target_ids")
++            if isinstance(target_ids, list) and target_ids:
++                legal_bits.append(f"{kind}[{','.join(str(target_id) for target_id in target_ids)}]")
++            else:
++                legal_bits.append(kind)
++        dialogue_size = len(tool_context.get("current_round_dialogue") or [])
++        parts = [
++            f"role={private.get('role', 'unknown')}",
++            f"antidote={'有' if antidote_available not in (None, False, 0, '0') else '无'}",
++            f"poison={'有' if poison_available not in (None, False, 0, '0') else '无'}",
++        ]
++        if wolf_target is not None:
++            parts.append(f"wolf_target={wolf_target}")
++        parts.append(f"current_round_dialogue_items={dialogue_size}")
++        if legal_bits:
++            parts.append("legal_actions=" + "；".join(legal_bits))
++        parts.append("边界: 不要公开狼刀、药水余量或用药对象")
++        return "；".join(parts)
++
++    @staticmethod
++    def _witch_strategy_hints() -> str:
++        return (
++            "夜间先核对狼刀、药水余量和公开证据；首夜可救非强狼嫌疑刀口。"
++            "毒药只在有至少两类公开证据时用，默认不毒当夜狼刀目标；缺少证据或当前轮对话为空就 pass。"
++            "白天不要无理由 pass，至少给出2-3个基于公开发言/票型的怀疑点和暂定投票方向；"
++            "多预言家对跳时优先支持查验链、警徽和票型更自洽的一方。"
++        )
++
++    @staticmethod
++    def _witch_public_speech_hints() -> str:
++        return (
++            "存活发言只讲公开信息能推出的怀疑点，不要主动公开狼刀、药水余量或用药对象；"
++            "遗言若 private_information 明确支持再准确报药，否则说不确定/以审计为准，禁止编造具体对象。"
+         )
+ 
+     @staticmethod
+--- witch-base/task.md
++++ witch-n00002/task.md
+@@ -2,7 +2,22 @@
+ 
+ 你的任务是合理使用药水帮助好人获胜，同时隐藏不应公开的药水和夜间信息。
+ 
+-- 先确认当晚狼刀、药水余量和合法行动，再权衡救人、毒人或保留药水。
+-- 毒药应尽量针对有充分依据的狼人；不确定时可以保留资源或选择合法的放弃行动。
+-- 白天发言要像普通玩家或自然的神职玩家，不要无理由泄露自己掌握的私密信息。
++## 夜间优先级
++- 先确认当晚狼刀、药水余量和合法行动，再决定救人、毒人或保留药水。
++- 首夜通常优先救被刀的非强狼嫌疑目标；若没有明显可救价值，也可以合法 pass。
++- 毒药必须建立在至少两类公开证据上，例如：明显假预言家、冲票/票型异常、白天强带错方向、与已知死亡或遗言矛盾。
++- 默认不要把毒药用在当夜狼刀目标上；除非局面特殊且有明确公开理由，否则优先 pass 或保留。
++
++## 白天发言与投票
++- 女巫存活且有发言机会时不要无理由 pass。
++- 至少给出 2-3 个基于公开发言、票型或死亡信息的怀疑点，并给出一个暂定投票方向。
++- 多预言家对跳时，优先支持查验链、警徽行为和票型更自洽的一方，不要盲目弃票。
++
++## 公开信息边界
++- 存活时不要公开狼刀、药水余量或用药对象，也不要把私密夜间信息说成公开事实。
++- 死亡遗言只有在当前 private_information 明确支持时，才准确公开自己的真实用药历史；如果不确定，就说不确定或以审计为准。
++- 不要编造具体毒救对象。
++
++## 基本原则
+ - 每次决策都结合前几天的票型和死亡信息，避免固定首夜用药套路。
++- 不确定时宁可保守，也不要凭空补历史。

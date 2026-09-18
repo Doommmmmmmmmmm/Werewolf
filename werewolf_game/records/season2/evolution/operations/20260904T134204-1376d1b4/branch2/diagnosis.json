@@ -1,0 +1,2808 @@
+{
+  "node_id": "hunter-base",
+  "role": "hunter",
+  "attempt": 1,
+  "required_resources": [
+    "task",
+    "boundaries",
+    "current_agent",
+    "random_game_replay"
+  ],
+  "required_replay_game_index": 1,
+  "tool_trace": [
+    {
+      "tool": "read_evaluation_summary",
+      "arguments": {},
+      "result": {
+        "node_id": "hunter-base",
+        "role": "hunter",
+        "team": "village",
+        "game_count": 20,
+        "complete_game_count": 20,
+        "failed_game_count": 0,
+        "win_count": 5,
+        "loss_count": 15,
+        "win_rate": 0.25,
+        "decision_count": 104,
+        "fallback_count": 0,
+        "fallback_rate": 0.0,
+        "invalid_decision_count": 0,
+        "quality_scope": "focus_role_only",
+        "total_decision_count": 2731,
+        "total_fallback_count": 32,
+        "total_invalid_decision_count": 32,
+        "recommended_status": "retained",
+        "status_reasons": [
+          "passed_broad_filter"
+        ],
+        "results": [
+          {
+            "game_index": 0,
+            "game_id": "s2-hunter-base-game0",
+            "seed": "season2-evolution:2f9b7a2c346892e4:game0",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "5ca6e59b81221e2d8cf9d9a033b67a750fce6702d1a7af13679f0544707848ca",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 94,
+            "fallback_count": 2,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p9",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p9",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round0/log/full-game0.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round0/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 155,
+              "api_attempt_count": 248,
+              "reported_usage_response_count": 155,
+              "input_tokens": 621890,
+              "output_tokens": 7261,
+              "total_tokens": 629151,
+              "unreported_api_attempt_count": 93
+            }
+          },
+          {
+            "game_index": 1,
+            "game_id": "s2-hunter-base-game1",
+            "seed": "season2-evolution:18a0dd2194896fba:game1",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "414f5c96aaed1a4a22db1d40ead64669111c6fa75a78e6672342938b376a0b12",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 179,
+            "fallback_count": 2,
+            "fallback_rate": 0.0111731843575419,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p5",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p5",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 187,
+              "api_attempt_count": 304,
+              "reported_usage_response_count": 187,
+              "input_tokens": 754085,
+              "output_tokens": 9149,
+              "total_tokens": 763234,
+              "unreported_api_attempt_count": 117
+            }
+          },
+          {
+            "game_index": 2,
+            "game_id": "s2-hunter-base-game2",
+            "seed": "season2-evolution:1052412c2192304e:game2",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "9ae90f89d85e5b0a6cd3aa5a6a639c6044a513b5e24adcabbb0d64ca51ead566",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 119,
+            "fallback_count": 3,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p3",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p5",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p3",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game2.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 195,
+              "api_attempt_count": 348,
+              "reported_usage_response_count": 195,
+              "input_tokens": 859063,
+              "output_tokens": 10139,
+              "total_tokens": 869202,
+              "unreported_api_attempt_count": 153
+            }
+          },
+          {
+            "game_index": 3,
+            "game_id": "s2-hunter-base-game3",
+            "seed": "season2-evolution:2f9b7a2c346892e4:game3",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "e86ad43453deeb01b33ab9e0bfb94d94d8e9cd6828ace3c10e5a61d6c30ba1b6",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 188,
+            "fallback_count": 3,
+            "fallback_rate": 0.015957446808510637,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              },
+              {
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p12"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 11,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 193,
+              "api_attempt_count": 332,
+              "reported_usage_response_count": 193,
+              "input_tokens": 826922,
+              "output_tokens": 10172,
+              "total_tokens": 837094,
+              "unreported_api_attempt_count": 139
+            }
+          },
+          {
+            "game_index": 4,
+            "game_id": "s2-hunter-base-game4",
+            "seed": "season2-evolution:18a0dd2194896fba:game4",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "b1e23ecf3d71e0b1744724e1553694c5ec4388bfa76db620c9832084c26a5cb2",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 156,
+            "fallback_count": 1,
+            "fallback_rate": 0.00641025641025641,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p5"
+            ],
+            "focus_decision_count": 3,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 157,
+              "api_attempt_count": 250,
+              "reported_usage_response_count": 157,
+              "input_tokens": 636116,
+              "output_tokens": 7946,
+              "total_tokens": 644062,
+              "unreported_api_attempt_count": 93
+            }
+          },
+          {
+            "game_index": 5,
+            "game_id": "s2-hunter-base-game5",
+            "seed": "season2-evolution:9ccd6a9b88747517:game5",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "4f5931a37c1e5c93ca0fe339646ec4a2af40b70a9775dfb933dbf956ab4ea6bc",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 88,
+            "fallback_count": 1,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p5"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game5.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 142,
+              "api_attempt_count": 272,
+              "reported_usage_response_count": 142,
+              "input_tokens": 670091,
+              "output_tokens": 7497,
+              "total_tokens": 677588,
+              "unreported_api_attempt_count": 130
+            }
+          },
+          {
+            "game_index": 6,
+            "game_id": "s2-hunter-base-game6",
+            "seed": "season2-evolution:18a0dd2194896fba:game6",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "b1019ac2471a87d8685bac031e161e4b746066f09220fe41b6e8e6b929c30490",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 183,
+            "fallback_count": 2,
+            "fallback_rate": 0.01092896174863388,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 187,
+              "api_attempt_count": 291,
+              "reported_usage_response_count": 187,
+              "input_tokens": 729251,
+              "output_tokens": 9454,
+              "total_tokens": 738705,
+              "unreported_api_attempt_count": 104
+            }
+          },
+          {
+            "game_index": 7,
+            "game_id": "s2-hunter-base-game7",
+            "seed": "season2-evolution:18a0dd2194896fba:game7",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "c9663ad692f3237582390760636c9f19ac6d81de0de60aed9328094decd0e2f0",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 205,
+            "fallback_count": 2,
+            "fallback_rate": 0.00975609756097561,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p5",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p3"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p5",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 209,
+              "api_attempt_count": 311,
+              "reported_usage_response_count": 209,
+              "input_tokens": 784632,
+              "output_tokens": 9520,
+              "total_tokens": 794152,
+              "unreported_api_attempt_count": 102
+            }
+          },
+          {
+            "game_index": 8,
+            "game_id": "s2-hunter-base-game8",
+            "seed": "season2-evolution:1052412c2192304e:game8",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "f25360d19821362a67db0336cd09e4d4ae43ce7f5fad5d0ef913c2078f1aa5b5",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 94,
+            "fallback_count": 1,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p9",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p3"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p5"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game8.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 150,
+              "api_attempt_count": 277,
+              "reported_usage_response_count": 150,
+              "input_tokens": 689649,
+              "output_tokens": 7528,
+              "total_tokens": 697177,
+              "unreported_api_attempt_count": 127
+            }
+          },
+          {
+            "game_index": 9,
+            "game_id": "s2-hunter-base-game9",
+            "seed": "season2-evolution:9ccd6a9b88747517:game9",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "e31e3c8270a3eadcd9b1140f89ddb7e0913086a37171a36ea968a1db835afae6",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 180,
+            "fallback_count": 3,
+            "fallback_rate": 0.016666666666666666,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 187,
+              "api_attempt_count": 342,
+              "reported_usage_response_count": 187,
+              "input_tokens": 843795,
+              "output_tokens": 11779,
+              "total_tokens": 855574,
+              "unreported_api_attempt_count": 155
+            }
+          },
+          {
+            "game_index": 10,
+            "game_id": "s2-hunter-base-game10",
+            "seed": "season2-evolution:18a0dd2194896fba:game10",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "1b7a7ed922b7ae60e399c3524917471d4398cbbf83b177154924984bdafb6cf6",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 152,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 7,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 154,
+              "api_attempt_count": 253,
+              "reported_usage_response_count": 154,
+              "input_tokens": 635907,
+              "output_tokens": 7715,
+              "total_tokens": 643622,
+              "unreported_api_attempt_count": 99
+            }
+          },
+          {
+            "game_index": 11,
+            "game_id": "s2-hunter-base-game11",
+            "seed": "season2-evolution:9ccd6a9b88747517:game11",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "a533daa8f49fc9ee0f947510b1a3ca583b77ecd943ee22e8553cacb9a17b1d27",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 103,
+            "fallback_count": 2,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 167,
+              "api_attempt_count": 276,
+              "reported_usage_response_count": 167,
+              "input_tokens": 664534,
+              "output_tokens": 8765,
+              "total_tokens": 673299,
+              "unreported_api_attempt_count": 109
+            }
+          },
+          {
+            "game_index": 12,
+            "game_id": "s2-hunter-base-game12",
+            "seed": "season2-evolution:9ccd6a9b88747517:game12",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "9414f04f42c7d0da63914e64b7edb4e390d8e4afd00de9ecca6135c533fb17be",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 89,
+            "fallback_count": 1,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p3",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game2.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 142,
+              "api_attempt_count": 245,
+              "reported_usage_response_count": 142,
+              "input_tokens": 584980,
+              "output_tokens": 7257,
+              "total_tokens": 592237,
+              "unreported_api_attempt_count": 103
+            }
+          },
+          {
+            "game_index": 13,
+            "game_id": "s2-hunter-base-game13",
+            "seed": "season2-evolution:2f9b7a2c346892e4:game13",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "3bafcbfb37c9546c4fab1c22a7e53cc4eba82bc80fd58a93476d049e8130e201",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 139,
+            "fallback_count": 1,
+            "fallback_rate": 0.007194244604316547,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p4",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              }
+            ],
+            "focus_player_ids": [
+              "p6"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 139,
+              "api_attempt_count": 209,
+              "reported_usage_response_count": 139,
+              "input_tokens": 516362,
+              "output_tokens": 6832,
+              "total_tokens": 523194,
+              "unreported_api_attempt_count": 70
+            }
+          },
+          {
+            "game_index": 14,
+            "game_id": "s2-hunter-base-game14",
+            "seed": "season2-evolution:2f9b7a2c346892e4:game14",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "46bdace0e3045fb2d2c3eca8ec2a51de860938fc36db6533bdfb8e2362333c56",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 117,
+            "fallback_count": 1,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p5",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game4.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 194,
+              "api_attempt_count": 334,
+              "reported_usage_response_count": 194,
+              "input_tokens": 856467,
+              "output_tokens": 10032,
+              "total_tokens": 866499,
+              "unreported_api_attempt_count": 140
+            }
+          },
+          {
+            "game_index": 15,
+            "game_id": "s2-hunter-base-game15",
+            "seed": "season2-evolution:18a0dd2194896fba:game15",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "bdc21e8f1eb2adf4cd6b7919b9dd4cd30d101d13fda44e399335bf3c15dc2aaa",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 97,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game5.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 160,
+              "api_attempt_count": 253,
+              "reported_usage_response_count": 160,
+              "input_tokens": 647500,
+              "output_tokens": 8544,
+              "total_tokens": 656044,
+              "unreported_api_attempt_count": 93
+            }
+          },
+          {
+            "game_index": 16,
+            "game_id": "s2-hunter-base-game16",
+            "seed": "season2-evolution:2f9b7a2c346892e4:game16",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "5453b845b2a48022447ade1dcd77334ecf08e71a7d8acdc3e11e31e8f8c325cc",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 122,
+            "fallback_count": 3,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game6.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 199,
+              "api_attempt_count": 330,
+              "reported_usage_response_count": 199,
+              "input_tokens": 811875,
+              "output_tokens": 9821,
+              "total_tokens": 821696,
+              "unreported_api_attempt_count": 131
+            }
+          },
+          {
+            "game_index": 17,
+            "game_id": "s2-hunter-base-game17",
+            "seed": "season2-evolution:9ccd6a9b88747517:game17",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "6b16b295ce30f55c9056e74f9f05bfa1f15088ee44bcd7514812233d9a5286e3",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 146,
+            "fallback_count": 1,
+            "fallback_rate": 0.00684931506849315,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p6",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p3"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 11,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 148,
+              "api_attempt_count": 271,
+              "reported_usage_response_count": 148,
+              "input_tokens": 667425,
+              "output_tokens": 8040,
+              "total_tokens": 675465,
+              "unreported_api_attempt_count": 123
+            }
+          },
+          {
+            "game_index": 18,
+            "game_id": "s2-hunter-base-game18",
+            "seed": "season2-evolution:18a0dd2194896fba:game18",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "967558bc9876bb69d9842bb801bcda4c07a5f8de40b51fedde8e09788af377b0",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 178,
+            "fallback_count": 2,
+            "fallback_rate": 0.011235955056179775,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p4"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 186,
+              "api_attempt_count": 313,
+              "reported_usage_response_count": 186,
+              "input_tokens": 792189,
+              "output_tokens": 9389,
+              "total_tokens": 801578,
+              "unreported_api_attempt_count": 127
+            }
+          },
+          {
+            "game_index": 19,
+            "game_id": "s2-hunter-base-game19",
+            "seed": "season2-evolution:1052412c2192304e:game19",
+            "focus_node": "hunter-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "e08237c8ec2e7d426d4e15c796b9d9f086579be640e65a807021f857e14d54d5",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 102,
+            "fallback_count": 1,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p10",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round1/log/full-game9.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round1/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 166,
+              "api_attempt_count": 287,
+              "reported_usage_response_count": 166,
+              "input_tokens": 703886,
+              "output_tokens": 8745,
+              "total_tokens": 712631,
+              "unreported_api_attempt_count": 121
+            }
+          }
+        ],
+        "model": {
+          "available": true,
+          "model": "qwen3.8-flash",
+          "protocol": "responses",
+          "reasoning_effort": "none",
+          "enable_thinking": false,
+          "max_output_tokens": 900
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_path",
+      "arguments": {},
+      "result": {
+        "lineage": [
+          {
+            "node": {
+              "node_id": "hunter-base",
+              "role": "hunter",
+              "status": "retained",
+              "parent_id": null,
+              "depth": 0,
+              "children": [
+                "hunter-n00007",
+                "hunter-n00008",
+                "hunter-n00009"
+              ],
+              "created_at": "2026-09-04T05:02:49.883410+00:00",
+              "code_hash": "c0f2b19e618231270233463e90a6b67f9ddb6d073c14fadab503ae7c4eb79b50",
+              "patch_path": null,
+              "diagnosis_path": null,
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/summary.json",
+              "status_reason": "base"
+            },
+            "patch": ""
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_previous_diagnosis",
+      "arguments": {
+        "node_id": "hunter-base"
+      },
+      "result": {
+        "error": "该节点没有关联诊断"
+      }
+    },
+    {
+      "tool": "read_other_branch",
+      "arguments": {
+        "node_id": "hunter-base"
+      },
+      "result": {
+        "node": {
+          "node_id": "hunter-base",
+          "role": "hunter",
+          "status": "retained",
+          "parent_id": null,
+          "depth": 0,
+          "children": [
+            "hunter-n00007",
+            "hunter-n00008",
+            "hunter-n00009"
+          ],
+          "created_at": "2026-09-04T05:02:49.883410+00:00",
+          "code_hash": "c0f2b19e618231270233463e90a6b67f9ddb6d073c14fadab503ae7c4eb79b50",
+          "patch_path": null,
+          "diagnosis_path": null,
+          "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/summary.json",
+          "status_reason": "base"
+        },
+        "patch": "",
+        "evaluation_summary": {
+          "node_id": "hunter-base",
+          "role": "hunter",
+          "team": "village",
+          "game_count": 20,
+          "complete_game_count": 20,
+          "failed_game_count": 0,
+          "win_count": 5,
+          "loss_count": 15,
+          "win_rate": 0.25,
+          "decision_count": 104,
+          "fallback_count": 0,
+          "fallback_rate": 0.0,
+          "invalid_decision_count": 0,
+          "quality_scope": "focus_role_only",
+          "total_decision_count": 2731,
+          "total_fallback_count": 32,
+          "total_invalid_decision_count": 32,
+          "recommended_status": "retained",
+          "status_reasons": [
+            "passed_broad_filter"
+          ],
+          "results": [
+            {
+              "game_index": 0,
+              "game_id": "s2-hunter-base-game0",
+              "seed": "season2-evolution:2f9b7a2c346892e4:game0",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "5ca6e59b81221e2d8cf9d9a033b67a750fce6702d1a7af13679f0544707848ca",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 94,
+              "fallback_count": 2,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 2
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p9",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p5"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p9",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p5"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p3"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round0/log/full-game0.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round0/log/full-game0.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 155,
+                "api_attempt_count": 248,
+                "reported_usage_response_count": 155,
+                "input_tokens": 621890,
+                "output_tokens": 7261,
+                "total_tokens": 629151,
+                "unreported_api_attempt_count": 93
+              }
+            },
+            {
+              "game_index": 1,
+              "game_id": "s2-hunter-base-game1",
+              "seed": "season2-evolution:18a0dd2194896fba:game1",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "414f5c96aaed1a4a22db1d40ead64669111c6fa75a78e6672342938b376a0b12",
+              "complete": true,
+              "winner": "village",
+              "focus_won": true,
+              "decision_count": 179,
+              "fallback_count": 2,
+              "fallback_rate": 0.0111731843575419,
+              "error_counts": {
+                "participant_error": 2
+              },
+              "errors": [
+                {
+                  "player_id": "p5",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p9"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "player_id": "p5",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p10"
+              ],
+              "focus_decision_count": 14,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game1.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 187,
+                "api_attempt_count": 304,
+                "reported_usage_response_count": 187,
+                "input_tokens": 754085,
+                "output_tokens": 9149,
+                "total_tokens": 763234,
+                "unreported_api_attempt_count": 117
+              }
+            },
+            {
+              "game_index": 2,
+              "game_id": "s2-hunter-base-game2",
+              "seed": "season2-evolution:1052412c2192304e:game2",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "9ae90f89d85e5b0a6cd3aa5a6a639c6044a513b5e24adcabbb0d64ca51ead566",
+              "complete": true,
+              "winner": "village",
+              "focus_won": true,
+              "decision_count": 119,
+              "fallback_count": 3,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 3
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p3",
+                  "type": "participant_error",
+                  "message": "TimeoutError",
+                  "exception_type": "TimeoutError"
+                },
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p5",
+                  "type": "participant_error",
+                  "message": "TimeoutError",
+                  "exception_type": "TimeoutError"
+                },
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p3",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p5"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p8"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game2.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game2.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 195,
+                "api_attempt_count": 348,
+                "reported_usage_response_count": 195,
+                "input_tokens": 859063,
+                "output_tokens": 10139,
+                "total_tokens": 869202,
+                "unreported_api_attempt_count": 153
+              }
+            },
+            {
+              "game_index": 3,
+              "game_id": "s2-hunter-base-game3",
+              "seed": "season2-evolution:2f9b7a2c346892e4:game3",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "e86ad43453deeb01b33ab9e0bfb94d94d8e9cd6828ace3c10e5a61d6c30ba1b6",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 188,
+              "fallback_count": 3,
+              "fallback_rate": 0.015957446808510637,
+              "error_counts": {
+                "participant_error": 3
+              },
+              "errors": [
+                {
+                  "player_id": "p1",
+                  "type": "participant_error",
+                  "message": "TimeoutError",
+                  "exception_type": "TimeoutError"
+                },
+                {
+                  "player_id": "p11",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p12"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "player_id": "p11",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p8"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p9"
+              ],
+              "focus_decision_count": 11,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game3.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 193,
+                "api_attempt_count": 332,
+                "reported_usage_response_count": 193,
+                "input_tokens": 826922,
+                "output_tokens": 10172,
+                "total_tokens": 837094,
+                "unreported_api_attempt_count": 139
+              }
+            },
+            {
+              "game_index": 4,
+              "game_id": "s2-hunter-base-game4",
+              "seed": "season2-evolution:18a0dd2194896fba:game4",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "b1e23ecf3d71e0b1744724e1553694c5ec4388bfa76db620c9832084c26a5cb2",
+              "complete": true,
+              "winner": "village",
+              "focus_won": true,
+              "decision_count": 156,
+              "fallback_count": 1,
+              "fallback_rate": 0.00641025641025641,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "player_id": "p1",
+                  "type": "participant_error",
+                  "message": "TimeoutError",
+                  "exception_type": "TimeoutError"
+                }
+              ],
+              "focus_player_ids": [
+                "p5"
+              ],
+              "focus_decision_count": 3,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game4.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 157,
+                "api_attempt_count": 250,
+                "reported_usage_response_count": 157,
+                "input_tokens": 636116,
+                "output_tokens": 7946,
+                "total_tokens": 644062,
+                "unreported_api_attempt_count": 93
+              }
+            },
+            {
+              "game_index": 5,
+              "game_id": "s2-hunter-base-game5",
+              "seed": "season2-evolution:9ccd6a9b88747517:game5",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "4f5931a37c1e5c93ca0fe339646ec4a2af40b70a9775dfb933dbf956ab4ea6bc",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 88,
+              "fallback_count": 1,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p12",
+                  "type": "participant_error",
+                  "message": "TimeoutError",
+                  "exception_type": "TimeoutError"
+                }
+              ],
+              "focus_player_ids": [
+                "p5"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game5.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game5.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 142,
+                "api_attempt_count": 272,
+                "reported_usage_response_count": 142,
+                "input_tokens": 670091,
+                "output_tokens": 7497,
+                "total_tokens": 677588,
+                "unreported_api_attempt_count": 130
+              }
+            },
+            {
+              "game_index": 6,
+              "game_id": "s2-hunter-base-game6",
+              "seed": "season2-evolution:18a0dd2194896fba:game6",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "b1019ac2471a87d8685bac031e161e4b746066f09220fe41b6e8e6b929c30490",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 183,
+              "fallback_count": 2,
+              "fallback_rate": 0.01092896174863388,
+              "error_counts": {
+                "participant_error": 2
+              },
+              "errors": [
+                {
+                  "player_id": "p8",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p10"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "player_id": "p8",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p12"
+              ],
+              "focus_decision_count": 14,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game6.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 187,
+                "api_attempt_count": 291,
+                "reported_usage_response_count": 187,
+                "input_tokens": 729251,
+                "output_tokens": 9454,
+                "total_tokens": 738705,
+                "unreported_api_attempt_count": 104
+              }
+            },
+            {
+              "game_index": 7,
+              "game_id": "s2-hunter-base-game7",
+              "seed": "season2-evolution:18a0dd2194896fba:game7",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "c9663ad692f3237582390760636c9f19ac6d81de0de60aed9328094decd0e2f0",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 205,
+              "fallback_count": 2,
+              "fallback_rate": 0.00975609756097561,
+              "error_counts": {
+                "participant_error": 2
+              },
+              "errors": [
+                {
+                  "player_id": "p5",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p3"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "player_id": "p5",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p8"
+              ],
+              "focus_decision_count": 13,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game7.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 209,
+                "api_attempt_count": 311,
+                "reported_usage_response_count": 209,
+                "input_tokens": 784632,
+                "output_tokens": 9520,
+                "total_tokens": 794152,
+                "unreported_api_attempt_count": 102
+              }
+            },
+            {
+              "game_index": 8,
+              "game_id": "s2-hunter-base-game8",
+              "seed": "season2-evolution:1052412c2192304e:game8",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "f25360d19821362a67db0336cd09e4d4ae43ce7f5fad5d0ef913c2078f1aa5b5",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 94,
+              "fallback_count": 1,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p9",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p3"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p5"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game8.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game8.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 150,
+                "api_attempt_count": 277,
+                "reported_usage_response_count": 150,
+                "input_tokens": 689649,
+                "output_tokens": 7528,
+                "total_tokens": 697177,
+                "unreported_api_attempt_count": 127
+              }
+            },
+            {
+              "game_index": 9,
+              "game_id": "s2-hunter-base-game9",
+              "seed": "season2-evolution:9ccd6a9b88747517:game9",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "e31e3c8270a3eadcd9b1140f89ddb7e0913086a37171a36ea968a1db835afae6",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 180,
+              "fallback_count": 3,
+              "fallback_rate": 0.016666666666666666,
+              "error_counts": {
+                "participant_error": 3
+              },
+              "errors": [
+                {
+                  "player_id": "p12",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "player_id": "p12",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "player_id": "p12",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p9"
+              ],
+              "focus_decision_count": 9,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game9.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 187,
+                "api_attempt_count": 342,
+                "reported_usage_response_count": 187,
+                "input_tokens": 843795,
+                "output_tokens": 11779,
+                "total_tokens": 855574,
+                "unreported_api_attempt_count": 155
+              }
+            },
+            {
+              "game_index": 10,
+              "game_id": "s2-hunter-base-game10",
+              "seed": "season2-evolution:18a0dd2194896fba:game10",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "1b7a7ed922b7ae60e399c3524917471d4398cbbf83b177154924984bdafb6cf6",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 152,
+              "fallback_count": 0,
+              "fallback_rate": 0.0,
+              "error_counts": {},
+              "errors": [],
+              "focus_player_ids": [
+                "p7"
+              ],
+              "focus_decision_count": 7,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game0.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 154,
+                "api_attempt_count": 253,
+                "reported_usage_response_count": 154,
+                "input_tokens": 635907,
+                "output_tokens": 7715,
+                "total_tokens": 643622,
+                "unreported_api_attempt_count": 99
+              }
+            },
+            {
+              "game_index": 11,
+              "game_id": "s2-hunter-base-game11",
+              "seed": "season2-evolution:9ccd6a9b88747517:game11",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "a533daa8f49fc9ee0f947510b1a3ca583b77ecd943ee22e8553cacb9a17b1d27",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 103,
+              "fallback_count": 2,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 2
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p12",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p1"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p12",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p1"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p7"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 167,
+                "api_attempt_count": 276,
+                "reported_usage_response_count": 167,
+                "input_tokens": 664534,
+                "output_tokens": 8765,
+                "total_tokens": 673299,
+                "unreported_api_attempt_count": 109
+              }
+            },
+            {
+              "game_index": 12,
+              "game_id": "s2-hunter-base-game12",
+              "seed": "season2-evolution:9ccd6a9b88747517:game12",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "9414f04f42c7d0da63914e64b7edb4e390d8e4afd00de9ecca6135c533fb17be",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 89,
+              "fallback_count": 1,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p3",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p7"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game2.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game2.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 142,
+                "api_attempt_count": 245,
+                "reported_usage_response_count": 142,
+                "input_tokens": 584980,
+                "output_tokens": 7257,
+                "total_tokens": 592237,
+                "unreported_api_attempt_count": 103
+              }
+            },
+            {
+              "game_index": 13,
+              "game_id": "s2-hunter-base-game13",
+              "seed": "season2-evolution:2f9b7a2c346892e4:game13",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "3bafcbfb37c9546c4fab1c22a7e53cc4eba82bc80fd58a93476d049e8130e201",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 139,
+              "fallback_count": 1,
+              "fallback_rate": 0.007194244604316547,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "player_id": "p4",
+                  "type": "participant_error",
+                  "message": "TimeoutError",
+                  "exception_type": "TimeoutError"
+                }
+              ],
+              "focus_player_ids": [
+                "p6"
+              ],
+              "focus_decision_count": 9,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game3.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 139,
+                "api_attempt_count": 209,
+                "reported_usage_response_count": 139,
+                "input_tokens": 516362,
+                "output_tokens": 6832,
+                "total_tokens": 523194,
+                "unreported_api_attempt_count": 70
+              }
+            },
+            {
+              "game_index": 14,
+              "game_id": "s2-hunter-base-game14",
+              "seed": "season2-evolution:2f9b7a2c346892e4:game14",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "46bdace0e3045fb2d2c3eca8ec2a51de860938fc36db6533bdfb8e2362333c56",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 117,
+              "fallback_count": 1,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p5",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p7"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p7"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game4.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game4.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 194,
+                "api_attempt_count": 334,
+                "reported_usage_response_count": 194,
+                "input_tokens": 856467,
+                "output_tokens": 10032,
+                "total_tokens": 866499,
+                "unreported_api_attempt_count": 140
+              }
+            },
+            {
+              "game_index": 15,
+              "game_id": "s2-hunter-base-game15",
+              "seed": "season2-evolution:18a0dd2194896fba:game15",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "bdc21e8f1eb2adf4cd6b7919b9dd4cd30d101d13fda44e399335bf3c15dc2aaa",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 97,
+              "fallback_count": 0,
+              "fallback_rate": 0.0,
+              "error_counts": {},
+              "errors": [],
+              "focus_player_ids": [
+                "p10"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game5.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game5.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 160,
+                "api_attempt_count": 253,
+                "reported_usage_response_count": 160,
+                "input_tokens": 647500,
+                "output_tokens": 8544,
+                "total_tokens": 656044,
+                "unreported_api_attempt_count": 93
+              }
+            },
+            {
+              "game_index": 16,
+              "game_id": "s2-hunter-base-game16",
+              "seed": "season2-evolution:2f9b7a2c346892e4:game16",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "5453b845b2a48022447ade1dcd77334ecf08e71a7d8acdc3e11e31e8f8c325cc",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 122,
+              "fallback_count": 3,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 3
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p11",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p9"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p11",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p10"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p11",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p10"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p2"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game6.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game6.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 199,
+                "api_attempt_count": 330,
+                "reported_usage_response_count": 199,
+                "input_tokens": 811875,
+                "output_tokens": 9821,
+                "total_tokens": 821696,
+                "unreported_api_attempt_count": 131
+              }
+            },
+            {
+              "game_index": 17,
+              "game_id": "s2-hunter-base-game17",
+              "seed": "season2-evolution:9ccd6a9b88747517:game17",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-base",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "6b16b295ce30f55c9056e74f9f05bfa1f15088ee44bcd7514812233d9a5286e3",
+              "complete": true,
+              "winner": "village",
+              "focus_won": true,
+              "decision_count": 146,
+              "fallback_count": 1,
+              "fallback_rate": 0.00684931506849315,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "player_id": "p6",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p3"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p10"
+              ],
+              "focus_decision_count": 11,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game7.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 148,
+                "api_attempt_count": 271,
+                "reported_usage_response_count": 148,
+                "input_tokens": 667425,
+                "output_tokens": 8040,
+                "total_tokens": 675465,
+                "unreported_api_attempt_count": 123
+              }
+            },
+            {
+              "game_index": 18,
+              "game_id": "s2-hunter-base-game18",
+              "seed": "season2-evolution:18a0dd2194896fba:game18",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-n00004",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "967558bc9876bb69d9842bb801bcda4c07a5f8de40b51fedde8e09788af377b0",
+              "complete": true,
+              "winner": "wolf",
+              "focus_won": false,
+              "decision_count": 178,
+              "fallback_count": 2,
+              "fallback_rate": 0.011235955056179775,
+              "error_counts": {
+                "participant_error": 2
+              },
+              "errors": [
+                {
+                  "player_id": "p1",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p10"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                },
+                {
+                  "player_id": "p1",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p6"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p4"
+              ],
+              "focus_decision_count": 13,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game8.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 186,
+                "api_attempt_count": 313,
+                "reported_usage_response_count": 186,
+                "input_tokens": 792189,
+                "output_tokens": 9389,
+                "total_tokens": 801578,
+                "unreported_api_attempt_count": 127
+              }
+            },
+            {
+              "game_index": 19,
+              "game_id": "s2-hunter-base-game19",
+              "seed": "season2-evolution:1052412c2192304e:game19",
+              "focus_node": "hunter-base",
+              "role_nodes": {
+                "wolf": "wolf-base",
+                "villager": "villager-base",
+                "seer": "seer-base",
+                "witch": "witch-n00001",
+                "guard": "guard-base",
+                "hunter": "hunter-base"
+              },
+              "evaluation_signature": "e08237c8ec2e7d426d4e15c796b9d9f086579be640e65a807021f857e14d54d5",
+              "complete": true,
+              "winner": "village",
+              "focus_won": true,
+              "decision_count": 102,
+              "fallback_count": 1,
+              "fallback_rate": 0.0,
+              "error_counts": {
+                "participant_error": 1
+              },
+              "errors": [
+                {
+                  "event_class": "RUNNER_ERROR",
+                  "player_id": "p10",
+                  "type": "participant_error",
+                  "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                  "exception_type": "RuleViolationError",
+                  "attempted_action": {
+                    "kind": "guard_protect",
+                    "target_id": "p7"
+                  },
+                  "validation_error": "target_id 必须是 target_ids 中的一项"
+                }
+              ],
+              "focus_player_ids": [
+                "p3"
+              ],
+              "focus_decision_count": 0,
+              "focus_fallback_count": 0,
+              "focus_fallback_rate": 0.0,
+              "focus_error_counts": {},
+              "focus_errors": [],
+              "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round1/log/full-game9.json",
+              "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round1/log/full-game9.json",
+              "model_token_usage": {
+                "availability": "partial",
+                "participant_count": 12,
+                "successful_response_count": 166,
+                "api_attempt_count": 287,
+                "reported_usage_response_count": 166,
+                "input_tokens": 703886,
+                "output_tokens": 8745,
+                "total_tokens": 712631,
+                "unreported_api_attempt_count": 121
+              }
+            }
+          ],
+          "model": {
+            "available": true,
+            "model": "qwen3.8-flash",
+            "protocol": "responses",
+            "reasoning_effort": "none",
+            "enable_thinking": false,
+            "max_output_tokens": 900
+          }
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_contract",
+      "arguments": {},
+      "result": {
+        "purpose": "Meta-Agent 为当前角色设计下一代 Task-Agent；外部状态机负责评测、建树和预算执行。",
+        "current_node": {
+          "node_id": "hunter-base",
+          "role": "hunter",
+          "status": "retained",
+          "depth": 0,
+          "parent_id": null,
+          "children": [
+            "hunter-n00007",
+            "hunter-n00008",
+            "hunter-n00009"
+          ],
+          "generated_candidate_count": 3,
+          "successful_evolution_count": 0,
+          "pending_candidate_count": 3
+        },
+        "node_states": {
+          "pending": "待评估；先运行配置数量的对局，再决定 retained 或 discarded",
+          "retained": "保留在候选池中；在预算允许时可以生成子节点",
+          "discarded": "舍弃；不进入候选池，也不再生成子节点"
+        },
+        "evaluation": {
+          "games_per_pending_node": 20,
+          "player_count": 12,
+          "game_concurrency": 2,
+          "model_max_in_flight": 4,
+          "max_failed_games": 18,
+          "max_fallback_rate": 0.2,
+          "max_invalid_decisions": 10,
+          "discard_all_losses": true,
+          "focus_role_uses_current_node": true,
+          "other_roles_use_random_retained_candidates": true,
+          "quality_error_metrics_scope": "focus_role_only; aggregate game metrics are retained for diagnostics",
+          "parent_child_comparison_required": false
+        },
+        "evolution_budget": {
+          "children_per_expansion": 3,
+          "max_children_per_node": 3,
+          "max_tree_depth": 6,
+          "max_generated_candidates_per_role": 60,
+          "max_successful_evolutions_per_role": 20,
+          "role_scheduler": "least_evolved_random",
+          "candidate_pool_extra_limit": null
+        },
+        "process": [
+          "一个 step 以产生新的 retained 子节点为成功终止条件；不是生成 pending 就结束。",
+          "一个 step 可以连续处理多个节点，直到产生 retained 子节点或所有机会耗尽。",
+          "pending 节点只做评测并决定保留或舍弃。",
+          "retained 节点扩展时固定创建 children_per_expansion 个子节点。",
+          "每个子节点单独调用一次 Meta-Agent 和 Pi；一次扩展抽取不同的游戏回放。",
+          "子节点从父节点快照继承全部祖先修改；其他分支需要通过工具主动读取。",
+          "不要求子节点胜过父节点，也不保证每次修改都是真实改进。"
+        ],
+        "not_evolvable": [
+          "Game Engine",
+          "游戏规则与胜负裁决",
+          "信息可见性与行动 JSON schema",
+          "工具实现、模型网关、审计记录和所有外部预算"
+        ]
+      }
+    }
+  ],
+  "diagnosis": {
+    "summary": "hunter-base 目前是“能跑但不够会打”的基线：校验层面稳定（20 局无 invalid decision、无 focus fallback），但整体胜率只有 25%。从代码看，它几乎是无状态的、没有跨回合证据累积，也没有 hunter 专属的反应/发言决策框架；从回放看，hunter 角色的公开发言偏模板化，更多是在跟随场上主流而不是持续沉淀可复用的证据链。下一代 Task-Agent 的优先级应是：加入受限的局内记忆与证据摘要、把 hunter 的开枪/跳过判断变成显式规则、并把发言从泛化模板改成围绕当前争议的定向回应。",
+    "evidence": [
+      {
+        "type": "evaluation_summary",
+        "fact": "hunter-base 在 20 局完整评测中 win_count=5、loss_count=15、win_rate=0.25；complete_game_count=20、failed_game_count=0；invalid_decision_count=0、fallback_count=0。"
+      },
+      {
+        "type": "code_fact",
+        "fact": "TaskAgent.observe(sync_packet) 直接丢弃输入，不维护跨行动状态；类注释也明确写了“最小基线不把它跨行动保存为模型记忆”。"
+      },
+      {
+        "type": "code_fact",
+        "fact": "决策会话是 new_session_per_decision，只允许当前轮的 read_current_round_dialogue 工具，没有任何跨轮历史读取工具或内部证据 ledger。"
+      },
+      {
+        "type": "replay_fact",
+        "fact": "game1 中 hunter(p10) 的多次发言都比较泛化，例如“首日发言…没硬货”“我先听后面的”“先听警长归票”，缺少持续更新的个体化证据链。"
+      },
+      {
+        "type": "replay_fact",
+        "fact": "game1 的 public_state / audit_state 显示评测中单局 token 消耗很高（successful_response_count=187，input_tokens=754085，total_tokens=763234），说明当前提示输入偏大且缺少压缩后的结构化摘要。"
+      },
+      {
+        "type": "task_fact",
+        "fact": "hunter 的最小任务明确要求：活着时保持自然视角并收集证据；被要求开枪时比较合法目标的身份线索和连锁风险；公开发言要回应当下争议，避免固定模板。"
+      }
+    ],
+    "root_causes": [
+      "核心问题不是规则或 schema，而是“无状态 + 无摘要”的信息组织方式：模型每次都像重新开局，无法稳定积累投票、站边、死亡链和发言矛盾。",
+      "缺少 hunter 专属的决策框架：死亡反应时没有明确的目标排序、风险评估和 skip 阈值，发言时也没有要求围绕当前争议给出具体证据点。",
+      "提示与输入过于原始，几乎把结构化判断任务留给模型自己从大 JSON 中临场抽取；这会放大上下文噪声，降低长期一致性。",
+      "当前任务描述偏“原则性”，但没有把 hunter 的关键行为拆成可执行步骤，导致模型更容易退回到通用狼人杀模板。"
+    ],
+    "modification_plan": [
+      {
+        "file": "task_agent.py",
+        "change": "把 observe() 从空操作改为维护一个 bounded per-game memory：记录最新 public_state、最近几轮的发言/投票/死亡摘要、已确认身份线索和当前争议点；再在 _system_prompt 或 _turn_instruction 中注入这个 compact summary，而不是只依赖原始 turn_packet。",
+        "rationale": "hunter 需要跨回合整合证据。受限记忆能让它持续跟踪票型、站边和死亡链，避免每次决策都重建上下文。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "增加一个 hunter-specific 的决策辅助层：当 request 指向发言时，强制输出“当前争议 + 1 个具体证据 + 1 个明确态度”；当 request 是 hunter 反应/last_words 类行动时，基于可见证据对合法目标打分（例如：被多人稳定指控、与投票链矛盾、对神职/关键位有直接威胁），低置信度时优先 skip。",
+        "rationale": "把 hunter 的关键行为从泛化聊天变成显式决策，有助于减少模板化发言和随意开枪，尤其适合死亡触发的高风险选择。"
+      },
+      {
+        "file": "task.md",
+        "change": "重写 hunter 的最小任务说明为操作化 rubric：1) 活着时如何记录“嫌疑人/支持者/矛盾点”；2) 发言时必须点名当前争议并给出具体理由；3) 反应开枪时如何比较目标、何时跳过；4) 明确不要复用固定模板。",
+        "rationale": "把角色任务从原则句改成执行清单，可以直接约束模型输出风格，并与代码中的 compact memory 和 hunter-specific scorer 配合。"
+      }
+    ],
+    "risks": [
+      "加入记忆后可能引入 stale state；需要按 game_id / round 重置，并只保留可追溯到 observed sync_packet 的内容。",
+      "目标打分过强可能导致 hunter 误杀好人或过度激进；必须保留 skip 作为低置信度默认分支。",
+      "compact summary 如果压缩过度，会丢失关键投票细节；需要控制摘要粒度，至少保留最近一轮投票、死亡和明确身份声明。",
+      "更大的系统提示或摘要如果写得太长，可能反而压缩可用上下文；实现时要优先短字段、列表化和固定长度截断。"
+    ],
+    "code_agent_brief": "请只改 task_agent.py 和 task.md，不要动 Game Engine、schema 或外部预算。实现一个 hunter 角色的下一代 Task-Agent：1) 在 observe() 中保留一个按 game_id/round 维护的 bounded memory，至少包含最近 public_state、最近发言/投票/死亡的结构化摘要、已确认的角色线索和当前争议点；2) 将这个 compact memory 注入系统/回合提示，替代只看原始大 JSON 的做法；3) 增加 hunter 专用的输出约束：发言必须围绕当前争议、给出 1 个具体证据和 1 个明确判断，不能只说模板化的“先听一圈/我先观望”；4) 对 hunter 死亡反应或 last_words 类行动实现一个简单但显式的目标评分器，优先选择与投票链、公开发言矛盾和关键位威胁最匹配的合法目标，证据不足时明确 skip；5) 同步把 task.md 改成操作清单式描述，强化“记忆—判断—开枪/跳过—发言回应”四步。目标是提高一致性和证据利用率，而不是改游戏规则。"
+  },
+  "model": {
+    "available": true,
+    "model": "gpt-5.5",
+    "protocol": "responses",
+    "reasoning_effort": null,
+    "enable_thinking": true,
+    "max_output_tokens": 900
+  },
+  "token_usage": {
+    "input_tokens": 189607,
+    "output_tokens": 6168,
+    "total_tokens": 195775
+  }
+}

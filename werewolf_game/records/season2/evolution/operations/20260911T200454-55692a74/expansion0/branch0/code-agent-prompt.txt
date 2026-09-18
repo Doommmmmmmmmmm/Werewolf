@@ -1,0 +1,73 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00067 的主要问题不是行动 schema 稳定性，而是“查验事实可信转述”的安全性与公共压票转化仍不稳。评测 20 局仅 4 胜，低于祖先 seer-n00025 的 6/20；随机回放虽然最终好人胜，但暴露了严重风险：预言家在警长复辩中公开编造/串线了未收到的查验结果，短期直接损害可信度，长期依赖后续连续查狼和其他好人配合才补救。下一代应优先做最小、可执行的防错增强：把私有查验解析成权威表；对发言中的“我验/查验/查杀/金水”做本地一致性校验并触发重试；同时把白天发言模板改成“权威查验链 + 对跳矛盾 + 单一票口”，避免模型从对跳者话术中复制假查验。",
+  "evidence": [
+    "评测汇总显示 seer-n00067：20 局全完成，focus fallback=0、focus invalid=0，但 win_count=4、loss_count=16、win_rate=0.2；说明运行合法性稳定，但策略质量偏低。",
+    "祖先 seer-n00025 的历史诊断/汇总显示 win_rate=0.3；当前 n00067 在同为 retained 的基础上胜率下降到 0.2，新增复杂提示和风险模式没有转成稳定收益。",
+    "随机回放中 p10 是真预言家，首夜实际 SEER_RESULT 为 p3=wolf（seq35-36）；警长首轮发言 seq65 正确报出“昨晚验p3是查杀”。",
+    "同一回放警长 runoff 发言 seq97，p10 却说“昨晚验的p2，是查杀。我验p3也是狼”，其中 p2 查杀并未发生；这是违反任务中“不得编造未收到的查验结果”的高风险行为，且很可能来自复制对跳狼 p5 在 seq63 的假查验 p2 查杀。",
+    "seq97 的虚假双查杀直接削弱可信度：runoff 投票 seq124 中 p5 以 8:4 当选警长，真预言家失去警徽与带队优势。",
+    "后续 p10 的发言在 seq144、seq224、seq295、seq362 能持续报出 p3/p5/p7 查杀并最终推动出狼，但这依赖连续查到狼和其他好人配合；随机胜局不能掩盖早期查验串线的根因。",
+    "当前代码的 _update_inspection_records 只识别 inspect_target/target_id 与 inspect_result/result 这类扁平字段；若运行包以 inspections 映射、role_state.inspections 或最近 SEER_RESULT payload 表示私有查验，seer_memory 可能不完整，模型只能从 prompt 的压缩 private_information 或对话摘要中自行拼接，增加串线风险。",
+    "当前 _strategy_error 只对 pass、投票给金水、已验狼可投时不投已验狼做校验；没有对 speech/last_words 中的查验声明做一致性检查，因此 seq97 这类假查验不会被本地拦截。",
+    "同分支 seer-n00068 尝试加入更大结构化状态后因 fallback_rate=0.3714、invalid_decisions=65 被丢弃，提示下一代不宜大幅扩张状态机和 prompt，而应做小型、强约束的事实防错。",
+    "评测汇总还显示总局中存在 prompt 超过 12000 字符的 participant_error（虽非 focus seer），而当前 seer prompt 已包含 seer_memory、seer_brief、public_state、private_information、dialogue_excerpt 等多份摘要；继续无节制扩展记忆会增加超限风险。"
+  ],
+  "root_causes": [
+    "缺少“权威查验表”作为单一事实源。当前 inspected 记忆依赖少数字段名，不能保证覆盖实际 private_information 的各种形态；模型容易把对跳者公开话术当作自己的查验链。",
+    "缺少发言级本地事实校验。代码会校验 JSON schema 和部分投票策略，却不校验 text 中声称的查验对象/结果是否真实收到，导致违反角色规则的假查验可以直接进入公开发言。",
+    "发言指令仍偏软约束。虽然 _turn_instruction 反复要求报查验链，但没有明确告诉模型“只能使用 authoritative_inspections 中列出的查验；对手的查验只能称为对手声称”，因此在对跳/复辩时容易发生视角混淆。",
+    "公共对跳比较没有把“自己查验”和“他人声明”隔离成不同命名空间。declared_claims 与 inspected 同时进入 brief，模型在高压短文本中可能把他人 claims 混入自己的 facts。",
+    "当前演化方向已有状态膨胀风险。n00068 的失败说明单纯加入大型 claim/vote timeline 可能带来非法行动和 fallback；n00067 自身胜率下降也说明复杂提示未必稳定提升，需要聚焦最小防错闭环。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个轻量权威查验构建函数，例如 _authoritative_inspections(packet)，从 private_information 中兼容解析多种只读形态：扁平 target_id/team、inspect_target/inspect_result、inspections 映射、role_state.inspections、seer_result/night_result 等；规范化为 {target_id: 'wolf'|'villager'}，并在 _update_inspection_records 中用该表更新 inspected，避免重复、避免被公开 claims 污染。",
+      "rationale": "让后续 prompt、发言计划和校验都依赖私有信息的单一事实源，而不是让模型从压缩 private_information 和公开对话中自行推断。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增 speech 策略校验：在 _strategy_error 中对 speak/last_words 的 text 调用 _speech_inspection_error。该函数用保守正则抽取“我验/我查/昨晚验/查验链/验了 + pN/座位 + 查杀/金水/狼/好人”等自称查验；若目标不存在于 authoritative inspection map，或结果与权威表冲突，则返回错误触发模型重试。对“某某声称验p2查杀”“对方报p2查杀”这类他人声明不拦截，可通过检测“声称/他说/对方/假预言家报”等上下文白名单避免误杀。",
+      "rationale": "直接防止 seq97 这种把狼悍跳的 p2 查杀复制成自己查验的高危错误，且不修改引擎/规则/schema。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_seer_brief 中加入 compact 的 authoritative_inspections 与 own_inspection_chain 字段，只列最近/全部已查验的 target=result；public_plan.must_announce、facts、vote_target_from_inspection 均从该权威表派生。declared_claims 保持为 others_claims/公开声明，不再和 facts 混写成可能被模型误读的“事实摘要”。",
+      "rationale": "把“我知道的夜间事实”和“别人公开说法”在 prompt 中显式隔离，降低视角串线。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "收紧 _turn_instruction 的发言模板：在 sheriff_election_speech/day_speech/last_words 中加入硬提示：“你的查验事实只能来自 authoritative_inspections/own_inspection_chain；引用他人查验必须写成‘对方声称’，不得改写成‘我验’。”同时将发言骨架压缩为“身份 + 查验链 + 对跳矛盾 + 今日唯一票口”，避免重复长提示。",
+      "rationale": "用更短但更强的约束替代多处重复风险提示，既提升事实一致性，也控制 prompt 长度。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 vote 模式但保持最小：若权威表中存在 alive 且 allowed 的 wolf，继续强制投该目标；若多个已验狼可投，优先最近存活警长/对跳者/持警徽者，其次按查验顺序。不要引入大型 vote_timeline。",
+      "rationale": "把真实查杀稳定转为投票优势，同时避免 n00068 那种大状态机导致 fallback/invalid 的风险。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "控制 prompt 体积：_compact_private_information 中如果已注入 authoritative_inspections，可移除重复的 seer_memory_hint 或缩短为只含 inspected/claims/vote_summary 的小字典；current_round_dialogue_excerpt 仍限制 6 条以内，不新增完整历史。",
+      "rationale": "当前评测已有总局 prompt 超限迹象；下一代修改应通过替换和压缩而不是叠加更多文本来实现。"
+    },
+    {
+      "file": "task.md",
+      "change": "少量补充一条规则：公开发言中凡使用“我验/我查/查验链”必须逐字对应自己收到的私有查验；他人报验只能称为“对方声称”，不得并入自己的查验链。",
+      "rationale": "让模型系统提示与代码校验同向，减少重试成本。"
+    }
+  ],
+  "risks": [
+    "中文自然语言抽取可能误判引用句，例如“p5说他验p2查杀”被当成自己查验；需要正则保守，只拦截带第一人称或“查验链”语境的声明，并保留他人声称白名单。",
+    "如果运行包中的 private_information 字段结构与假设不同，权威查验解析可能仍不完整；实现时应兼容多路径并在没有权威表时不做过度拦截，只依赖已记录 inspected。",
+    "过强的 speech 校验可能导致模型多次重试后失败；错误反馈要具体说明“只能报 p3=查杀，不能报 p2=查杀”，帮助模型修正。",
+    "压缩 private_information 和 seer_memory 可能误删少量有用上下文；应只删除重复 hint，不删除 request、allowed_actions、public_state 的必要字段。",
+    "小改动主要解决假查验和查验转票问题，不能单独修复其他角色弱配合或村民不信真预言家的宏观问题。"
+  ],
+  "code_agent_brief": "请仅修改候选工作区的 task_agent.py，必要时少量修改 task.md。目标是在 seer-n00067 上做最小事实安全增强，而不是重写大型状态机。具体实现：1）新增/改造私有查验解析函数，从 private_information 的多种可能结构中构建 authoritative_inspections={player_id: wolf/villager}，并用它更新 SeerMemory.inspected；2）在 seer_brief 中显式加入 own_inspection_chain/authoritative_inspections，facts 和 public_plan 只从该权威表派生，公开 declared_claims 只能作为 others_claims；3）在 _strategy_error 中为 speak/last_words 增加发言查验一致性校验，保守抽取第一人称查验声明，若声称未查过目标或结果冲突则返回错误触发重试，防止把对跳者假查验说成自己的查验；4）收紧 _turn_instruction，明确“我验/我查只能来自 own_inspection_chain；他人报验必须写成对方声称”，并保持发言骨架为身份、查验链、对跳矛盾、唯一票口；5）保持 prompt 精简，不引入 n00068 那种大型 claim/vote timeline，不修改游戏引擎、规则、可见性、行动 schema、工具接口或预算。重点回归测试随机回放中的场景：首夜只验 p3=wolf 时，runoff 发言不得出现“我验p2查杀”。"
+}

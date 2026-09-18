@@ -1,0 +1,291 @@
+--- seer-n00067/task_agent.py
++++ seer-n00138/task_agent.py
+@@ -60,6 +60,8 @@
+     sheriff_candidates: list[str] = field(default_factory=list)
+     inspected: list[dict[str, str]] = field(default_factory=list)
+     declared_claims: list[dict[str, str]] = field(default_factory=list)
++    # 只记录公开记录中明确涉及预言家/查验的发言者，供发言事实校验使用。
++    verified_seer_claimers: list[str] = field(default_factory=list)
+     challenged_players: list[str] = field(default_factory=list)
+     seat_to_player_id: dict[str, str] = field(default_factory=dict)
+     player_to_seat: dict[str, str] = field(default_factory=dict)
+@@ -77,6 +79,7 @@
+         self.sheriff_candidates.clear()
+         self.inspected.clear()
+         self.declared_claims.clear()
++        self.verified_seer_claimers.clear()
+         self.challenged_players.clear()
+         self.seat_to_player_id.clear()
+         self.player_to_seat.clear()
+@@ -385,10 +388,14 @@
+             pieces.append(
+                 "竞选警长发言必须先讲已知查验事实，再讲可验证推断和带队计划；"
+                 "若有对跳，直接对比查验、时间线和动机，不要泛泛而谈。"
++                "只把 speech_frame.inspection_facts 和 verified_claim_comparison 当事实；"
++                "未出现在 declared_claims 的玩家不得说其跳预言家或报验人；不确定只能说‘我怀疑/我要求其表态’。"
+             )
+         elif mode == "day_speech":
+             pieces.append(
+                 "白天发言要先给查验事实，再给基于票型和发言的推断；先压最危险的矛盾点，再给出可执行投票方向。"
++                "只把 speech_frame.inspection_facts 和 verified_claim_comparison 当事实；"
++                "未出现在 declared_claims 的玩家不得说其跳预言家或报验人；不确定只能说‘我怀疑/我要求其表态’。"
+             )
+         elif mode == "vote":
+             pieces.append(
+@@ -403,6 +410,9 @@
+                 "风险发言模式：只压缩推理，不压缩查验链；优先简短报出查杀、仍存活金水和今日归票，不要漏掉已知事实。"
+             )
+         public_plan = seer_brief.get("public_plan") if isinstance(seer_brief, Mapping) else None
++        speech_frame = seer_brief.get("speech_frame") if isinstance(seer_brief, Mapping) else None
++        if isinstance(speech_frame, Mapping) and mode in {"sheriff_election_speech", "day_speech"}:
++            pieces.append("确定发言骨架：" + json.dumps(speech_frame, ensure_ascii=False, separators=(",", ":")))
+         if isinstance(public_plan, Mapping):
+             if public_plan.get("must_announce"):
+                 pieces.append("查验链：" + "；".join(str(item) for item in public_plan["must_announce"]))
+@@ -929,13 +939,15 @@
+                 speaker = self._extract_single_player_id(speaker.strip()) or speaker.strip()
+                 text = text.strip()
+             claim_text = self._extract_explicit_claim_text(text)
++            claim_speaker = speaker or self._speaker_from_text(text)
+             if claim_text:
+                 entry = {
+-                    "speaker": speaker or self._speaker_from_text(text),
++                    "speaker": claim_speaker,
+                     "claim": self._truncate_text(claim_text, _SUMMARY_TEXT_LIMIT),
+                 }
+                 if entry["speaker"] or entry["claim"]:
+                     self._seer_memory.declared_claims.append(entry)
++                self._record_verified_seer_claimer(claim_speaker, claim_text)
+             challenge_targets = self._extract_explicit_challenge_targets(text)
+             if challenge_targets:
+                 if speaker:
+@@ -949,7 +961,7 @@
+         text = self._stringify(text).strip()
+         if not text:
+             return ""
+-        claim_markers = ("我是", "我跳", "我自称", "自报", "我认", "报身份", "亮身份")
++        claim_markers = ("我是", "我跳", "我也跳", "我自称", "自报", "我认", "报身份", "亮身份")
+         role_markers = ("预言家", "女巫", "猎人", "守卫", "警长", "村民", "平民", "狼人", "好人", "坏人")
+         if any(marker in text for marker in claim_markers) and any(role in text for role in role_markers):
+             return text
+@@ -999,6 +1011,7 @@
+                     )
+                     if speaker or claim:
+                         self._seer_memory.declared_claims.append({"speaker": speaker, "claim": claim})
++                    self._record_verified_seer_claimer(speaker, claim)
+         challenged = self._first_present(
+             packet,
+             (
+@@ -1107,20 +1120,28 @@
+             else:
+                 confirmed_villagers.append(entry)
+ 
+-        living_known_wolves = [item["player_id"] for item in known_wolves if item["player_id"] in alive]
+-        living_confirmed_villagers = [item["player_id"] for item in confirmed_villagers if item["player_id"] in alive]
++        # 查杀永远优先，但不能因为有查杀就丢掉仍存活的金水。alive 缺失时保留
++        # 已知记录作为保守回退；正常行动包都会提供 alive。
++        living_known_wolves = [
++            item["player_id"] for item in known_wolves
++            if not alive or item["player_id"] in alive
++        ]
++        living_confirmed_villagers = [
++            item["player_id"] for item in confirmed_villagers
++            if not alive or item["player_id"] in alive
++        ]
+         must_announce: list[str] = []
+-        if known_wolves:
+-            must_announce = [
+-                self._format_inspection_fact(item.get("round", ""), item["player_id"], "wolf")
+-                for item in known_wolves
+-            ]
+-        elif living_confirmed_villagers:
+-            must_announce = [
+-                self._format_inspection_fact(item.get("round", ""), item["player_id"], "villager")
+-                for item in confirmed_villagers
+-                if item["player_id"] in alive
+-            ]
++        for item in known_wolves:
++            if item["player_id"] in living_known_wolves:
++                must_announce.append(
++                    self._format_inspection_fact(item.get("round", ""), item["player_id"], "wolf")
++                )
++        for item in confirmed_villagers:
++            if item["player_id"] in living_confirmed_villagers:
++                must_announce.append(
++                    self._format_inspection_fact(item.get("round", ""), item["player_id"], "villager")
++                )
++        must_announce = must_announce[:_SUMMARY_LIST_LIMIT]
+         vote_target_from_inspection = [
+             player_id for player_id in living_known_wolves if not allowed_target_set or player_id in allowed_target_set
+         ]
+@@ -1134,10 +1155,44 @@
+             "confirmed_villagers": confirmed_villagers,
+             "living_confirmed_villagers": living_confirmed_villagers,
+             "must_announce": must_announce,
+-            "protected_targets": living_confirmed_villagers,
+-            "vote_target_from_inspection": vote_target_from_inspection,
++            "protected_targets": living_confirmed_villagers[:_SUMMARY_LIST_LIMIT],
++            "vote_target_from_inspection": vote_target_from_inspection[:_SUMMARY_LIST_LIMIT],
+             "self_preservation_emergency": self_preservation_emergency,
+         }
++
++    def _build_speech_frame(self, public_plan: Mapping[str, Any], mode: str) -> dict[str, Any]:
++        """提供只由已知公开/私有事实构成的短发言骨架。"""
++        inspection_facts = [
++            self._stringify(item) for item in public_plan.get("must_announce", [])
++            if self._stringify(item)
++        ][:_SUMMARY_LIST_LIMIT]
++        verified_claim_comparison: list[str] = []
++        verified = set(self._seer_memory.verified_seer_claimers)
++        for item in self._seer_memory.declared_claims[-_SUMMARY_LIST_LIMIT:]:
++            if not isinstance(item, Mapping):
++                continue
++            speaker = self._stringify(item.get("speaker"))
++            claim = self._truncate_text(self._stringify(item.get("claim")), 80)
++            if speaker in verified and speaker and claim:
++                verified_claim_comparison.append(f"{speaker}已公开预言家/查验声明：{claim}")
++        frame: dict[str, Any] = {
++            "inspection_facts": inspection_facts,
++            "verified_claim_comparison": verified_claim_comparison[:_SUMMARY_LIST_LIMIT],
++            "single_vote_target": [
++                self._stringify(item) for item in public_plan.get("vote_target_from_inspection", [])
++                if self._stringify(item)
++            ][:1],
++            "protected_targets": [
++                self._stringify(item) for item in public_plan.get("protected_targets", [])
++                if self._stringify(item)
++            ][: _SUMMARY_LIST_LIMIT],
++            "warnings": [],
++        }
++        if mode in {"sheriff_election_speech", "day_speech"} and not inspection_facts:
++            frame["warnings"].append("没有可公开的查验事实时，不要编造查验结果")
++        if verified_claim_comparison:
++            frame["warnings"].append("只比较已记录的公开声明；推测必须说成怀疑或要求表态")
++        return frame
+ 
+     def _extract_vote_payloads(self, value: Any) -> list[Any]:
+         payloads: list[Any] = []
+@@ -1189,6 +1244,24 @@
+             self_is_candidate = self.player_id in self._seer_memory.sheriff_candidates or self.player_id == self._seer_memory.sheriff_id
+             if has_facts or self_is_candidate:
+                 return "预言家有查验事实或竞选身份时不能跳过发言，必须用最短格式报验人"
++        if action_kind in _SPEECH_ACTION_KINDS:
++            text = self._stringify(action.get("text")).strip()
++            fact_error = self._speech_fact_error(text)
++            if fact_error:
++                return fact_error
++            if mode in {"sheriff_election_speech", "day_speech"}:
++                announced_targets = set(self._extract_player_ids_from_text(text))
++                required_targets = {
++                    target for item in public_plan.get("must_announce", [])
++                    for target in self._extract_player_ids_from_text(self._stringify(item))
++                }
++                if required_targets and not announced_targets.intersection(required_targets):
++                    return "发言必须至少提到 speech_frame 中一个真实查验目标"
++                vote_targets = {
++                    self._stringify(target) for target in public_plan.get("vote_target_from_inspection", [])
++                }
++                if vote_targets and not announced_targets.intersection(vote_targets):
++                    return "存在可归票的已验狼时，发言必须提到该查杀目标"
+         if self._kind_looks_like_vote(action_kind):
+             target_id = self._stringify(action.get("target_id"))
+             living_confirmed_villagers = set(self._stringify(item) for item in public_plan.get("living_confirmed_villagers", []))
+@@ -1199,6 +1272,72 @@
+                 if target_id not in living_known_wolves:
+                     return "已验狼在可投范围内时，投票必须指向已验狼"
+         return None
++
++    def _speech_fact_error(self, text: str) -> str | None:
++        """拦截少数高风险的虚构声明，不干预普通怀疑和要求表态。"""
++        if not text:
++            return None
++
++        def resolve(reference: str) -> str:
++            ids = self._extract_player_ids_from_text(reference)
++            return ids[0] if ids else reference.lower()
++
++        # “pX 跳/也跳预言家”以及“pX 报 pY 金水/查杀/验了 pY”均属于强事实。
++        seer_jump = re.compile(
++            r"(?P<speaker>p\d+|第?\d{1,2}[号位]?)\s*(?:跳\s*预言家|"
++            r"也\s*跳(?=\s*(?:预言家|[，。！？；,.!?]|$))|"
++            r"自称\s*预言家|声称\s*预言家|报身份为?\s*预言家)"
++        )
++        report = re.compile(
++            r"(?P<speaker>p\d+|第?\d{1,2}[号位]?)\s*(?:也\s*)?(?:报|说|称)\s*"
++            r"(?P<target>p\d+|第?\d{1,2}[号位]?)\s*(?P<result>金水|查杀|狼|好人)"
++        )
++        checked = re.compile(
++            r"(?P<speaker>p\d+|第?\d{1,2}[号位]?)\s*(?:昨晚)?(?:验了|验过|查了|查验了)\s*"
++            r"(?P<target>p\d+|第?\d{1,2}[号位]?)\s*(?P<result>金水|查杀|狼|好人)?"
++        )
++        known_claimers = set(self._seer_memory.verified_seer_claimers)
++        for claim_entry in self._seer_memory.declared_claims:
++            if not isinstance(claim_entry, Mapping):
++                continue
++            speaker = self._stringify(claim_entry.get("speaker")).strip()
++            claim = self._stringify(claim_entry.get("claim"))
++            if speaker and any(marker in claim for marker in ("预言家", "我验", "我查", "查验", "查杀", "金水")):
++                known_claimers.add(speaker)
++        for pattern in (seer_jump, report, checked):
++            for match in pattern.finditer(text):
++                speaker = resolve(match.group("speaker"))
++                if speaker == self.player_id or speaker in known_claimers:
++                    continue
++                return f"不能把未在公开记录确认的 {speaker} 说成已跳预言家或已报查验；请改为‘我怀疑/我要求其表态’"
++
++        self_check = re.compile(
++            r"我\s*(?:昨晚)?(?:验了|验过|查了|查验了|验|查)\s*"
++            r"(?P<target>p\d+|第?\d{1,2}[号位]?)\s*(?P<result>金水|查杀|狼|好人)"
++        )
++        inspected = {
++            self._stringify(item.get("target")): self._inspection_result_text(item.get("result"))
++            for item in self._seer_memory.inspected
++            if isinstance(item, Mapping)
++        }
++        for match in self_check.finditer(text):
++            target = resolve(match.group("target"))
++            raw_result = match.group("result")
++            result = "wolf" if raw_result in {"查杀", "狼"} else "villager"
++            if inspected.get(target) != result:
++                return "只能公开自己实际收到的查验结果；目标和金水/查杀必须与 seer_memory.inspected 完全一致"
++        return None
++
++    def _record_verified_seer_claimer(self, speaker: str, claim: str) -> None:
++        speaker = self._stringify(speaker).strip()
++        claim = self._stringify(claim)
++        if not speaker or not claim:
++            return
++        strong_markers = ("预言家", "我验", "我查", "查验", "查杀", "金水")
++        if any(marker in claim for marker in strong_markers):
++            self._seer_memory.verified_seer_claimers = self._unique_stable(
++                list(self._seer_memory.verified_seer_claimers) + [speaker]
++            )[-_SUMMARY_LIST_LIMIT:]
+ 
+     def _apply_inspect_target_bias(
+         self, action: dict[str, Any], request: Mapping[str, Any], seer_brief: Mapping[str, Any]
+@@ -1240,6 +1379,7 @@
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+             "facts": facts,
+             "public_plan": public_plan,
++            "speech_frame": self._build_speech_frame(public_plan, mode),
+             "pressure_points": pressure_points,
+             "self_risk": self_risk,
+             "risk_mode": risk_mode,
+@@ -1505,6 +1645,7 @@
+             "sheriff_candidates": self._seer_memory.sheriff_candidates[:_SUMMARY_LIST_LIMIT],
+             "inspected": self._seer_memory.inspected[-_SUMMARY_LIST_LIMIT:],
+             "declared_claims": self._seer_memory.declared_claims[-_SUMMARY_LIST_LIMIT:],
++            "verified_seer_claimers": self._seer_memory.verified_seer_claimers[:_SUMMARY_LIST_LIMIT],
+             "challenged_players": self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT],
+             "recent_vote_summary": self._seer_memory.recent_vote_summary,
+             "dialogue_digest": self._seer_memory.dialogue_digest[-_SUMMARY_LIST_LIMIT:],
+--- seer-n00067/task.md
++++ seer-n00138/task.md
+@@ -29,6 +29,7 @@
+ ## 额外要求
+ 
+ - 不要编造没有收到的查验结果。
++- 公开发言中，只有当前可见公开记录确实确认某玩家声明时，才能说其“跳预言家/报查验/对跳”；否则必须说“我怀疑/我要求其表态/需要对比”，不得把推测写成已发生的事实。
+ - 不要忽视生存风险；必要时先短发言、后补证据。
+ - 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先短发言并只释放足够推动投票的最小事实集，而不是一次性展开全部查验。
+ - 参选预言家且已有首验时，不得退水或跳过发言；最短模板也要包含“身份 + 查验链 + 今日保护/归票”。

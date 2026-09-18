@@ -1,0 +1,589 @@
+--- seer-n00066/task_agent.py
++++ seer-n00126/task_agent.py
+@@ -59,14 +59,22 @@
+     sheriff_id: str = ""
+     sheriff_candidates: list[str] = field(default_factory=list)
+     inspected: list[dict[str, str]] = field(default_factory=list)
++    inspection_timeline: list[dict[str, Any]] = field(default_factory=list)
+     declared_claims: list[dict[str, str]] = field(default_factory=list)
++    claim_timeline: list[dict[str, Any]] = field(default_factory=list)
+     challenged_players: list[str] = field(default_factory=list)
+     announced_inspections: set[str] = field(default_factory=set)
++    public_inspection_signatures: set[str] = field(default_factory=set)
+     seat_to_player_id: dict[str, str] = field(default_factory=dict)
+     player_to_seat: dict[str, str] = field(default_factory=dict)
+     recent_vote_summary: str = ""
+     recent_vote_detail: dict[str, Any] = field(default_factory=dict)
++    vote_timeline: list[dict[str, Any]] = field(default_factory=list)
+     dialogue_digest: list[str] = field(default_factory=list)
++    current_pressure_target: str = ""
++    death_risk_level: str = "normal"
++    handoff_target: str = ""
++    handoff_reason: str = ""
+ 
+     def reset(self, game_id: str = "") -> None:
+         self.game_id = game_id
+@@ -77,14 +85,22 @@
+         self.sheriff_id = ""
+         self.sheriff_candidates.clear()
+         self.inspected.clear()
++        self.inspection_timeline.clear()
+         self.declared_claims.clear()
++        self.claim_timeline.clear()
+         self.challenged_players.clear()
+         self.announced_inspections.clear()
++        self.public_inspection_signatures.clear()
+         self.seat_to_player_id.clear()
+         self.player_to_seat.clear()
+         self.recent_vote_summary = ""
+         self.recent_vote_detail.clear()
++        self.vote_timeline.clear()
+         self.dialogue_digest.clear()
++        self.current_pressure_target = ""
++        self.death_risk_level = "normal"
++        self.handoff_target = ""
++        self.handoff_reason = ""
+ 
+ 
+ def render_action_contract(request: Mapping[str, Any]) -> str:
+@@ -372,22 +388,25 @@
+         pieces = [render_action_contract(request)]
+         risk_mode = seer_brief.get("risk_mode") if isinstance(seer_brief, Mapping) else None
+         risk_active = bool(isinstance(risk_mode, Mapping) and risk_mode.get("active"))
++        death_risk_level = str(risk_mode.get("death_risk_level") or risk_mode.get("level") or "normal") if isinstance(risk_mode, Mapping) else "normal"
+         public_plan = seer_brief.get("public_plan") if isinstance(seer_brief, Mapping) else None
++        continuity_plan = seer_brief.get("continuity_plan") if isinstance(seer_brief, Mapping) else None
+         if mode == "night_inspect":
+             pieces.append(
+-                "夜间优先验信息增益最高的目标：优先 sheriff 候选、强对跳、发言强但立场模糊者、票型关键位；"
+-                "严格避开自己和已验过的人。"
++                "夜间验人只从契约 target_ids 中选；优先未解决对跳、当前主压目标、能决定今日唯一票口的位置；"
++                "若已有查杀或暴露风险高，优先验仍存活且可能成为信息继承人的关键位；严格避开自己和已验过的人。"
+             )
+             if seer_brief.get("preferred_targets"):
+                 pieces.append("建议目标：" + "、".join(seer_brief["preferred_targets"]))
+         elif mode == "sheriff_election_speech":
+             pieces.append(
+-                "竞选警长发言必须先讲已知查验事实，再讲可验证推断和带队计划；"
+-                "若有对跳，直接对比查验、时间线和动机，不要泛泛而谈。"
++                "竞选警长发言固定骨架：已知查验链 -> 当前唯一矛盾/对跳 -> 今日唯一归票；"
++                "先说事实和时间线，再说可验证推断。"
+             )
+         elif mode == "day_speech":
+             pieces.append(
+-                "白天发言要先给查验事实，再给基于票型和发言的推断；先压最危险的矛盾点，再给出可执行投票方向。"
++                "白天发言固定骨架：已知查验链 -> 当前唯一矛盾/对跳 -> 今日唯一归票；"
++                "不要同时给多个互斥票口。"
+             )
+         elif mode == "vote":
+             pieces.append(
+@@ -403,9 +422,11 @@
+             )
+         if risk_active and mode in {"sheriff_election_speech", "day_speech", "general"}:
+             rule = (
+-                "风险发言模式：只压缩推理，不隐藏查杀；若有未公开的 wolf 查验，"
+-                "白天发言必须先报该查验，再给归票方向，不得用模糊理由替代查杀。"
++                "风险发言模式：只压缩推理，不压缩未公开查杀和必要交接事实；"
++                "若有未公开 wolf 查验，必须先报该查验，再给归票方向。"
+             )
++            if death_risk_level == "critical":
++                rule += " critical 格式：未公开查杀 -> 存活金水 -> 警徽/信息交接对象 -> 今日归票。"
+             if isinstance(public_plan, Mapping) and public_plan.get("must_announce"):
+                 rule += f" 当前必须优先执行：{public_plan['must_announce']}。"
+             pieces.append(rule)
+@@ -422,12 +443,20 @@
+                     facts = facts[:2]
+             pieces.append("事实摘要：" + ";".join(facts))
+         if isinstance(public_plan, Mapping):
+-            if public_plan.get("inspect_chain"):
++            if public_plan.get("fact_chain"):
++                pieces.append("查验时间线：" + ";".join(public_plan["fact_chain"]))
++            elif public_plan.get("inspect_chain"):
+                 pieces.append("查验链：" + ";".join(public_plan["inspect_chain"]))
++            if public_plan.get("today_vote"):
++                pieces.append("今日唯一归票：" + str(public_plan["today_vote"]))
++            if public_plan.get("protected_villagers"):
++                pieces.append("仍存活金水：" + "、".join(public_plan["protected_villagers"]))
++            if public_plan.get("handoff_instruction"):
++                pieces.append("交接建议：" + str(public_plan["handoff_instruction"]))
+             if public_plan.get("must_announce"):
+                 pieces.append("公开计划：" + str(public_plan["must_announce"]))
+-            if public_plan.get("vote_target_from_inspection"):
+-                pieces.append("查验归票：" + str(public_plan["vote_target_from_inspection"]))
++        if isinstance(continuity_plan, Mapping) and continuity_plan.get("must_publish_before_death"):
++            pieces.append("死亡前最小公开集：" + ";".join(continuity_plan["must_publish_before_death"]))
+         if seer_brief.get("pressure_points"):
+             pieces.append("当前压力点：" + ";".join(seer_brief["pressure_points"]))
+         if seer_brief.get("self_risk"):
+@@ -569,6 +598,7 @@
+             self._seer_memory.recent_vote_summary = vote_summary
+         if vote_detail:
+             self._seer_memory.recent_vote_detail = vote_detail
++            self._record_vote_timeline(vote_detail)
+ 
+         dialogue_digest = self._extract_dialogue_digest(packet)
+         if dialogue_digest:
+@@ -781,6 +811,55 @@
+         detail = self._compact_value(vote_value, max_depth=2)
+         summary = self._vote_summary_text(vote_value)
+         return summary, detail if isinstance(detail, dict) else {"vote": detail}
++
++    def _record_vote_timeline(self, vote_detail: Mapping[str, Any]) -> None:
++        round_no = self._seer_memory.round_no
++        phase = self._seer_memory.phase
++        records: list[dict[str, Any]] = []
++
++        def add(voter: str, target: str) -> None:
++            if not voter and not target:
++                return
++            records.append({"round": round_no, "phase": phase, "voter": voter, "target": target})
++
++        def walk(node: Any, voter_hint: str = "") -> None:
++            if isinstance(node, Mapping):
++                voter = self._extract_single_player_id(
++                    node.get("voter") or node.get("player_id") or node.get("from") or voter_hint
++                )
++                target = self._extract_single_player_id(
++                    node.get("target") or node.get("target_id") or node.get("to") or node.get("vote")
++                )
++                if voter or target:
++                    add(voter, target)
++                for key, nested in node.items():
++                    key_voter = self._extract_single_player_id(key) or voter_hint
++                    walk(nested, key_voter)
++            elif isinstance(node, Sequence) and not isinstance(node, (str, bytes, bytearray)):
++                for item in node:
++                    walk(item, voter_hint)
++            elif voter_hint:
++                target = self._extract_single_player_id(node)
++                if target:
++                    add(voter_hint, target)
++
++        walk(vote_detail)
++        if not records:
++            return
++        existing = {
++            (self._stringify(item.get("round")), self._stringify(item.get("phase")), self._stringify(item.get("voter")), self._stringify(item.get("target")))
++            for item in self._seer_memory.vote_timeline
++            if isinstance(item, Mapping)
++        }
++        for record in records:
++            key = (record["round"], record["phase"], record["voter"], record["target"])
++            if key not in existing:
++                self._seer_memory.vote_timeline.append(record)
++                existing.add(key)
++        self._seer_memory.vote_timeline = self._seer_memory.vote_timeline[-12:]
++        targets = [self._stringify(item.get("target")) for item in self._seer_memory.vote_timeline if isinstance(item, Mapping)]
++        if targets:
++            self._seer_memory.current_pressure_target = max(set(targets), key=targets.count)
+ 
+     def _vote_summary_text(self, value: Any) -> str:
+         if isinstance(value, Mapping):
+@@ -945,6 +1024,7 @@
+                 }
+                 if entry["speaker"] or entry["claim"]:
+                     self._seer_memory.declared_claims.append(entry)
++                    self._add_claim_timeline(entry["speaker"], entry["claim"])
+             if speaker == self.player_id or (not speaker and any(marker in text for marker in ("我验", "我查", "验了", "验过", "查验"))):
+                 self._record_announced_inspections_from_text(text)
+             challenge_targets = self._extract_explicit_challenge_targets(text)
+@@ -955,6 +1035,28 @@
+                     list(self._seer_memory.challenged_players) + challenge_targets
+                 )
+         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
++
++    def _add_claim_timeline(self, speaker: str, claim: str) -> None:
++        claim_text = self._truncate_text(self._stringify(claim), _SUMMARY_TEXT_LIMIT)
++        speaker_id = self._stringify(speaker)
++        if not speaker_id and not claim_text:
++            return
++        entry = {
++            "round": self._seer_memory.round_no,
++            "phase": self._seer_memory.phase,
++            "speaker": speaker_id,
++            "claim_text": claim_text,
++            "claimed_targets": self._extract_player_ids(claim_text)[:4],
++        }
++        key = (entry["round"], entry["phase"], entry["speaker"], entry["claim_text"])
++        existing = {
++            (self._stringify(item.get("round")), self._stringify(item.get("phase")), self._stringify(item.get("speaker")), self._stringify(item.get("claim_text")))
++            for item in self._seer_memory.claim_timeline
++            if isinstance(item, Mapping)
++        }
++        if key not in existing:
++            self._seer_memory.claim_timeline.append(entry)
++        self._seer_memory.claim_timeline = self._seer_memory.claim_timeline[-12:]
+ 
+     def _extract_explicit_claim_text(self, text: str) -> str:
+         text = self._stringify(text).strip()
+@@ -997,7 +1099,14 @@
+         if not result:
+             return
+         for target in targets:
+-            self._seer_memory.announced_inspections.add(self._inspection_signature(target, result))
++            signature = self._inspection_signature(target, result)
++            self._seer_memory.announced_inspections.add(signature)
++            self._seer_memory.public_inspection_signatures.add(signature)
++            for item in self._seer_memory.inspection_timeline:
++                if not isinstance(item, dict):
++                    continue
++                if self._inspection_signature(item.get("target", ""), item.get("result", "")) == signature:
++                    item["announced"] = True
+ 
+     def _update_claims_and_challenges_from_packet(self, packet: Mapping[str, Any]) -> None:
+         claims = self._first_present(
+@@ -1027,6 +1136,7 @@
+                     )
+                     if speaker or claim:
+                         self._seer_memory.declared_claims.append({"speaker": speaker, "claim": claim})
++                        self._add_claim_timeline(speaker, claim)
+         challenged = self._first_present(
+             packet,
+             (
+@@ -1148,7 +1258,14 @@
+         round_no = self._stringify(entry.get("round"))
+         if not target or not result:
+             return
+-        normalized = {"round": round_no, "target": target, "result": result}
++        signature = self._inspection_signature(target, result)
++        normalized = {
++            "round": round_no,
++            "target": target,
++            "result": result,
++            "alive": target in self._seer_memory.alive if self._seer_memory.alive else True,
++            "announced": signature in self._seer_memory.announced_inspections,
++        }
+         for index, existing in enumerate(list(self._seer_memory.inspected)):
+             if self._stringify(existing.get("target")) == target:
+                 if self._stringify(existing.get("result")) == result and self._stringify(existing.get("round")) == round_no:
+@@ -1156,6 +1273,19 @@
+                 self._seer_memory.inspected.pop(index)
+                 break
+         self._seer_memory.inspected.append(normalized)
++        timeline_key = (round_no, target, result)
++        existing_keys = {
++            (self._stringify(item.get("round")), self._stringify(item.get("target")), self._stringify(item.get("result")))
++            for item in self._seer_memory.inspection_timeline
++            if isinstance(item, Mapping)
++        }
++        if timeline_key not in existing_keys:
++            self._seer_memory.inspection_timeline.append(dict(normalized))
++        for item in self._seer_memory.inspection_timeline:
++            if isinstance(item, dict) and self._stringify(item.get("target")) == target and self._stringify(item.get("result")) == result:
++                item["alive"] = normalized["alive"]
++                item["announced"] = normalized["announced"]
++        self._seer_memory.inspection_timeline = self._seer_memory.inspection_timeline[-10:]
+ 
+     def _inspection_result_text(self, value: Any) -> str:
+         if isinstance(value, Mapping):
+@@ -1195,7 +1325,9 @@
+         pressure_points = self._pressure_points_summary(turn_packet)
+         self_risk = self._self_risk_summary(turn_packet)
+         risk_mode = self._risk_mode_summary(turn_packet, mode, self_risk)
++        self._seer_memory.death_risk_level = self._stringify(risk_mode.get("death_risk_level")) or self._stringify(risk_mode.get("level")) or "normal"
+         public_plan = self._public_plan_summary(turn_packet, target_candidates)
++        continuity_plan = self._continuity_plan_summary(turn_packet, target_candidates, public_plan)
+         brief: dict[str, Any] = {
+             "mode": mode,
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+@@ -1204,6 +1336,7 @@
+             "self_risk": self_risk,
+             "risk_mode": risk_mode,
+             "public_plan": public_plan,
++            "continuity_plan": continuity_plan,
+         }
+         if preferred_targets:
+             brief["preferred_targets"] = preferred_targets[:_SUMMARY_LIST_LIMIT]
+@@ -1301,20 +1434,24 @@
+                 return 0
+         return 0
+ 
+-    def _ordered_inspection_entries(self) -> list[dict[str, str]]:
+-        entries: list[dict[str, str]] = []
+-        for item in self._seer_memory.inspected:
++    def _ordered_inspection_entries(self) -> list[dict[str, Any]]:
++        entries: list[dict[str, Any]] = []
++        source = self._seer_memory.inspection_timeline or self._seer_memory.inspected
++        for item in source:
+             if not isinstance(item, Mapping):
+                 continue
+             target = self._stringify(item.get("target"))
+             result = self._inspection_result_text(item.get("result"))
+             if not target or not result:
+                 continue
++            signature = self._inspection_signature(target, result)
+             entries.append(
+                 {
+                     "round": self._stringify(item.get("round")),
+                     "target": target,
+                     "result": result,
++                    "alive": target in self._seer_memory.alive if self._seer_memory.alive else bool(item.get("alive", True)),
++                    "announced": bool(item.get("announced")) or signature in self._seer_memory.announced_inspections,
+                 }
+             )
+         entries.sort(key=self._inspection_sort_key)
+@@ -1332,38 +1469,115 @@
+ 
+     def _public_plan_summary(self, turn_packet: Mapping[str, Any], allowed_targets: Sequence[str]) -> dict[str, Any]:
+         del turn_packet
+-        ordered = self._ordered_inspection_entries()
++        ordered = self._inspection_entries_chronological()
+         allowed = {target for target in self._unique_stable(allowed_targets) if target}
+-        inspect_chain = [self._inspection_fact_text(entry) for entry in ordered if self._inspection_fact_text(entry)]
++        fact_chain = [self._inspection_fact_text(entry) for entry in ordered if self._inspection_fact_text(entry)]
++        alive_wolves = [entry for entry in ordered if self._stringify(entry.get("result")) == "wolf" and self._is_player_alive(self._stringify(entry.get("target")))]
++        alive_villages = [entry for entry in ordered if self._stringify(entry.get("result")) == "village" and self._is_player_alive(self._stringify(entry.get("target")))]
+         vote_target = ""
+-        vote_entry: dict[str, str] | None = None
+-        for entry in ordered:
+-            if self._stringify(entry.get("result")) != "wolf":
+-                continue
++        vote_entry: Mapping[str, Any] | None = None
++        for entry in alive_wolves:
+             target = self._stringify(entry.get("target"))
+-            if not target:
+-                continue
+-            if self._seer_memory.alive and target not in self._seer_memory.alive:
+-                continue
+             if allowed and target not in allowed:
+                 continue
+             vote_target = target
+             vote_entry = entry
+             break
++        unannounced_wolves = [
++            entry for entry in alive_wolves
++            if self._inspection_signature(self._stringify(entry.get("target")), self._stringify(entry.get("result"))) not in self._seer_memory.announced_inspections
++        ]
+         must_announce = ""
+-        if vote_entry is not None:
+-            signature = self._inspection_signature(vote_entry.get("target", ""), vote_entry.get("result", ""))
+-            if signature not in self._seer_memory.announced_inspections:
+-                must_announce = f"先报 {vote_target}=wolf，再归票 {vote_target}"
+-            else:
+-                must_announce = f"围绕 {vote_target}=wolf 继续压票"
+-        elif inspect_chain:
+-            must_announce = "先报查验链，再给归票方向"
++        if unannounced_wolves:
++            target = self._stringify(unannounced_wolves[0].get("target"))
++            must_announce = f"先报未公开查杀 {target}=wolf，再归票 {target}"
++        elif vote_entry is not None:
++            must_announce = f"围绕 {vote_target}=wolf 继续压票"
++        elif fact_chain:
++            must_announce = "按查验时间线报事实链，再给唯一归票方向"
++        protected_villagers = [self._stringify(entry.get("target")) for entry in alive_villages[:4] if self._stringify(entry.get("target"))]
++        handoff_target, handoff_reason = self._select_handoff_target(alive_villages)
++        if handoff_target:
++            self._seer_memory.handoff_target = handoff_target
++            self._seer_memory.handoff_reason = handoff_reason
++        today_vote = vote_target or self._seer_memory.current_pressure_target
++        if today_vote and self._seer_memory.alive and today_vote not in self._seer_memory.alive:
++            today_vote = ""
++        death_level = self._seer_memory.death_risk_level or "normal"
++        handoff_instruction = ""
++        if death_level in {"exposed", "critical"} and handoff_target:
++            handoff_instruction = f"若我死亡，警徽/信息交给 {handoff_target}：{handoff_reason}"
+         return {
+-            "inspect_chain": inspect_chain[:_SUMMARY_LIST_LIMIT],
++            "inspect_chain": fact_chain[:_SUMMARY_LIST_LIMIT],
++            "fact_chain": fact_chain[:_SUMMARY_LIST_LIMIT],
+             "must_announce": must_announce,
+             "vote_target_from_inspection": vote_target,
++            "today_vote": today_vote,
++            "protected_villagers": protected_villagers,
++            "handoff_target": handoff_target,
++            "handoff_reason": handoff_reason,
++            "handoff_instruction": handoff_instruction,
++            "unannounced_wolf_result": self._inspection_fact_text(unannounced_wolves[0]) if unannounced_wolves else "",
+         }
++
++    def _continuity_plan_summary(
++        self,
++        turn_packet: Mapping[str, Any],
++        allowed_targets: Sequence[str],
++        public_plan: Mapping[str, Any] | None = None,
++    ) -> dict[str, Any]:
++        del turn_packet, allowed_targets
++        ordered = self._inspection_entries_chronological()
++        alive_wolves = [self._inspection_fact_text(entry) for entry in ordered if self._stringify(entry.get("result")) == "wolf" and self._is_player_alive(self._stringify(entry.get("target")))]
++        alive_villages = [self._inspection_fact_text(entry) for entry in ordered if self._stringify(entry.get("result")) == "village" and self._is_player_alive(self._stringify(entry.get("target")))]
++        unannounced = [entry for entry in ordered if self._stringify(entry.get("result")) == "wolf" and self._inspection_signature(self._stringify(entry.get("target")), self._stringify(entry.get("result"))) not in self._seer_memory.announced_inspections]
++        latest = self._inspection_fact_text(ordered[-1]) if ordered else ""
++        plan = public_plan if isinstance(public_plan, Mapping) else {}
++        must_publish_parts: list[str] = []
++        if unannounced:
++            must_publish_parts.extend(self._inspection_fact_text(entry) for entry in unannounced[:3])
++        if self._seer_memory.death_risk_level in {"exposed", "critical"}:
++            must_publish_parts.extend(alive_villages[:3])
++            if plan.get("handoff_instruction"):
++                must_publish_parts.append(self._stringify(plan.get("handoff_instruction")))
++        return {
++            "alive_wolves_from_inspection": alive_wolves[:4],
++            "alive_villages_from_inspection": alive_villages[:4],
++            "unannounced_wolf_result": self._inspection_fact_text(unannounced[0]) if unannounced else "",
++            "latest_inspection": latest,
++            "current_vote_target": self._stringify(plan.get("today_vote")),
++            "handoff_target": self._stringify(plan.get("handoff_target")),
++            "handoff_reason": self._stringify(plan.get("handoff_reason")),
++            "must_publish_before_death": must_publish_parts[:6],
++        }
++
++    def _inspection_entries_chronological(self) -> list[dict[str, Any]]:
++        entries = list(self._ordered_inspection_entries())
++        entries.sort(key=lambda item: (self._round_sort_value(item.get("round")), self._stringify(item.get("target"))))
++        return entries[-_SUMMARY_LIST_LIMIT:]
++
++    def _is_player_alive(self, target: str) -> bool:
++        target = self._stringify(target)
++        if not target:
++            return False
++        if self._seer_memory.alive:
++            return target in self._seer_memory.alive
++        if self._seer_memory.dead:
++            return target not in self._seer_memory.dead
++        return True
++
++    def _select_handoff_target(self, alive_villages: Sequence[Mapping[str, Any]]) -> tuple[str, str]:
++        candidates = [self._stringify(entry.get("target")) for entry in alive_villages if self._stringify(entry.get("target"))]
++        for target in candidates:
++            if target == self.player_id or target in self._seer_memory.challenged_players:
++                continue
++            if self._has_declared_claim(target):
++                continue
++            reason = "已验 village 且仍存活"
++            if self._appears_in_recent_vote(target):
++                reason += "，票型可回看"
++            return target, reason
++        return "", ""
+ 
+     def _inspection_fact_text(self, item: Mapping[str, Any]) -> str:
+         target = self._stringify(item.get("target"))
+@@ -1391,27 +1605,39 @@
+         claimed_seer = self._self_has_public_seer_claim()
+         sheriff_control = self._seer_memory.sheriff_id == self.player_id
+         inspection_pressure = self._inspection_pressure_from_dialogue()
+-        risk_active = under_pressure or claimed_seer or sheriff_control or inspection_pressure
++        unannounced_wolf = any(
++            self._stringify(entry.get("result")) == "wolf"
++            and self._inspection_signature(self._stringify(entry.get("target")), self._stringify(entry.get("result"))) not in self._seer_memory.announced_inspections
++            for entry in self._ordered_inspection_entries()
++            if isinstance(entry, Mapping)
++        )
++        self_being_voted = self.player_id == self._seer_memory.current_pressure_target
++        public_seer_risk = claimed_seer or sheriff_control or inspection_pressure
++        death_level = "normal"
++        if public_seer_risk or (under_pressure and unannounced_wolf):
++            death_level = "exposed"
++        if (public_seer_risk and (unannounced_wolf or sheriff_control or self_being_voted)) or (claimed_seer and inspection_pressure):
++            death_level = "critical"
++        risk_active = death_level != "normal" or under_pressure
+         if not risk_active:
+             return {
+                 "active": False,
+                 "level": "normal",
++                "death_risk_level": "normal",
+                 "mode": mode,
+                 "rule": "可正常展开事实链，但仍优先使用可回看验证的证据。",
+             }
+-        if mode in {"sheriff_election_speech", "day_speech", "general"}:
+-            return {
+-                "active": True,
+-                "level": "high",
+-                "mode": mode,
+-                "rule": "公开查杀优先：只压缩推理，不隐藏查杀和最新结果；若有未公开 wolf 查验，先报该查验再归票。",
+-                "self_risk": self_risk,
+-            }
++        rule = "公开查杀优先：只压缩推理，不隐藏查杀和最新结果。"
++        if death_level == "critical":
++            rule = "critical：先报未公开查杀，再报仍存活金水，最后给警徽/信息交接与唯一归票。"
++        elif death_level == "exposed":
++            rule = "exposed：按查验时间线公开关键事实；有查杀先报查杀，再给交接建议。"
+         return {
+             "active": True,
+-            "level": "medium",
++            "level": "high" if death_level == "critical" else "medium",
++            "death_risk_level": death_level,
+             "mode": mode,
+-            "rule": "保持发言克制，但查杀和最新查验必须先公开，其他推理可压缩。",
++            "rule": rule,
+             "self_risk": self_risk,
+         }
+ 
+@@ -1483,17 +1709,23 @@
+                 scores[target_id] += 50
+                 reasons[target_id].append("警长/候选")
+             if target_id in self._seer_memory.challenged_players:
+-                scores[target_id] += 30
+-                reasons[target_id].append("对跳/质疑焦点")
++                scores[target_id] += 38
++                reasons[target_id].append("未解决对跳/质疑焦点")
++            if target_id == self._seer_memory.current_pressure_target:
++                scores[target_id] += 34
++                reasons[target_id].append("当前主压目标")
+             if self._has_declared_claim(target_id):
+-                scores[target_id] += 20
++                scores[target_id] += 24
+                 reasons[target_id].append("公开身份声明")
+             if self._appears_in_recent_vote(target_id):
+-                scores[target_id] += 18
+-                reasons[target_id].append("近期票型关键位")
++                scores[target_id] += 22
++                reasons[target_id].append("能决定票口/近期票型关键位")
+             if self._speaks_a_lot(target_id):
+                 scores[target_id] += 8
+                 reasons[target_id].append("发言密集")
++            if self._seer_memory.death_risk_level in {"exposed", "critical"} and target_id not in self._seer_memory.challenged_players:
++                scores[target_id] += 12
++                reasons[target_id].append("可能成为信息继承人")
+ 
+         ranked = sorted(candidates, key=lambda item: (-scores[item], candidates.index(item)))
+         ranked_reasons = [
+@@ -1575,12 +1807,18 @@
+             "dead": self._seer_memory.dead[:_SUMMARY_LIST_LIMIT],
+             "sheriff_id": self._seer_memory.sheriff_id,
+             "sheriff_candidates": self._seer_memory.sheriff_candidates[:_SUMMARY_LIST_LIMIT],
+-            "inspected": self._seer_memory.inspected[-_SUMMARY_LIST_LIMIT:],
+-            "declared_claims": self._seer_memory.declared_claims[-_SUMMARY_LIST_LIMIT:],
++            "inspection_timeline": self._inspection_entries_chronological()[-6:],
++            "alive_inspection_results": [entry for entry in self._inspection_entries_chronological() if self._is_player_alive(self._stringify(entry.get("target")))][-6:],
++            "declared_claims": self._seer_memory.declared_claims[-4:],
++            "claim_timeline": self._seer_memory.claim_timeline[-4:],
+             "challenged_players": self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT],
+             "recent_vote_summary": self._seer_memory.recent_vote_summary,
+-            "dialogue_digest": self._seer_memory.dialogue_digest[-_SUMMARY_LIST_LIMIT:],
+-            "announced_inspections": sorted(self._seer_memory.announced_inspections)[-_SUMMARY_LIST_LIMIT:],
++            "vote_timeline": self._seer_memory.vote_timeline[-6:],
++            "current_pressure_target": self._seer_memory.current_pressure_target,
++            "dialogue_digest": self._seer_memory.dialogue_digest[-4:],
++            "announced_inspections": sorted(self._seer_memory.announced_inspections)[-6:],
++            "death_risk_level": self._seer_memory.death_risk_level,
++            "continuity_plan": self._continuity_plan_summary({}, (), self._public_plan_summary({}, ())),
+         }
+         return memory
+ 
+--- seer-n00066/task.md
++++ seer-n00126/task.md
+@@ -26,10 +26,22 @@
+    - 记录已查验目标、公开身份声明、被质疑对象和最近票型。
+    - 每轮都用这些记忆更新判断，不要当成新的一局。
+ 
++6. **信息连续性协议**
++   - 持有警徽、已公开预言家身份、已有未公开查杀或判断下一夜高概率死亡时，公开发言必须按查验时间线报告。
++   - 若进入 critical 风险，必须在同一发言中公开仍有公共价值的未报查杀、仍存活金水，以及可信交接/警徽建议。
++   - 交接对象优先选择仍存活且已验为 village 的目标；没有可靠对象时不要臆造。
++   - 不得把死亡目标、旧查验或推测包装成新查验。
++
++## 固定发言格式
++
++- 竞选或正常白天：`事实链；唯一矛盾/对跳；今日归票`。
++- critical：`未公开查杀；存活金水；交接对象/警徽建议；今日归票`。
++- 投票时仍遵循查验事实优先；不要因为临时怀疑交接对象，就改投没有事实支撑的目标。
++
+ ## 额外要求
+ 
+ - 不要编造没有收到的查验结果。
+ - 不要忽视生存风险；必要时先短发言、后补证据。
+-- 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先短发言并只释放足够推动投票的最小事实集，而不是一次性展开全部查验。
+-- 已公开跳预言家或持警徽后，查到狼时白天必须先公开查杀和轮次；风险控制只压缩推理，不隐藏查杀。发言格式优先：查验链 -> 今日归票 -> 反驳当前误传。
++- 公开发言要优先使用能被回看验证的事实链；当自保压力高时，优先释放足够推动投票和保证死亡后可接续的最小事实集。
++- 已公开跳预言家或持警徽后，查到狼时白天必须先公开查杀和轮次；风险控制只压缩推理，不隐藏查杀、存活金水或必要交接。发言格式优先：查验链 -> 今日归票 -> 反驳当前误传。
+ - 预言家的价值在于把真信息变成公共压力，而不是单纯报身份。

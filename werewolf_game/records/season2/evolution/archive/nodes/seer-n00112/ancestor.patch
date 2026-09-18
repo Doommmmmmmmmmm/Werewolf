@@ -1,0 +1,333 @@
+--- seer-n00015/task_agent.py
++++ seer-n00112/task_agent.py
+@@ -219,6 +219,9 @@
+         seer_known_results = self._extract_seer_known_results(private)
+         if seer_known_results:
+             prompt["seer_known_results"] = seer_known_results
++        seer_summary = self._seer_decision_summary(turn_packet, seer_known_results)
++        if seer_summary:
++            prompt["seer_decision_summary"] = seer_summary
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+@@ -266,6 +269,7 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            action = self._repair_seer_action(action, turn_packet, seer_known_results)
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 return action
+@@ -333,9 +337,18 @@
+         raw_actions = request.get("allowed_actions")
+         allowed_actions = raw_actions if isinstance(raw_actions, list) else []
+         kinds = {str(item.get("kind") or "") for item in allowed_actions if isinstance(item, Mapping)}
++        known_results = TaskAgent._extract_seer_known_results(private)
++        known_targets = [item["target_id"] for item in known_results]
++        legal_targets = TaskAgent._seer_target_ids(request)
+         hints: list[str] = []
+         if "seer_inspect" in kinds:
+-            hints.append("预言家夜验：只从 target_ids 选，避开已验位，优先验证能改变明日放逐的冲突核心或票仓。")
++            blocked = "、".join(known_targets) if known_targets else "无"
++            legal = "、".join(legal_targets) if legal_targets else "无"
++            hints.append(
++                "预言家夜验：本次只能从当前 target_ids 选择；"
++                f"当前合法候选={legal}；已验/禁止重复={blocked}。"
++                "优先验证能改变明日放逐的冲突核心或票仓；不要提交已验目标。"
++            )
+         if kinds & {"sheriff_candidate", "sheriff_election_speech", "speak", "last_words"}:
+             hints.append("首日/警上若已拿到查验，先公开查验事实，再给两个警徽流、验人理由和当日主票；若已暴露且可能夜死，也要把下一验顺序和不同结果下的处置说完。")
+         if "day_vote" in kinds:
+@@ -373,12 +386,160 @@
+                 self._model_token_usage[key] += value
+ 
+     @staticmethod
++    def _seer_target_ids(request: Mapping[str, Any]) -> list[str]:
++        raw_actions = request.get("allowed_actions")
++        allowed_actions = raw_actions if isinstance(raw_actions, list) else []
++        for allowed in allowed_actions:
++            if not isinstance(allowed, Mapping) or allowed.get("kind") != "seer_inspect":
++                continue
++            target_ids = allowed.get("target_ids")
++            if isinstance(target_ids, list):
++                return [str(target_id) for target_id in target_ids]
++        return []
++
++    @staticmethod
++    def _allowed_kinds(request: Mapping[str, Any]) -> set[str]:
++        raw_actions = request.get("allowed_actions")
++        allowed_actions = raw_actions if isinstance(raw_actions, list) else []
++        return {str(item.get("kind") or "") for item in allowed_actions if isinstance(item, Mapping)}
++
++    @staticmethod
++    def _seer_decision_summary(
++        turn_packet: Mapping[str, Any], known_results: list[dict[str, str]]
++    ) -> dict[str, Any] | None:
++        private = turn_packet.get("private_information")
++        if not isinstance(private, Mapping) or str(private.get("role")) != "seer":
++            return None
++        request = turn_packet.get("request")
++        if not isinstance(request, Mapping):
++            return None
++        legal_targets = TaskAgent._seer_target_ids(request)
++        known_map = {item["target_id"]: item["team"] for item in known_results}
++        public_state = turn_packet.get("public_state")
++        dead_targets = sorted(TaskAgent._dead_player_ids(public_state) & set(legal_targets))
++        summary: dict[str, Any] = {
++            "self_player_id": str(turn_packet.get("self", {}).get("player_id", request.get("player_id", ""))),
++            "self_alive": turn_packet.get("self", {}).get("alive"),
++            "known_inspection_map": known_map,
++            "current_legal_target_ids": legal_targets,
++            "blocked_inspection_targets": list(known_map),
++        }
++        if dead_targets:
++            summary["known_dead_legal_targets"] = dead_targets
++        return summary
++
++    @staticmethod
++    def _dead_player_ids(value: object) -> set[str]:
++        dead: set[str] = set()
++        seen: set[int] = set()
++
++        def add_many(items: object) -> None:
++            if isinstance(items, list):
++                for item in items:
++                    if isinstance(item, Mapping):
++                        player_id = item.get("player_id") or item.get("id")
++                        if player_id is not None:
++                            dead.add(str(player_id))
++                    elif item is not None:
++                        dead.add(str(item))
++
++        def walk(node: object, depth: int = 0) -> None:
++            if depth > 5:
++                return
++            if isinstance(node, Mapping):
++                marker = id(node)
++                if marker in seen:
++                    return
++                seen.add(marker)
++                player_id = node.get("player_id") or node.get("id")
++                alive = node.get("alive", node.get("is_alive"))
++                status = str(node.get("status") or "").lower()
++                if player_id is not None and (alive is False or status in {"dead", "eliminated", "out"}):
++                    dead.add(str(player_id))
++                for key, child in node.items():
++                    key_text = str(key).lower()
++                    if key_text in {
++                        "dead_players",
++                        "dead_player_ids",
++                        "eliminated_players",
++                        "eliminated_player_ids",
++                        "out_players",
++                        "killed_players",
++                    }:
++                        add_many(child)
++                    elif isinstance(child, (Mapping, list)):
++                        walk(child, depth + 1)
++            elif isinstance(node, list):
++                for item in node[:80]:
++                    walk(item, depth + 1)
++
++        walk(value)
++        return dead
++
++    @staticmethod
++    def _repair_seer_action(
++        action: dict[str, Any], turn_packet: Mapping[str, Any], known_results: list[dict[str, str]]
++    ) -> dict[str, Any]:
++        private = turn_packet.get("private_information")
++        request = turn_packet.get("request")
++        if (
++            not isinstance(private, Mapping)
++            or not isinstance(request, Mapping)
++            or str(private.get("role")) != "seer"
++            or action.get("kind") != "seer_inspect"
++        ):
++            return action
++
++        legal_targets = TaskAgent._seer_target_ids(request)
++        known_targets = {item["target_id"] for item in known_results}
++        if not legal_targets:
++            if "pass" in TaskAgent._allowed_kinds(request):
++                return {
++                    "request_id": str(request.get("request_id")),
++                    "player_id": str(request.get("player_id")),
++                    "kind": "pass",
++                }
++            return action
++        selected = str(action.get("target_id") or "")
++        if selected in legal_targets and selected not in known_targets:
++            return action
++
++        public_state = turn_packet.get("public_state")
++        dead_targets = TaskAgent._dead_player_ids(public_state)
++        self_id = str(request.get("player_id") or turn_packet.get("self", {}).get("player_id") or "")
++        candidates = [
++            target_id
++            for target_id in legal_targets
++            if target_id != self_id and target_id not in known_targets and target_id not in dead_targets
++        ]
++        if candidates:
++            repaired = dict(action)
++            repaired["target_id"] = candidates[0]
++            return repaired
++        if "pass" in TaskAgent._allowed_kinds(request):
++            return {
++                "request_id": str(request.get("request_id")),
++                "player_id": str(request.get("player_id")),
++                "kind": "pass",
++            }
++        return action
++
++    @staticmethod
+     def _extract_seer_known_results(private: Mapping[str, Any]) -> list[dict[str, str]]:
+         if str(private.get("role")) != "seer":
+             return []
+ 
+         results: list[dict[str, str]] = []
+         seen_targets: set[str] = set()
++        inspection_keys = {
++            "inspection_results",
++            "inspections",
++            "seer_inspections",
++            "checks",
++            "known_results",
++            "check_results",
++            "seer_checks",
++        }
+ 
+         def normalize_team(value: object) -> str | None:
+             if value is None:
+@@ -393,6 +554,11 @@
+                 "good": "village",
+                 "goodish": "village",
+                 "town": "village",
++                "human": "village",
++                "狼人": "wolf",
++                "狼": "wolf",
++                "好人": "village",
++                "村民": "village",
+                 "wolf": "wolf",
+                 "werewolf": "wolf",
+                 "evil": "wolf",
+@@ -401,7 +567,7 @@
+             return aliases.get(lowered, text)
+ 
+         def add_entry(target: object, team: object) -> None:
+-            if target is None:
++            if len(results) >= 6 or target is None:
+                 return
+             target_id = str(target).strip()
+             team_name = normalize_team(team)
+@@ -410,7 +576,14 @@
+             seen_targets.add(target_id)
+             results.append({"target_id": target_id, "team": team_name})
+ 
+-        def walk(value: object) -> None:
++        def walk(
++            value: object,
++            depth: int = 0,
++            force_map: bool = False,
++            record_allowed: bool = False,
++        ) -> None:
++            if len(results) >= 6 or depth > 6:
++                return
+             if isinstance(value, Mapping):
+                 target = None
+                 for key in ("target_id", "target", "player_id", "player", "subject", "checked_player"):
+@@ -422,38 +595,38 @@
+                     if key in value:
+                         team = value.get(key)
+                         break
+-                if target is not None and team is not None:
++                if record_allowed and target is not None and team is not None:
+                     add_entry(target, team)
+-                for nested_key in (
+-                    "inspection_results",
+-                    "inspections",
+-                    "checks",
+-                    "check_results",
+-                    "results",
+-                    "history",
+-                    "data",
+-                ):
+-                    nested = value.get(nested_key)
+-                    if nested is not None:
+-                        walk(nested)
++
++                if force_map and not (target is not None and team is not None):
++                    for target_key, team_value in value.items():
++                        if isinstance(team_value, Mapping):
++                            child_team = next(
++                                (team_value.get(key) for key in ("team", "result", "alignment", "side", "check_result", "reveal") if key in team_value),
++                                None,
++                            )
++                            if child_team is not None:
++                                add_entry(target_key, child_team)
++                            else:
++                                walk(team_value, depth + 1, record_allowed=True)
++                        elif isinstance(team_value, list):
++                            walk(team_value, depth + 1, record_allowed=True)
++                        else:
++                            add_entry(target_key, team_value)
++
++                for nested_key, nested in value.items():
++                    key_text = str(nested_key)
++                    if key_text in inspection_keys:
++                        walk(nested, depth + 1, force_map=True, record_allowed=True)
++                    elif key_text in {"role_state", "seer_state", "state", "private_state", "data", "history", "memory"}:
++                        walk(nested, depth + 1, record_allowed=record_allowed)
++                    elif isinstance(nested, (Mapping, list)) and depth < 3:
++                        walk(nested, depth + 1, record_allowed=record_allowed)
+             elif isinstance(value, list):
+-                for item in value:
+-                    walk(item)
+-
+-        for key in (
+-            "inspection_results",
+-            "inspections",
+-            "checks",
+-            "check_results",
+-            "seer_inspections",
+-            "seer_checks",
+-            "known_results",
+-            "memory",
+-        ):
+-            value = private.get(key)
+-            if value is not None:
+-                walk(value)
+-
++                for item in value[:20]:
++                    walk(item, depth + 1, force_map=force_map, record_allowed=record_allowed)
++
++        walk(private)
+         return results[:6]
+ 
+     @staticmethod
+--- seer-n00015/task.md
++++ seer-n00112/task.md
+@@ -4,7 +4,9 @@
+ 
+ ## 基本原则
+ 
+-- 夜间优先选择能最大化信息价值且当前行动包允许的查验目标，并记录已知结果。
++- 私有 inspection map / known inspection map 是唯一权威查验账本；只把其中收到的目标与阵营当作查验事实。
++- 夜间优先选择能最大化信息价值且当前行动包允许的查验目标，并记录已知结果；每次夜验先核对已验目标，再只从本次 `allowed_actions.target_ids` 中选择未验且存活的合法目标。
++- 若无法形成策略偏好，仍必须选择一个合法未验目标；若本次没有合法未验目标且允许 pass，提交合法 pass，不要重复查验或自造玩家编号。
+ - 白天把查验结果、公开发言和票型结合起来；发言时清楚区分查验事实与推测。
+ - 是否立即跳身份、如何安排查验顺序，要结合存活情况和信息暴露风险决定。
+ - 不要编造没有收到的查验结果，也不要用同一套发言模板应对所有局面。
+@@ -12,9 +14,11 @@
+ ## 预言家阶段化执行清单
+ 
+ - 首个白天或警上若已经拿到查验，优先公开身份；发言至少包含：昨夜查验目标与结果、验人理由、两个警徽流目标及为什么验、当日主票或主压目标、对金水的保护声明。
++- 有查杀时优先锁定查杀作为单一主票口，不要因多个争议点分散归票；有多个狼查验时按“已确认狼人—下一验计划—票型验证”顺序复述。
+ - 若当选警长，白天发言必须给出唯一优先票口和备选票口；投票阶段原则上执行自己公开的归票，不要只说“听完再定”。
+ - 夜间查验优先验证会改变明日放逐结果的对象：对跳者、投/踩自己金水的人、上一轮主导错误放逐的人、关键票仓、警徽候选、发言强势但身份未定者；低优先级是已公开金水、基本坐实好人、已死亡或已验过者。
+-- 若自己已经暴露且可能夜死，白天必须提前留下下一验顺序，以及不同查验结果下的处置，不要把关键信息留到夜里再说。
++- 若自己已经暴露、可能被放逐或可能夜死，白天必须提前留下下一验顺序，以及查杀/金水两种结果下的处置，不要把关键信息留到夜里再说。
++- 若某天没有新查验信息，不得编造结果；明确说明“没有新增查验”，只使用已有查验事实和公开票型推进唯一主票。
+ 
+ ## 信息可信度与发言结构
+ 

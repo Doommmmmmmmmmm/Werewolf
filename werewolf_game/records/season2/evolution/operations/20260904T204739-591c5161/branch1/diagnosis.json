@@ -1,0 +1,3540 @@
+{
+  "node_id": "guard-base",
+  "role": "guard",
+  "attempt": 1,
+  "required_resources": [
+    "task",
+    "boundaries",
+    "current_agent",
+    "random_game_replay"
+  ],
+  "required_replay_game_index": 3,
+  "tool_trace": [
+    {
+      "tool": "read_evaluation_summary",
+      "arguments": {},
+      "result": {
+        "node_id": "guard-base",
+        "role": "guard",
+        "team": "village",
+        "game_count": 20,
+        "complete_game_count": 20,
+        "failed_game_count": 0,
+        "win_count": 2,
+        "loss_count": 18,
+        "win_rate": 0.1,
+        "decision_count": 200,
+        "fallback_count": 23,
+        "fallback_rate": 0.115,
+        "invalid_decision_count": 23,
+        "quality_scope": "focus_role_only",
+        "total_decision_count": 2965,
+        "total_fallback_count": 24,
+        "total_invalid_decision_count": 24,
+        "recommended_status": "discarded",
+        "status_reasons": [
+          "invalid_decisions=23 > 10"
+        ],
+        "results": [
+          {
+            "game_index": 0,
+            "game_id": "s2-guard-base-game0",
+            "seed": "season2-evolution:554b4619bf251520:game0",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "df4cfc9feb0a45ae77a9580f5633d74198e157ce69053b40bab0c686eea2ca04",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 171,
+            "fallback_count": 2,
+            "fallback_rate": 0.011695906432748537,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 17,
+            "focus_fallback_count": 2,
+            "focus_fallback_rate": 0.11764705882352941,
+            "focus_error_counts": {
+              "participant_error": 2
+            },
+            "focus_errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 177,
+              "api_attempt_count": 300,
+              "reported_usage_response_count": 177,
+              "input_tokens": 730974,
+              "output_tokens": 9188,
+              "total_tokens": 740162,
+              "unreported_api_attempt_count": 123
+            }
+          },
+          {
+            "game_index": 1,
+            "game_id": "s2-guard-base-game1",
+            "seed": "season2-evolution:9ccd6a9b88747517:game1",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "f53ce538b7e24fe852c155b82ef331574c4a326e67bfeeaa81cce62729d2cac4",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 95,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game1.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 157,
+              "api_attempt_count": 278,
+              "reported_usage_response_count": 157,
+              "input_tokens": 676749,
+              "output_tokens": 8522,
+              "total_tokens": 685271,
+              "unreported_api_attempt_count": 121
+            }
+          },
+          {
+            "game_index": 2,
+            "game_id": "s2-guard-base-game2",
+            "seed": "season2-evolution:70bd16bd0802ae2a:game2",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "c0f910e25d50ece854e7c145493aa97cca35090b4faf628ae74b08030cdbf0e0",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 142,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 144,
+              "api_attempt_count": 221,
+              "reported_usage_response_count": 144,
+              "input_tokens": 596397,
+              "output_tokens": 7590,
+              "total_tokens": 603987,
+              "unreported_api_attempt_count": 77
+            }
+          },
+          {
+            "game_index": 3,
+            "game_id": "s2-guard-base-game3",
+            "seed": "season2-evolution:c2a5b0222dc67228:game3",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "1c8fd2d3972da12cf0e318b437089b8446668935dd7d068f84e4808cd15d8dcb",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 200,
+            "fallback_count": 3,
+            "fallback_rate": 0.015,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p4"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 19,
+            "focus_fallback_count": 3,
+            "focus_fallback_rate": 0.15789473684210525,
+            "focus_error_counts": {
+              "participant_error": 3
+            },
+            "focus_errors": [
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p4"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p8",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 214,
+              "api_attempt_count": 370,
+              "reported_usage_response_count": 214,
+              "input_tokens": 984864,
+              "output_tokens": 12235,
+              "total_tokens": 997099,
+              "unreported_api_attempt_count": 156
+            }
+          },
+          {
+            "game_index": 4,
+            "game_id": "s2-guard-base-game4",
+            "seed": "season2-evolution:c5d4ed5d24a3edbb:game4",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "5ff384640a7e71132991f25664522e8e60374668fa1f9f58ebeee216b3374977",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 162,
+            "fallback_count": 1,
+            "fallback_rate": 0.006172839506172839,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p3"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 1,
+            "focus_fallback_rate": 0.1111111111111111,
+            "focus_error_counts": {
+              "participant_error": 1
+            },
+            "focus_errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p3"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 166,
+              "api_attempt_count": 304,
+              "reported_usage_response_count": 166,
+              "input_tokens": 749323,
+              "output_tokens": 8858,
+              "total_tokens": 758181,
+              "unreported_api_attempt_count": 138
+            }
+          },
+          {
+            "game_index": 5,
+            "game_id": "s2-guard-base-game5",
+            "seed": "season2-evolution:1471715622763485:game5",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "2b82f14775b033cf12d802fff63cf689c4ff1c173e7d95c535d8be90409676f6",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 149,
+            "fallback_count": 1,
+            "fallback_rate": 0.006711409395973154,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p1"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 1,
+            "focus_fallback_rate": 0.07142857142857142,
+            "focus_error_counts": {
+              "participant_error": 1
+            },
+            "focus_errors": [
+              {
+                "player_id": "p1",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 155,
+              "api_attempt_count": 247,
+              "reported_usage_response_count": 155,
+              "input_tokens": 715425,
+              "output_tokens": 8314,
+              "total_tokens": 723739,
+              "unreported_api_attempt_count": 92
+            }
+          },
+          {
+            "game_index": 6,
+            "game_id": "s2-guard-base-game6",
+            "seed": "season2-evolution:46fbebf67da973ff:game6",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "83c1febfded613687b3d2a09de5e81c1274bb45da32f1cc68cdd0377570fc779",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 159,
+            "fallback_count": 3,
+            "fallback_rate": 0.018867924528301886,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 18,
+            "focus_fallback_count": 3,
+            "focus_fallback_rate": 0.16666666666666666,
+            "focus_error_counts": {
+              "participant_error": 3
+            },
+            "focus_errors": [
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 169,
+              "api_attempt_count": 279,
+              "reported_usage_response_count": 169,
+              "input_tokens": 719989,
+              "output_tokens": 8849,
+              "total_tokens": 728838,
+              "unreported_api_attempt_count": 110
+            }
+          },
+          {
+            "game_index": 7,
+            "game_id": "s2-guard-base-game7",
+            "seed": "season2-evolution:73bc05ab4aa2b8a8:game7",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "f3408892d1fe4aced09f4d92b50c46599baf0ffc75bdc04c2189171ed55a6e1a",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 91,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p4"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/villager/villager-n00011/games/round0/log/full-game7.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/villager/villager-n00011/games/round0/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 149,
+              "api_attempt_count": 247,
+              "reported_usage_response_count": 149,
+              "input_tokens": 634208,
+              "output_tokens": 7846,
+              "total_tokens": 642054,
+              "unreported_api_attempt_count": 98
+            }
+          },
+          {
+            "game_index": 8,
+            "game_id": "s2-guard-base-game8",
+            "seed": "season2-evolution:c5d4ed5d24a3edbb:game8",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "11ec05790b296a34b598e30d14a5ada026cbee5196f0eb96ba500ebd6a57d552",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 179,
+            "fallback_count": 2,
+            "fallback_rate": 0.0111731843575419,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 15,
+            "focus_fallback_count": 2,
+            "focus_fallback_rate": 0.13333333333333333,
+            "focus_error_counts": {
+              "participant_error": 2
+            },
+            "focus_errors": [
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p7",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 184,
+              "api_attempt_count": 342,
+              "reported_usage_response_count": 184,
+              "input_tokens": 844982,
+              "output_tokens": 10648,
+              "total_tokens": 855630,
+              "unreported_api_attempt_count": 158
+            }
+          },
+          {
+            "game_index": 9,
+            "game_id": "s2-guard-base-game9",
+            "seed": "season2-evolution:990db45e253bfb6e:game9",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "d41ee1a4fe088b168f5f11e466d790f02759ca38e32ec42d6c89aaed7174dbc3",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 150,
+            "fallback_count": 2,
+            "fallback_rate": 0.013333333333333334,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 15,
+            "focus_fallback_count": 2,
+            "focus_fallback_rate": 0.13333333333333333,
+            "focus_error_counts": {
+              "participant_error": 2
+            },
+            "focus_errors": [
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 157,
+              "api_attempt_count": 272,
+              "reported_usage_response_count": 157,
+              "input_tokens": 694373,
+              "output_tokens": 8147,
+              "total_tokens": 702520,
+              "unreported_api_attempt_count": 115
+            }
+          },
+          {
+            "game_index": 10,
+            "game_id": "s2-guard-base-game10",
+            "seed": "season2-evolution:a56ab6085f71a645:game10",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "1fe4068a49568cbc972958d575d48f82f0d2139b992a2e827bbf8b89eb248552",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 123,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 124,
+              "api_attempt_count": 218,
+              "reported_usage_response_count": 124,
+              "input_tokens": 578271,
+              "output_tokens": 6333,
+              "total_tokens": 584604,
+              "unreported_api_attempt_count": 94
+            }
+          },
+          {
+            "game_index": 11,
+            "game_id": "s2-guard-base-game11",
+            "seed": "season2-evolution:9ccd6a9b88747517:game11",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "a533daa8f49fc9ee0f947510b1a3ca583b77ecd943ee22e8553cacb9a17b1d27",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 103,
+            "fallback_count": 2,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 2,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {
+              "participant_error": 2
+            },
+            "focus_errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p1"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 167,
+              "api_attempt_count": 276,
+              "reported_usage_response_count": 167,
+              "input_tokens": 664534,
+              "output_tokens": 8765,
+              "total_tokens": 673299,
+              "unreported_api_attempt_count": 109
+            }
+          },
+          {
+            "game_index": 12,
+            "game_id": "s2-guard-base-game12",
+            "seed": "season2-evolution:8ee748e1370a5be3:game12",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "47580ac46e9ca19cb68e80458b8fe17fc4375ce7bca7625be3e59eb3f50ad649",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 141,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 6,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 144,
+              "api_attempt_count": 229,
+              "reported_usage_response_count": 144,
+              "input_tokens": 569868,
+              "output_tokens": 7099,
+              "total_tokens": 576967,
+              "unreported_api_attempt_count": 85
+            }
+          },
+          {
+            "game_index": 13,
+            "game_id": "s2-guard-base-game13",
+            "seed": "season2-evolution:1471715622763485:game13",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "78f82f3ba848c07a6ec40016a7ee4a117cece759f6268523a14ee3f7edba1e3e",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 182,
+            "fallback_count": 3,
+            "fallback_rate": 0.016483516483516484,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p6",
+                "type": "participant_error",
+                "message": "TimeoutError",
+                "exception_type": "TimeoutError"
+              },
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 18,
+            "focus_fallback_count": 2,
+            "focus_fallback_rate": 0.1111111111111111,
+            "focus_error_counts": {
+              "participant_error": 2
+            },
+            "focus_errors": [
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 188,
+              "api_attempt_count": 299,
+              "reported_usage_response_count": 188,
+              "input_tokens": 842354,
+              "output_tokens": 9664,
+              "total_tokens": 852018,
+              "unreported_api_attempt_count": 111
+            }
+          },
+          {
+            "game_index": 14,
+            "game_id": "s2-guard-base-game14",
+            "seed": "season2-evolution:1985d2086bbdc319:game14",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "7d3c794f0b06b0d758a74ec038c677b7bf7a8d92f7b27ed91724b7270a43d45f",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 144,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p4"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 149,
+              "api_attempt_count": 275,
+              "reported_usage_response_count": 149,
+              "input_tokens": 699732,
+              "output_tokens": 8605,
+              "total_tokens": 708337,
+              "unreported_api_attempt_count": 126
+            }
+          },
+          {
+            "game_index": 15,
+            "game_id": "s2-guard-base-game15",
+            "seed": "season2-evolution:e219351b6f1874bb:game15",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "669f5ac1656f73f9b9a9071714f517df6f6bf264fc776f5d5d6ad96db6f89a0c",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 169,
+            "fallback_count": 1,
+            "fallback_rate": 0.005917159763313609,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 12,
+            "focus_fallback_count": 1,
+            "focus_fallback_rate": 0.08333333333333333,
+            "focus_error_counts": {
+              "participant_error": 1
+            },
+            "focus_errors": [
+              {
+                "player_id": "p2",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 176,
+              "api_attempt_count": 264,
+              "reported_usage_response_count": 176,
+              "input_tokens": 715558,
+              "output_tokens": 9224,
+              "total_tokens": 724782,
+              "unreported_api_attempt_count": 88
+            }
+          },
+          {
+            "game_index": 16,
+            "game_id": "s2-guard-base-game16",
+            "seed": "season2-evolution:9ccd6a9b88747517:game16",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "8bc899c5bb53556231053b33b235161cf30a083c3b1ff30d48e1409eba1a80d1",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 220,
+            "fallback_count": 1,
+            "fallback_rate": 0.004545454545454545,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 15,
+            "focus_fallback_count": 1,
+            "focus_fallback_rate": 0.06666666666666667,
+            "focus_error_counts": {
+              "participant_error": 1
+            },
+            "focus_errors": [
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p5"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 228,
+              "api_attempt_count": 445,
+              "reported_usage_response_count": 228,
+              "input_tokens": 1103518,
+              "output_tokens": 14675,
+              "total_tokens": 1118193,
+              "unreported_api_attempt_count": 217
+            }
+          },
+          {
+            "game_index": 17,
+            "game_id": "s2-guard-base-game17",
+            "seed": "season2-evolution:fac4a4a3b19ceacb:game17",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-base"
+            },
+            "evaluation_signature": "3056e610865c93636a65e277483dcf1e0a02f52cdca7a6392ca571269cf3104a",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 127,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 6,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 130,
+              "api_attempt_count": 204,
+              "reported_usage_response_count": 130,
+              "input_tokens": 547293,
+              "output_tokens": 7213,
+              "total_tokens": 554506,
+              "unreported_api_attempt_count": 74
+            }
+          },
+          {
+            "game_index": 18,
+            "game_id": "s2-guard-base-game18",
+            "seed": "season2-evolution:024700d4adf31980:game18",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "7b672650d316f50889634e56559452fd81ed03d20e0c0df4f048bcc597ec31a1",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 147,
+            "fallback_count": 1,
+            "fallback_rate": 0.006802721088435374,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p3",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p2"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 1,
+            "focus_fallback_rate": 0.1111111111111111,
+            "focus_error_counts": {
+              "participant_error": 1
+            },
+            "focus_errors": [
+              {
+                "player_id": "p3",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p2"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 154,
+              "api_attempt_count": 229,
+              "reported_usage_response_count": 154,
+              "input_tokens": 630008,
+              "output_tokens": 7869,
+              "total_tokens": 637877,
+              "unreported_api_attempt_count": 75
+            }
+          },
+          {
+            "game_index": 19,
+            "game_id": "s2-guard-base-game19",
+            "seed": "season2-evolution:8ee748e1370a5be3:game19",
+            "focus_node": "guard-base",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "90d79226c072ce9b370cd26d7fe367bdec4ac47c345f39560d45cbc2bb96f545",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 111,
+            "fallback_count": 2,
+            "fallback_rate": 0.0,
+            "error_counts": {
+              "participant_error": 2
+            },
+            "errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p11"
+            ],
+            "focus_decision_count": 0,
+            "focus_fallback_count": 2,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {
+              "participant_error": 2
+            },
+            "focus_errors": [
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p10"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "event_class": "RUNNER_ERROR",
+                "player_id": "p11",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p9"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00007/games/round1/log/full-game9.json",
+            "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00007/games/round1/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 187,
+              "api_attempt_count": 327,
+              "reported_usage_response_count": 187,
+              "input_tokens": 843711,
+              "output_tokens": 9935,
+              "total_tokens": 853646,
+              "unreported_api_attempt_count": 140
+            }
+          }
+        ],
+        "model": {
+          "available": true,
+          "model": "qwen3.8-flash",
+          "protocol": "responses",
+          "reasoning_effort": "none",
+          "enable_thinking": false,
+          "max_output_tokens": 900
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_path",
+      "arguments": {},
+      "result": {
+        "lineage": [
+          {
+            "node": {
+              "node_id": "guard-base",
+              "role": "guard",
+              "status": "retained",
+              "parent_id": null,
+              "depth": 0,
+              "children": [
+                "guard-n00016",
+                "guard-n00017"
+              ],
+              "created_at": "2026-09-04T05:02:49.879230+00:00",
+              "code_hash": "2e9abbfc71be91a298173edb54e6c476af96d7156b4cdd8c4c76a6f797aba01c",
+              "patch_path": null,
+              "diagnosis_path": null,
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/summary.json",
+              "status_reason": "base"
+            },
+            "patch": ""
+          }
+        ]
+      }
+    },
+    {
+      "tool": "list_skills",
+      "arguments": {},
+      "result": {
+        "skills": [
+          {
+            "name": "endgame-counting",
+            "short_description": "适用于存活人数减少、警徽改变票权或屠边临界的中后期；要求所有角色把行动放回实际胜利条件和剩余轮次中计算。"
+          },
+          {
+            "name": "information-reliability",
+            "short_description": "适用于处理查验、金水、遗言、毒口、平安夜、警徽和玩家自述等混合信息；避免把所有公开内容当成同等强度的事实。"
+          },
+          {
+            "name": "official-guard-counterknife",
+            "short_description": "适用于已出现悍跳、警徽继承或关键好人带队的中后期；通过分析狼人最想消除的能力来选择守护对象。"
+          },
+          {
+            "name": "official-guard-no-repeat",
+            "short_description": "适用于当前规则禁止连续守同一人的局面；帮助守卫在不能锁定单一目标时，按轮次收益安排保护。"
+          },
+          {
+            "name": "official-guard-protect",
+            "short_description": "适用于守卫选择夜间守护目标时；优先评估目标的存活价值、狼人刀口收益和守护与女巫药效的交互。"
+          },
+          {
+            "name": "official-hunter-anti-bait",
+            "short_description": "适用于狼人可能通过悍跳、假查杀或伪造狼坑诱导猎人开枪时；要求猎人把目标判断建立在多来源证据上。"
+          },
+          {
+            "name": "official-hunter-conceal",
+            "short_description": "适用于猎人在白天仍可发言、且身份尚未必须公开时；通过控制狼面和好人面，增加狼人误刀自己的概率。"
+          },
+          {
+            "name": "official-hunter-shoot",
+            "short_description": "适用于猎人因夜刀、放逐或其他规则触发开枪时；重点是确认能否开枪、选择目标并说明目标依据。"
+          },
+          {
+            "name": "official-witch-information",
+            "short_description": "适用于女巫需要决定何时承认身份、公开救药或解释毒口时；目标是在保留隐蔽性的同时让药效转化为可执行的公共信息。"
+          },
+          {
+            "name": "official-witch-poison",
+            "short_description": "适用于女巫决定使用毒药时；优先处理身份冲突、悍跳核心和能直接改变屠边节奏的位置，同时控制误伤风险。"
+          },
+          {
+            "name": "official-witch-save",
+            "short_description": "适用于女巫得知夜间刀口后决定是否使用解药；重点是评估救人收益、身份暴露和剩余轮次，而不是见死就救。"
+          },
+          {
+            "name": "pocket-idiot-endgame",
+            "short_description": "适用于白痴已经翻牌或进入少数人残局时；重点是计算失去投票、警徽和发言顺序后的实际轮次，不把“免死”误认为无限生存。"
+          },
+          {
+            "name": "pocket-idiot-hidden",
+            "short_description": "适用于白痴尚未被放逐、希望让狼人误判神职结构时；目标是避免白天被轻易推出，同时保留翻牌的最后防线。"
+          },
+          {
+            "name": "pocket-idiot-reveal",
+            "short_description": "适用于白痴因白天投票出局、且当前规则允许翻牌免死时；重点是判断翻牌时机和免死后的发言价值。"
+          },
+          {
+            "name": "pocket-seer-first-day",
+            "short_description": "适用于预言家首个白天发言和警长竞选；帮助模型同时交代查验结果、验人理由、警徽流与当日票口。"
+          },
+          {
+            "name": "pocket-seer-wolf-pool",
+            "short_description": "适用于预言家安排后续查验和警徽流时；强调查验的决策价值、票仓关联和结果出来后的行动，而不是堆砌名单。"
+          },
+          {
+            "name": "pocket-sheriff-speech",
+            "short_description": "适用于警长竞选、警长发言顺序和警徽流安排；适合帮助预言家或其他竞选者表达查验计划，也提醒模型当前项目的警长权限必须以实际规则为准。"
+          },
+          {
+            "name": "pocket-thick-skin-wolf",
+            "short_description": "仅适用于明确加入“厚皮狼”特殊角色及其技能的板子；目标是让猎人误判并在夜间攻击自己，不能直接迁移到普通预女猎守局。"
+          },
+          {
+            "name": "pocket-villager-basics",
+            "short_description": "适用于没有夜间技能、只能依靠公开发言和已公开结果判断的平民；帮助模型避免把平民当成被动听众，也避免假装拥有未获得的信息。"
+          },
+          {
+            "name": "pocket-villager-counterlogic",
+            "short_description": "适用于平民需要在多个可疑玩家之间做判断时；通过“如果他是狼，他为什么这样做”的反事实问题，减少只凭情绪或单条信息投票。"
+          },
+          {
+            "name": "rl-seer-adaptive",
+            "short_description": "适用于对跳、强反票或信息混乱的中后期；借鉴研究中“观察对手态度后切换策略”的思路，避免固定执行单一验人模板。"
+          },
+          {
+            "name": "sheriff-leadership",
+            "short_description": "适用于警长竞选、当选后的日间组织和警徽交接；不绑定某个角色，预言家、狼人或其他好人都可能参与警长博弈。"
+          },
+          {
+            "name": "speech-structure",
+            "short_description": "适用于任何需要公开发言的阶段；帮助模型把零散想法组织成可验证、可回应、可复盘的中文发言。"
+          },
+          {
+            "name": "strategy-switching",
+            "short_description": "适用于对跳、平安夜、关键角色死亡或票型突然转向后；帮助模型从原先的站边、隐藏或冲锋策略切换到新的可解释路线。"
+          },
+          {
+            "name": "te5-gang-wolf",
+            "short_description": "适用于狼队愿意牺牲多名成员、集中资源把一名狼包装成高可信好人的局面；需要评估剩余轮次、神职配置和核心狼独自存活时的发言能力。"
+          },
+          {
+            "name": "te5-hook-wolf",
+            "short_description": "适用于悍跳狼发言或票型已经接近崩盘、狼队需要切断关联时；重点是保持自然的好人判断，而不是为了倒钩而刻意踩队友或站死某一边。"
+          },
+          {
+            "name": "te5-villager-countercheck",
+            "short_description": "适用于平民被悍跳预言家点成查杀时；目标不是重复“我是好人”，而是给出可验证的行为解释、反事实比较和后续投票建议，让其他好人有理由重新评估查杀。"
+          },
+          {
+            "name": "te5-wolf-deep-hide",
+            "short_description": "适用于狼队已有队友承担悍跳或冲锋、某名狼人需要长期隐藏时；不是无脑划水，而是在低暴露的同时持续提供可复盘的判断。"
+          },
+          {
+            "name": "te5-wolf-fake-seer",
+            "short_description": "适用于狼人决定在警上伪装预言家的局面；重点是构造可持续的查验、警徽流和归票叙事，并预先准备被质疑或翻车后的撤退路线。"
+          },
+          {
+            "name": "vote-analysis",
+            "short_description": "适用于白天放逐、警长竞选和关键改票之后；通过同票、反票、弃票和改票分析玩家的收益与关联。"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_other_branch",
+      "arguments": {
+        "node_id": "guard-n00016"
+      },
+      "result": {
+        "node": {
+          "node_id": "guard-n00016",
+          "role": "guard",
+          "status": "pending",
+          "parent_id": "guard-base",
+          "depth": 1,
+          "children": [],
+          "created_at": "2026-09-04T21:39:45.942457+00:00",
+          "code_hash": "d98dc1c3e142a6f3b1f2c76437273f21ce699c805be37d828578d35318dd76b1",
+          "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00016/ancestor.patch",
+          "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T204739-591c5161/branch0/diagnosis.json",
+          "evaluation_summary_path": null,
+          "status_reason": ""
+        },
+        "patch": "--- guard-base/task_agent.py\n+++ guard-n00016/task_agent.py\n@@ -8,6 +8,7 @@\n \n import asyncio\n from collections.abc import Mapping\n+from collections import deque\n import hashlib\n import inspect\n import json\n@@ -29,6 +30,24 @@\n # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。\n DEFAULT_MAX_DECISION_RETRIES = 2\n _SPEECH_ACTION_KINDS = frozenset({\"speak\", \"last_words\"})\n+_GUARD_ACTION_KIND = \"guard_protect\"\n+_PLAYER_ID_PATTERN = re.compile(r\"\\bp\\d+\\b\")\n+_GUARD_CONTEXT_KEYWORDS = (\n+    \"sheriff\",\n+    \"警长\",\n+    \"focus\",\n+    \"vote\",\n+    \"suspect\",\n+    \"怀疑\",\n+    \"公开\",\n+    \"public\",\n+    \"claim\",\n+    \"claimed\",\n+    \"target\",\n+    \"dialogue\",\n+    \"刀口\",\n+    \"站边\",\n+)\n \n \n CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {\n@@ -187,12 +206,16 @@\n             \"output_tokens\": 0,\n             \"total_tokens\": 0,\n         }\n+        self.last_protected_id: str | None = None\n+        self.last_protected_round: int | None = None\n+        self.alive_player_cache: set[str] = set()\n+        self.recent_public_focus_ids: deque[str] = deque(maxlen=8)\n+        self._last_observed_round: int | None = None\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n-        \"\"\"接收公开同步；最小基线不把它跨行动保存为模型记忆。\"\"\"\n-\n-        # 保留 Participant 接口，但刻意不维护跨行动状态。\n-        del sync_packet\n+        \"\"\"接收公开同步，并提取最小守卫记忆。\"\"\"\n+\n+        self._update_guard_memory(sync_packet)\n \n     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:\n         if turn_packet[\"self\"][\"player_id\"] != self.player_id:\n@@ -201,6 +224,7 @@\n         if str(private.get(\"role\")) != self.profile.role:\n             raise ValueError(\"Task-Agent 的角色档案与行动包身份不一致\")\n \n+        self._update_guard_memory(turn_packet.get(\"public_state\") or {})\n         system = self._system_prompt(private)\n         prompt = {\n             \"game\": turn_packet[\"game\"],\n@@ -219,6 +243,8 @@\n \n         tool_context = turn_packet.get(\"tool_context\") or {}\n         current_dialogue = tool_context.get(\"current_round_dialogue\") or []\n+        if current_dialogue:\n+            self._update_guard_memory({\"current_round_dialogue\": current_dialogue})\n \n         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:\n             del arguments\n@@ -263,8 +289,10 @@\n                 continue\n             self._record_token_usage(raw)\n             action = normalize_decision(raw, turn_packet[\"request\"])\n+            action = self._repair_guard_decision(action, turn_packet[\"request\"])\n             error = decision_error(action, turn_packet[\"request\"])\n             if error is None:\n+                self._record_successful_guard_action(action, turn_packet)\n                 return action\n             if _attempt >= self.max_decision_retries:\n                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。\n@@ -297,6 +325,12 @@\n         return dict(self._model_token_usage)\n \n     def _system_prompt(self, private: Mapping[str, Any]) -> str:\n+        role_task = self.profile.task\n+        if self.profile.role == \"guard\":\n+            role_task = role_task + (\n+                \"\\n\\n守卫约束：只从当前 target_ids 里选；默认不要重复上一夜目标；\"\n+                \"优先保护公开信息位/关键发言位。\"\n+            )\n         return render_prompt(\n             \"player_system.txt\",\n             player_id=self.player_id,\n@@ -304,19 +338,25 @@\n             team=private[\"team\"],\n             persona=self.persona,\n             role_base=self.profile.base,\n-            role_task=self.profile.task,\n+            role_task=role_task,\n             tool_name=CURRENT_ROUND_DIALOGUE_TOOL_NAME,\n             max_tool_calls=self.max_tool_calls_per_decision,\n             max_tool_result_tokens=self.max_tool_result_tokens,\n             max_prompt_chars=self.max_prompt_chars,\n         )\n \n-    @staticmethod\n-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:\n+    def _turn_instruction(self, request: Mapping[str, Any], feedback: str) -> str:\n+        validation_feedback = f\"上一次输出未通过校验：{feedback}\" if feedback else \"\"\n+        if self.profile.role == \"guard\":\n+            guard_note = (\n+                \"守卫执行要点：只选当前 target_ids；尽量不要重复上一夜守护对象；\"\n+                \"优先公开信息位和当前最可能被刀的好人。\"\n+            )\n+            validation_feedback = guard_note + (\"\\n\" + validation_feedback if validation_feedback else \"\")\n         return render_prompt(\n             \"player_turn_instruction.txt\",\n             action_contract=render_action_contract(request),\n-            validation_feedback=(f\"上一次输出未通过校验：{feedback}\" if feedback else \"\"),\n+            validation_feedback=validation_feedback,\n         )\n \n     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:\n@@ -347,6 +387,171 @@\n             if value is not None:\n                 self._model_token_usage[key] += value\n \n+    def _record_successful_guard_action(self, action: Mapping[str, Any], packet: Mapping[str, Any]) -> None:\n+        if self.profile.role != \"guard\" or action.get(\"kind\") != _GUARD_ACTION_KIND:\n+            return\n+        target_id = action.get(\"target_id\")\n+        if not target_id:\n+            return\n+        self.last_protected_id = str(target_id)\n+        round_no = self._extract_round_number(packet)\n+        if round_no is None and isinstance(packet.get(\"game\"), Mapping):\n+            round_no = self._extract_round_number(packet[\"game\"])\n+        if round_no is not None:\n+            self.last_protected_round = round_no\n+\n+    def _repair_guard_decision(self, action: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:\n+        if self.profile.role != \"guard\" or action.get(\"kind\") != _GUARD_ACTION_KIND:\n+            return action\n+        allowed = next(\n+            (\n+                item\n+                for item in request.get(\"allowed_actions\", [])\n+                if isinstance(item, Mapping) and item.get(\"kind\") == _GUARD_ACTION_KIND\n+            ),\n+            None,\n+        )\n+        if not isinstance(allowed, Mapping):\n+            return action\n+        candidates = self._guard_candidate_targets(allowed, request)\n+        if not candidates:\n+            return action\n+        if action.get(\"target_id\") not in candidates:\n+            repaired = dict(action)\n+            repaired[\"target_id\"] = candidates[0]\n+            return repaired\n+        return action\n+\n+    def _guard_candidate_targets(self, allowed: Mapping[str, Any], request: Mapping[str, Any]) -> list[str]:\n+        target_ids = allowed.get(\"target_ids\")\n+        if not isinstance(target_ids, list):\n+            return []\n+        candidates: list[str] = []\n+        for target_id in target_ids:\n+            candidate = str(target_id)\n+            if candidate and candidate not in candidates:\n+                candidates.append(candidate)\n+        if not candidates:\n+            return []\n+        round_no = self._extract_round_number(request) or self._last_observed_round\n+        repeat_forbidden = self._guard_repeat_forbidden(allowed)\n+        scored: list[tuple[int, int, str]] = []\n+        for index, candidate in enumerate(candidates):\n+            score = 0\n+            if candidate == self.player_id:\n+                score -= 10_000\n+            if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:\n+                score -= 5_000\n+            if candidate in self.recent_public_focus_ids:\n+                score += 400\n+            if candidate in self.alive_player_cache:\n+                score += 40\n+            if self._looks_publicly_salient(candidate, request):\n+                score += 120\n+            if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:\n+                score -= max(0, 200 - max(0, round_no - self.last_protected_round))\n+            scored.append((-score, index, candidate))\n+        scored.sort()\n+        ordered = [candidate for _, _, candidate in scored]\n+        if repeat_forbidden and self.last_protected_id:\n+            filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]\n+            if filtered:\n+                return filtered\n+        return ordered\n+\n+    def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:\n+        if allowed.get(\"guard_can_repeat_protect\") is True:\n+            return False\n+        if allowed.get(\"guard_can_repeat_protect\") is False:\n+            return True\n+        return True\n+\n+    def _looks_publicly_salient(self, candidate: str, request: Mapping[str, Any]) -> bool:\n+        return candidate in self._extract_focus_ids(request.get(\"public_state\"))\n+\n+    def _update_guard_memory(self, packet: Mapping[str, Any] | Any) -> None:\n+        if not isinstance(packet, Mapping):\n+            return\n+        round_no = self._extract_round_number(packet)\n+        if round_no is not None:\n+            self._last_observed_round = round_no\n+        alive_ids = self._extract_ids_by_keys(\n+            packet,\n+            (\"alive\", \"alive_player\", \"alive_players\", \"alive_player_ids\", \"player_ids\", \"players\"),\n+        )\n+        if alive_ids:\n+            self.alive_player_cache.update(alive_ids)\n+        focus_ids = self._extract_focus_ids(packet)\n+        for focus_id in focus_ids:\n+            if focus_id not in self.recent_public_focus_ids:\n+                self.recent_public_focus_ids.append(focus_id)\n+\n+    def _extract_round_number(self, packet: Mapping[str, Any] | Any) -> int | None:\n+        if not isinstance(packet, Mapping):\n+            return None\n+        for key in (\"round\", \"round_no\", \"round_number\"):\n+            value = packet.get(key)\n+            if isinstance(value, int) and value >= 0:\n+                return value\n+            if isinstance(value, str) and value.isdigit():\n+                return int(value)\n+        game = packet.get(\"game\")\n+        if isinstance(game, Mapping):\n+            for key in (\"round\", \"round_no\", \"round_number\"):\n+                value = game.get(key)\n+                if isinstance(value, int) and value >= 0:\n+                    return value\n+                if isinstance(value, str) and value.isdigit():\n+                    return int(value)\n+        return None\n+\n+    def _extract_focus_ids(self, packet: Mapping[str, Any] | Any) -> set[str]:\n+        focus_ids: set[str] = set()\n+        if not isinstance(packet, Mapping):\n+            return focus_ids\n+        for key, value in packet.items():\n+            key_text = str(key).lower()\n+            if any(keyword in key_text for keyword in _GUARD_CONTEXT_KEYWORDS):\n+                focus_ids.update(self._extract_player_ids(value))\n+            if isinstance(value, Mapping):\n+                focus_ids.update(self._extract_focus_ids(value))\n+            elif isinstance(value, list):\n+                for item in value:\n+                    focus_ids.update(self._extract_player_ids(item))\n+                    if isinstance(item, Mapping):\n+                        focus_ids.update(self._extract_focus_ids(item))\n+        return focus_ids\n+\n+    def _extract_ids_by_keys(self, packet: Mapping[str, Any], keys: tuple[str, ...]) -> set[str]:\n+        values: set[str] = set()\n+        for key, value in packet.items():\n+            key_text = str(key).lower()\n+            if any(token in key_text for token in keys):\n+                values.update(self._extract_player_ids(value))\n+            if isinstance(value, Mapping):\n+                values.update(self._extract_ids_by_keys(value, keys))\n+            elif isinstance(value, list):\n+                for item in value:\n+                    values.update(self._extract_player_ids(item))\n+                    if isinstance(item, Mapping):\n+                        values.update(self._extract_ids_by_keys(item, keys))\n+        return values\n+\n+    def _extract_player_ids(self, value: Any) -> set[str]:\n+        player_ids: set[str] = set()\n+        if isinstance(value, str):\n+            player_ids.update(_PLAYER_ID_PATTERN.findall(value))\n+            return player_ids\n+        if isinstance(value, Mapping):\n+            for inner in value.values():\n+                player_ids.update(self._extract_player_ids(inner))\n+            return player_ids\n+        if isinstance(value, list):\n+            for item in value:\n+                player_ids.update(self._extract_player_ids(item))\n+            return player_ids\n+        return player_ids\n+\n     @staticmethod\n     def _nonnegative_int(value: object, *, fallback: int | None) -> int | None:\n         if isinstance(value, bool):\n--- guard-base/task.md\n+++ guard-n00016/task.md\n@@ -1,8 +1,7 @@\n-# 守卫最小任务\n+# 守卫操作规程\n \n-你的任务是用守护行动延长好人关键角色的生存时间，并自然参与白天讨论。\n-\n-- 依据公开信息猜测狼人可能的刀口，选择当前行动包允许的守护目标。\n-- 遵守不能连续守同一人的规则；没有可靠目标时也要做出合理而非随机的选择。\n-- 不要把“守护成功”当作系统已确认事实，因为引擎不会直接告诉你结果。\n-- 发言可以隐藏身份，重点回应具体矛盾和票型，不要机械宣称自己在保护谁。\n+- 先看当前 `target_ids`，只能从里面选。\n+- 记住上一夜守护对象；若规则不允许连守，默认不要重复同一人。\n+- 优先保护公开信息位、关键发言位、以及当前最可能被刀的好人。\n+- 没有强信息时，也要稳定地做出合法选择，不要猜出列表外目标。\n+- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。\n",
+        "evaluation_summary": null
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "official-guard-protect"
+      },
+      "result": {
+        "name": "official-guard-protect",
+        "short_description": "适用于守卫选择夜间守护目标时；优先评估目标的存活价值、狼人刀口收益和守护与女巫药效的交互。",
+        "content": "# 守卫守护：保护能改变轮次的目标\n\n## 短描述\n\n适用于守卫选择夜间守护目标时；优先评估目标的存活价值、狼人刀口收益和守护与女巫药效的交互。\n\n## 攻略\n\n守卫的核心不是“守最像好人的人”，而是保护被狼人击杀后会显著改变局势的目标。可信预言家、能形成归票的警长、关键神职或狼队正在施压的核心位，都可能成为高价值目标。\n\n守护判断要结合当日刀口动机：狼人可能追真预，也可能为了做身份选择外置刀或自刀。若目标已经被女巫救过、公开身份过高或狼队有反向收益，应重新评估，而不是机械连续守同一人。\n\n守卫不能挡毒药，具体的同守同救、空守和首夜规则以当前引擎为准。守护结果通常不直接公开，白天只能通过平安夜、发言和后续刀口间接验证。\n"
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "official-guard-no-repeat"
+      },
+      "result": {
+        "name": "official-guard-no-repeat",
+        "short_description": "适用于当前规则禁止连续守同一人的局面；帮助守卫在不能锁定单一目标时，按轮次收益安排保护。",
+        "content": "# 守卫不重复守人：在规则边界内分配保护\n\n## 短描述\n\n适用于当前规则禁止连续守同一人的局面；帮助守卫在不能锁定单一目标时，按轮次收益安排保护。\n\n## 攻略\n\n不能连续守同一人时，守卫需要提前规划候选保护序列，而不是每晚只盯着一个人。可以在高可信预言家、警长、女巫可能的公开位和高价值摇摆位之间轮换，并根据当天死亡和票型调整优先级。\n\n上一晚守护过的目标即使仍然最像狼刀口，也要寻找替代目标或接受该轮无法保护的风险。不要通过“假装忘记上晚守谁”规避规则；这会破坏记录一致性，也让复盘无法判断策略是否有效。\n\n若规则允许空守，空守有时能避免与女巫救药冲突或覆盖狼人的变刀，但其价值必须与保护具体目标比较。所有限制由引擎裁决，卡片不能改变行动合法性。\n"
+      }
+    },
+    {
+      "tool": "read_skill",
+      "arguments": {
+        "skill_name": "information-reliability"
+      },
+      "result": {
+        "name": "information-reliability",
+        "short_description": "适用于处理查验、金水、遗言、毒口、平安夜、警徽和玩家自述等混合信息；避免把所有公开内容当成同等强度的事实。",
+        "content": "# 信息可信度：按来源和可验证性分层\n\n## 短描述\n\n适用于处理查验、金水、遗言、毒口、平安夜、警徽和玩家自述等混合信息；避免把所有公开内容当成同等强度的事实。\n\n## 攻略\n\n先区分三类内容：引擎直接公布的事实、角色声称获得的私密结果、基于事实做出的推断。引擎事实通常最稳定；角色声称可能真实也可能伪造；推断还要经过行为和后续结果验证。\n\n信息强度还取决于来源是否独立。一个狼人的遗言和其队友的复读不是两条独立证据；女巫毒口、预言家查验和票型若互相印证，可信度才会显著上升。冲突信息不要强行平均，明确哪条来源需要被重新审查。\n\n记录每条信息的首次出现时间、提供者、收益方向和可证伪条件。这样在新结果出现时可以回滚错误链，而不是因为已经说过就继续维护。\n"
+      }
+    },
+    {
+      "tool": "read_previous_diagnosis",
+      "arguments": {
+        "node_id": "guard-n00016"
+      },
+      "result": {
+        "node_id": "guard-base",
+        "role": "guard",
+        "attempt": 1,
+        "required_resources": [
+          "task",
+          "boundaries",
+          "current_agent",
+          "random_game_replay"
+        ],
+        "required_replay_game_index": 11,
+        "tool_trace": [
+          {
+            "tool": "read_evaluation_summary",
+            "arguments": {},
+            "result": {
+              "node_id": "guard-base",
+              "role": "guard",
+              "team": "village",
+              "game_count": 20,
+              "complete_game_count": 20,
+              "failed_game_count": 0,
+              "win_count": 2,
+              "loss_count": 18,
+              "win_rate": 0.1,
+              "decision_count": 200,
+              "fallback_count": 23,
+              "fallback_rate": 0.115,
+              "invalid_decision_count": 23,
+              "quality_scope": "focus_role_only",
+              "total_decision_count": 2965,
+              "total_fallback_count": 24,
+              "total_invalid_decision_count": 24,
+              "recommended_status": "discarded",
+              "status_reasons": [
+                "invalid_decisions=23 > 10"
+              ],
+              "results": [
+                {
+                  "game_index": 0,
+                  "game_id": "s2-guard-base-game0",
+                  "seed": "season2-evolution:554b4619bf251520:game0",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "df4cfc9feb0a45ae77a9580f5633d74198e157ce69053b40bab0c686eea2ca04",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 171,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.011695906432748537,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 17,
+                  "focus_fallback_count": 2,
+                  "focus_fallback_rate": 0.11764705882352941,
+                  "focus_error_counts": {
+                    "participant_error": 2
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game0.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 177,
+                    "api_attempt_count": 300,
+                    "reported_usage_response_count": 177,
+                    "input_tokens": 730974,
+                    "output_tokens": 9188,
+                    "total_tokens": 740162,
+                    "unreported_api_attempt_count": 123
+                  }
+                },
+                {
+                  "game_index": 1,
+                  "game_id": "s2-guard-base-game1",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game1",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "f53ce538b7e24fe852c155b82ef331574c4a326e67bfeeaa81cce62729d2cac4",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 95,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p3"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game1.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game1.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 157,
+                    "api_attempt_count": 278,
+                    "reported_usage_response_count": 157,
+                    "input_tokens": 676749,
+                    "output_tokens": 8522,
+                    "total_tokens": 685271,
+                    "unreported_api_attempt_count": 121
+                  }
+                },
+                {
+                  "game_index": 2,
+                  "game_id": "s2-guard-base-game2",
+                  "seed": "season2-evolution:70bd16bd0802ae2a:game2",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-n00011",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "c0f910e25d50ece854e7c145493aa97cca35090b4faf628ae74b08030cdbf0e0",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 142,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 9,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game2.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 144,
+                    "api_attempt_count": 221,
+                    "reported_usage_response_count": 144,
+                    "input_tokens": 596397,
+                    "output_tokens": 7590,
+                    "total_tokens": 603987,
+                    "unreported_api_attempt_count": 77
+                  }
+                },
+                {
+                  "game_index": 3,
+                  "game_id": "s2-guard-base-game3",
+                  "seed": "season2-evolution:c2a5b0222dc67228:game3",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-n00011",
+                    "seer": "seer-n00013",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "1c8fd2d3972da12cf0e318b437089b8446668935dd7d068f84e4808cd15d8dcb",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 200,
+                  "fallback_count": 3,
+                  "fallback_rate": 0.015,
+                  "error_counts": {
+                    "participant_error": 3
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p4"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p8"
+                  ],
+                  "focus_decision_count": 19,
+                  "focus_fallback_count": 3,
+                  "focus_fallback_rate": 0.15789473684210525,
+                  "focus_error_counts": {
+                    "participant_error": 3
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p4"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game3.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 214,
+                    "api_attempt_count": 370,
+                    "reported_usage_response_count": 214,
+                    "input_tokens": 984864,
+                    "output_tokens": 12235,
+                    "total_tokens": 997099,
+                    "unreported_api_attempt_count": 156
+                  }
+                },
+                {
+                  "game_index": 4,
+                  "game_id": "s2-guard-base-game4",
+                  "seed": "season2-evolution:c5d4ed5d24a3edbb:game4",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "5ff384640a7e71132991f25664522e8e60374668fa1f9f58ebeee216b3374977",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 162,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.006172839506172839,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p3"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 9,
+                  "focus_fallback_count": 1,
+                  "focus_fallback_rate": 0.1111111111111111,
+                  "focus_error_counts": {
+                    "participant_error": 1
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p3"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game4.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 166,
+                    "api_attempt_count": 304,
+                    "reported_usage_response_count": 166,
+                    "input_tokens": 749323,
+                    "output_tokens": 8858,
+                    "total_tokens": 758181,
+                    "unreported_api_attempt_count": 138
+                  }
+                },
+                {
+                  "game_index": 5,
+                  "game_id": "s2-guard-base-game5",
+                  "seed": "season2-evolution:1471715622763485:game5",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-n00011",
+                    "seer": "seer-n00013",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "2b82f14775b033cf12d802fff63cf689c4ff1c173e7d95c535d8be90409676f6",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 149,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.006711409395973154,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p1",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p1"
+                  ],
+                  "focus_decision_count": 14,
+                  "focus_fallback_count": 1,
+                  "focus_fallback_rate": 0.07142857142857142,
+                  "focus_error_counts": {
+                    "participant_error": 1
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p1",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game5.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 155,
+                    "api_attempt_count": 247,
+                    "reported_usage_response_count": 155,
+                    "input_tokens": 715425,
+                    "output_tokens": 8314,
+                    "total_tokens": 723739,
+                    "unreported_api_attempt_count": 92
+                  }
+                },
+                {
+                  "game_index": 6,
+                  "game_id": "s2-guard-base-game6",
+                  "seed": "season2-evolution:46fbebf67da973ff:game6",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-n00013",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "83c1febfded613687b3d2a09de5e81c1274bb45da32f1cc68cdd0377570fc779",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 159,
+                  "fallback_count": 3,
+                  "fallback_rate": 0.018867924528301886,
+                  "error_counts": {
+                    "participant_error": 3
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p12"
+                  ],
+                  "focus_decision_count": 18,
+                  "focus_fallback_count": 3,
+                  "focus_fallback_rate": 0.16666666666666666,
+                  "focus_error_counts": {
+                    "participant_error": 3
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game6.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 169,
+                    "api_attempt_count": 279,
+                    "reported_usage_response_count": 169,
+                    "input_tokens": 719989,
+                    "output_tokens": 8849,
+                    "total_tokens": 728838,
+                    "unreported_api_attempt_count": 110
+                  }
+                },
+                {
+                  "game_index": 7,
+                  "game_id": "s2-guard-base-game7",
+                  "seed": "season2-evolution:73bc05ab4aa2b8a8:game7",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-n00011",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "f3408892d1fe4aced09f4d92b50c46599baf0ffc75bdc04c2189171ed55a6e1a",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 91,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p4"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/villager/villager-n00011/games/round0/log/full-game7.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/villager/villager-n00011/games/round0/log/full-game7.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 149,
+                    "api_attempt_count": 247,
+                    "reported_usage_response_count": 149,
+                    "input_tokens": 634208,
+                    "output_tokens": 7846,
+                    "total_tokens": 642054,
+                    "unreported_api_attempt_count": 98
+                  }
+                },
+                {
+                  "game_index": 8,
+                  "game_id": "s2-guard-base-game8",
+                  "seed": "season2-evolution:c5d4ed5d24a3edbb:game8",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "11ec05790b296a34b598e30d14a5ada026cbee5196f0eb96ba500ebd6a57d552",
+                  "complete": true,
+                  "winner": "village",
+                  "focus_won": true,
+                  "decision_count": 179,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.0111731843575419,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 15,
+                  "focus_fallback_count": 2,
+                  "focus_fallback_rate": 0.13333333333333333,
+                  "focus_error_counts": {
+                    "participant_error": 2
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p7",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game8.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 184,
+                    "api_attempt_count": 342,
+                    "reported_usage_response_count": 184,
+                    "input_tokens": 844982,
+                    "output_tokens": 10648,
+                    "total_tokens": 855630,
+                    "unreported_api_attempt_count": 158
+                  }
+                },
+                {
+                  "game_index": 9,
+                  "game_id": "s2-guard-base-game9",
+                  "seed": "season2-evolution:990db45e253bfb6e:game9",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-n00011",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "d41ee1a4fe088b168f5f11e466d790f02759ca38e32ec42d6c89aaed7174dbc3",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 150,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.013333333333333334,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p8"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p2"
+                  ],
+                  "focus_decision_count": 15,
+                  "focus_fallback_count": 2,
+                  "focus_fallback_rate": 0.13333333333333333,
+                  "focus_error_counts": {
+                    "participant_error": 2
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p8"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round0/log/full-game9.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 157,
+                    "api_attempt_count": 272,
+                    "reported_usage_response_count": 157,
+                    "input_tokens": 694373,
+                    "output_tokens": 8147,
+                    "total_tokens": 702520,
+                    "unreported_api_attempt_count": 115
+                  }
+                },
+                {
+                  "game_index": 10,
+                  "game_id": "s2-guard-base-game10",
+                  "seed": "season2-evolution:a56ab6085f71a645:game10",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-n00013",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "1fe4068a49568cbc972958d575d48f82f0d2139b992a2e827bbf8b89eb248552",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 123,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p8"
+                  ],
+                  "focus_decision_count": 9,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game0.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 124,
+                    "api_attempt_count": 218,
+                    "reported_usage_response_count": 124,
+                    "input_tokens": 578271,
+                    "output_tokens": 6333,
+                    "total_tokens": 584604,
+                    "unreported_api_attempt_count": 94
+                  }
+                },
+                {
+                  "game_index": 11,
+                  "game_id": "s2-guard-base-game11",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game11",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "a533daa8f49fc9ee0f947510b1a3ca583b77ecd943ee22e8553cacb9a17b1d27",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 103,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p1"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p1"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p12"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 2,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {
+                    "participant_error": 2
+                  },
+                  "focus_errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p1"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p1"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 167,
+                    "api_attempt_count": 276,
+                    "reported_usage_response_count": 167,
+                    "input_tokens": 664534,
+                    "output_tokens": 8765,
+                    "total_tokens": 673299,
+                    "unreported_api_attempt_count": 109
+                  }
+                },
+                {
+                  "game_index": 12,
+                  "game_id": "s2-guard-base-game12",
+                  "seed": "season2-evolution:8ee748e1370a5be3:game12",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "47580ac46e9ca19cb68e80458b8fe17fc4375ce7bca7625be3e59eb3f50ad649",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 141,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p3"
+                  ],
+                  "focus_decision_count": 6,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game2.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 144,
+                    "api_attempt_count": 229,
+                    "reported_usage_response_count": 144,
+                    "input_tokens": 569868,
+                    "output_tokens": 7099,
+                    "total_tokens": 576967,
+                    "unreported_api_attempt_count": 85
+                  }
+                },
+                {
+                  "game_index": 13,
+                  "game_id": "s2-guard-base-game13",
+                  "seed": "season2-evolution:1471715622763485:game13",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-n00011",
+                    "seer": "seer-n00013",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "78f82f3ba848c07a6ec40016a7ee4a117cece759f6268523a14ee3f7edba1e3e",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 182,
+                  "fallback_count": 3,
+                  "fallback_rate": 0.016483516483516484,
+                  "error_counts": {
+                    "participant_error": 3
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p8"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p6",
+                      "type": "participant_error",
+                      "message": "TimeoutError",
+                      "exception_type": "TimeoutError"
+                    },
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p2"
+                  ],
+                  "focus_decision_count": 18,
+                  "focus_fallback_count": 2,
+                  "focus_fallback_rate": 0.1111111111111111,
+                  "focus_error_counts": {
+                    "participant_error": 2
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p8"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game3.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 188,
+                    "api_attempt_count": 299,
+                    "reported_usage_response_count": 188,
+                    "input_tokens": 842354,
+                    "output_tokens": 9664,
+                    "total_tokens": 852018,
+                    "unreported_api_attempt_count": 111
+                  }
+                },
+                {
+                  "game_index": 14,
+                  "game_id": "s2-guard-base-game14",
+                  "seed": "season2-evolution:1985d2086bbdc319:game14",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-n00013",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "7d3c794f0b06b0d758a74ec038c677b7bf7a8d92f7b27ed91724b7270a43d45f",
+                  "complete": true,
+                  "winner": "village",
+                  "focus_won": true,
+                  "decision_count": 144,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p4"
+                  ],
+                  "focus_decision_count": 9,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game4.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 149,
+                    "api_attempt_count": 275,
+                    "reported_usage_response_count": 149,
+                    "input_tokens": 699732,
+                    "output_tokens": 8605,
+                    "total_tokens": 708337,
+                    "unreported_api_attempt_count": 126
+                  }
+                },
+                {
+                  "game_index": 15,
+                  "game_id": "s2-guard-base-game15",
+                  "seed": "season2-evolution:e219351b6f1874bb:game15",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-n00011",
+                    "seer": "seer-n00013",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "669f5ac1656f73f9b9a9071714f517df6f6bf264fc776f5d5d6ad96db6f89a0c",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 169,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.005917159763313609,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p2"
+                  ],
+                  "focus_decision_count": 12,
+                  "focus_fallback_count": 1,
+                  "focus_fallback_rate": 0.08333333333333333,
+                  "focus_error_counts": {
+                    "participant_error": 1
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p2",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game5.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 176,
+                    "api_attempt_count": 264,
+                    "reported_usage_response_count": 176,
+                    "input_tokens": 715558,
+                    "output_tokens": 9224,
+                    "total_tokens": 724782,
+                    "unreported_api_attempt_count": 88
+                  }
+                },
+                {
+                  "game_index": 16,
+                  "game_id": "s2-guard-base-game16",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game16",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "8bc899c5bb53556231053b33b235161cf30a083c3b1ff30d48e1409eba1a80d1",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 220,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.004545454545454545,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p12"
+                  ],
+                  "focus_decision_count": 15,
+                  "focus_fallback_count": 1,
+                  "focus_fallback_rate": 0.06666666666666667,
+                  "focus_error_counts": {
+                    "participant_error": 1
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game6.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 228,
+                    "api_attempt_count": 445,
+                    "reported_usage_response_count": 228,
+                    "input_tokens": 1103518,
+                    "output_tokens": 14675,
+                    "total_tokens": 1118193,
+                    "unreported_api_attempt_count": 217
+                  }
+                },
+                {
+                  "game_index": 17,
+                  "game_id": "s2-guard-base-game17",
+                  "seed": "season2-evolution:fac4a4a3b19ceacb:game17",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-n00011",
+                    "seer": "seer-n00013",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "3056e610865c93636a65e277483dcf1e0a02f52cdca7a6392ca571269cf3104a",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 127,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p10"
+                  ],
+                  "focus_decision_count": 6,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game7.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 130,
+                    "api_attempt_count": 204,
+                    "reported_usage_response_count": 130,
+                    "input_tokens": 547293,
+                    "output_tokens": 7213,
+                    "total_tokens": 554506,
+                    "unreported_api_attempt_count": 74
+                  }
+                },
+                {
+                  "game_index": 18,
+                  "game_id": "s2-guard-base-game18",
+                  "seed": "season2-evolution:024700d4adf31980:game18",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-n00011",
+                    "seer": "seer-n00013",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "7b672650d316f50889634e56559452fd81ed03d20e0c0df4f048bcc597ec31a1",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 147,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.006802721088435374,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p3",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p2"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p3"
+                  ],
+                  "focus_decision_count": 9,
+                  "focus_fallback_count": 1,
+                  "focus_fallback_rate": 0.1111111111111111,
+                  "focus_error_counts": {
+                    "participant_error": 1
+                  },
+                  "focus_errors": [
+                    {
+                      "player_id": "p3",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p2"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/games/round1/log/full-game8.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 154,
+                    "api_attempt_count": 229,
+                    "reported_usage_response_count": 154,
+                    "input_tokens": 630008,
+                    "output_tokens": 7869,
+                    "total_tokens": 637877,
+                    "unreported_api_attempt_count": 75
+                  }
+                },
+                {
+                  "game_index": 19,
+                  "game_id": "s2-guard-base-game19",
+                  "seed": "season2-evolution:8ee748e1370a5be3:game19",
+                  "focus_node": "guard-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-n00007"
+                  },
+                  "evaluation_signature": "90d79226c072ce9b370cd26d7fe367bdec4ac47c345f39560d45cbc2bb96f545",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 111,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p11"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 2,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {
+                    "participant_error": 2
+                  },
+                  "focus_errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00007/games/round1/log/full-game9.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00007/games/round1/log/full-game9.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 187,
+                    "api_attempt_count": 327,
+                    "reported_usage_response_count": 187,
+                    "input_tokens": 843711,
+                    "output_tokens": 9935,
+                    "total_tokens": 853646,
+                    "unreported_api_attempt_count": 140
+                  }
+                }
+              ],
+              "model": {
+                "available": true,
+                "model": "qwen3.8-flash",
+                "protocol": "responses",
+                "reasoning_effort": "none",
+                "enable_thinking": false,
+                "max_output_tokens": 900
+              }
+            }
+          },
+          {
+            "tool": "read_evolution_path",
+            "arguments": {},
+            "result": {
+              "lineage": [
+                {
+                  "node": {
+                    "node_id": "guard-base",
+                    "role": "guard",
+                    "status": "retained",
+                    "parent_id": null,
+                    "depth": 0,
+                    "children": [
+                      "guard-n00016"
+                    ],
+                    "created_at": "2026-09-04T05:02:49.879230+00:00",
+                    "code_hash": "2e9abbfc71be91a298173edb54e6c476af96d7156b4cdd8c4c76a6f797aba01c",
+                    "patch_path": null,
+                    "diagnosis_path": null,
+                    "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/summary.json",
+                    "status_reason": "base"
+                  },
+                  "patch": ""
+                }
+              ]
+            }
+          },
+          {
+            "tool": "read_evolution_contract",
+            "arguments": {},
+            "result": {
+              "purpose": "Meta-Agent 为当前角色设计下一代 Task-Agent；外部状态机负责评测、建树和预算执行。",
+              "current_node": {
+                "node_id": "guard-base",
+                "role": "guard",
+                "status": "retained",
+                "depth": 0,
+                "parent_id": null,
+                "children": [
+                  "guard-n00016"
+                ],
+                "generated_candidate_count": 1,
+                "successful_evolution_count": 0,
+                "pending_candidate_count": 1
+              },
+              "node_states": {
+                "pending": "待评估；先运行配置数量的对局，再决定 retained 或 discarded",
+                "retained": "保留在候选池中；在预算允许时可以生成子节点",
+                "discarded": "舍弃；不进入候选池，也不再生成子节点"
+              },
+              "evaluation": {
+                "games_per_pending_node": 20,
+                "player_count": 12,
+                "game_concurrency": 2,
+                "model_max_in_flight": 4,
+                "max_failed_games": 18,
+                "max_fallback_rate": 0.2,
+                "max_invalid_decisions": 10,
+                "discard_all_losses": true,
+                "focus_role_uses_current_node": true,
+                "other_roles_use_random_retained_candidates": true,
+                "quality_error_metrics_scope": "focus_role_only; aggregate game metrics are retained for diagnostics",
+                "parent_child_comparison_required": false
+              },
+              "evolution_budget": {
+                "children_per_expansion": 3,
+                "max_children_per_node": 3,
+                "max_tree_depth": 6,
+                "max_generated_candidates_per_role": 60,
+                "max_successful_evolutions_per_role": 20,
+                "role_scheduler": "least_evolved_random",
+                "candidate_pool_extra_limit": null
+              },
+              "process": [
+                "一个 step 以产生新的 retained 子节点为成功终止条件；不是生成 pending 就结束。",
+                "一个 step 可以连续处理多个节点，直到产生 retained 子节点或所有机会耗尽。",
+                "pending 节点只做评测并决定保留或舍弃。",
+                "retained 节点扩展时固定创建 children_per_expansion 个子节点。",
+                "每个子节点单独调用一次 Meta-Agent 和 Pi；一次扩展抽取不同的游戏回放。",
+                "子节点从父节点快照继承全部祖先修改；其他分支需要通过工具主动读取。",
+                "不要求子节点胜过父节点，也不保证每次修改都是真实改进。"
+              ],
+              "not_evolvable": [
+                "Game Engine",
+                "游戏规则与胜负裁决",
+                "信息可见性与行动 JSON schema",
+                "工具实现、模型网关、审计记录和所有外部预算"
+              ]
+            }
+          },
+          {
+            "tool": "read_previous_diagnosis",
+            "arguments": {
+              "node_id": "guard-base"
+            },
+            "result": {
+              "error": "该节点没有关联诊断"
+            }
+          }
+        ],
+        "diagnosis": {
+          "summary": "guard-base 不是“策略太保守”，而是一个对守卫角色不够任务化的最小基线：它不保留跨夜记忆、完全依赖模型临场猜 target、没有对 guard_can_repeat_protect 的显式防重机制，因此在评测里频繁产生非法守护目标并触发 fallback。结果是高错误率、低有效守护率、极低胜率，最终被判定为 discarded。",
+          "evidence": [
+            {
+              "source": "evaluation_summary",
+              "fact": "20 局完整评测中 win_count=2, loss_count=18, win_rate=0.1; decision_count=200, fallback_count=23, invalid_decision_count=23; recommended_status=discarded，原因包含 invalid_decisions=23 > 10。"
+            },
+            {
+              "source": "evaluation_summary",
+              "fact": "多局 focus 角色出现 participant_error，典型非法动作是 guard_protect 指向不在 target_ids 内的目标，例如 p9、p4、p5。"
+            },
+            {
+              "source": "current_agent.py",
+              "fact": "observe() 直接 del sync_packet，不维护任何跨行动状态；TaskAgent 类也没有保存 last_protected_id、alive 集合或其它守卫记忆。"
+            },
+            {
+              "source": "current_agent.py",
+              "fact": "decide() 只把当前 turn_packet 喂给模型；normalize_decision() 只做字段规范化，不会把非法 target_id 自动修正为合法候选。"
+            },
+            {
+              "source": "random_game_replay",
+              "fact": "样例局中第 3、4 夜守卫均尝试 guard_protect target_id=p1，但 runner 报错 'target_id 必须是 target_ids 中的一项'，随后被 fallback 为 pass，说明模型没有稳定遵守可用目标集合。"
+            },
+            {
+              "source": "random_game_replay",
+              "fact": "同一局的第 2 夜守卫已保护 p1，但后续仍再次尝试 p1，和 guard_can_repeat_protect=false 的约束相冲突，体现出缺少跨夜记忆。"
+            }
+          ],
+          "root_causes": [
+            {
+              "cause": "没有守卫专用的持久状态",
+              "analysis": "当前实现刻意不保存跨回合状态，导致无法可靠记住上一夜守护对象，也无法主动规避 repeat-protect 违规。"
+            },
+            {
+              "cause": "合法性约束只靠模型自觉",
+              "analysis": "代码没有在模型输出后做 guard 专用的 target 修正或兜底，只能依赖 retry；如果模型重复给出同样的非法 target，就会继续失败。"
+            },
+            {
+              "cause": "缺少 role-specific 目标排序",
+              "analysis": "守卫没有显式的候选评分逻辑，不能稳定优先保护警长、明确信息位、或当前最可能被狼刀的好人，决策退化为 LLM 随机猜测。"
+            },
+            {
+              "cause": "失败反馈没有转化为可执行约束",
+              "analysis": "重试只把校验错误文字回灌给模型，没有把错误固化为“本夜禁止重复守同一人”等硬规则，因此同类错误会反复出现。"
+            }
+          ],
+          "modification_plan": [
+            {
+              "file": "task_agent.py",
+              "change": "在 TaskAgent 实例上新增最小守卫记忆，例如 last_protected_id、last_protected_round、alive_player_cache、recent_public_focus_ids；在 observe() 或每次 decide() 时更新这些字段，而不是丢弃 sync_packet。",
+              "rationale": "守卫必须记住上一夜守护对象，才能稳定遵守 guard_can_repeat_protect=false，并避免反复撞同一个非法目标。"
+            },
+            {
+              "file": "task_agent.py",
+              "change": "新增 guard 专用的候选选择函数：从 allowed_actions 提取 guard_protect 的 target_ids，过滤掉 last_protected_id（若规则禁止连守），再按确定性评分选出最佳合法目标。",
+              "rationale": "把“能守谁”从模型猜测改成代码可控的合法候选排序，是降低 invalid_decision_count 的关键。"
+            },
+            {
+              "file": "task_agent.py",
+              "change": "把非法 guard_protect 输出从“报错后重试”改为“先纠正再提交”：如果模型给出的 target_id 不合法，直接替换为当前 best legal target；只对完全无法解析的结构化错误保留重试。",
+              "rationale": "评测里已经证明单靠 retry 会重复同一个坏答案；前置/后置修正规则能直接减少 fallback。"
+            },
+            {
+              "file": "task_agent.py",
+              "change": "在系统提示或 turn_instruction 中加入极短的守卫操作约束：只从当前 target_ids 里选、不要重复守上一夜对象、优先保护警长/明确信息位/最可能被刀的好人。",
+              "rationale": "提示词需要把 role task 变成可执行的局内准则，降低模型忽略 schema 的概率。"
+            },
+            {
+              "file": "task.md",
+              "change": "把守卫任务改写为一份更紧凑的操作规范，明确要求：维护最小记忆、选择合法候选、避免重复守同一人、优先保留公开信息位，并且不要把“守护成功”当作系统确认。",
+              "rationale": "当前 task 过于泛化，缺少对守卫最容易出错之处的硬约束，应该把它改成适合 Task-Agent 执行的短操作规程。"
+            }
+          ],
+          "risks": [
+            {
+              "risk": "过于固定的守护评分可能让策略变得可预测。",
+              "mitigation": "评分函数只做排序，不做单一死板目标；保留少量局内分支条件。"
+            },
+            {
+              "risk": "自动纠正非法 target 可能掩盖模型本身的理解问题。",
+              "mitigation": "把原始输出和修正结果都写入内部调试日志，但不进入公开记录。"
+            },
+            {
+              "risk": "如果 private_information 不直接暴露完整 role_state，记忆更新可能不完整。",
+              "mitigation": "至少在成功提交守卫行动后本地记录 last_protected_id，保证防重功能可用。"
+            },
+            {
+              "risk": "加入过多状态或复杂对话分析可能增加 prompt/token 消耗。",
+              "mitigation": "只保留少量 ID 和一行理由，避免长历史注入。"
+            }
+          ],
+          "code_agent_brief": "请修改 guard-base 的 Task-Agent，使其不再依赖模型临场猜测合法守护目标。当前问题有两个：一是 observe() 丢弃全部跨回合状态，导致守卫无法记住上一夜保护对象；二是 decide() 只做重试，不会在模型输出非法 guard_protect target_id 时自动修正，所以评测里多次出现对重复目标或不在 target_ids 中的目标下指令。请实现：1）最小持久记忆（至少 last_protected_id）；2）guard 专用合法候选筛选与评分；3）非法 target 的提交前纠正；4）把 guard task.md 改成更短、更硬的守卫操作规程。目标是显著降低 invalid_decision_count / fallback_count，而不是改变 Game Engine 或规则。"
+        },
+        "model": {
+          "available": true,
+          "model": "gpt-5.5",
+          "protocol": "responses",
+          "reasoning_effort": null,
+          "enable_thinking": true,
+          "max_output_tokens": 900
+        },
+        "token_usage": {
+          "input_tokens": 116924,
+          "output_tokens": 6125,
+          "total_tokens": 123049
+        }
+      }
+    }
+  ],
+  "diagnosis": {
+    "summary": "guard-base 的主要问题不是一般守卫策略不足，而是 Task-Agent 层缺少守卫专用的合法性兜底和最小局内记忆，导致多次把不能守的目标继续输出，触发 RuleViolationError 并 fallback 为 pass；同时夜间守护目标选择过度依赖“警长/发言中心”表象，未把公开查杀、警徽来源、上一夜守护限制和当前 target_ids 结合起来。下一代应做最小工程化改造：在 task_agent.py 中维护仅限本局可见的 last_protected_id、公开身份/查杀/票型摘要，并在模型输出后、提交前对 guard_protect 进行合法 target_ids 修复；在 task.md 中加入守卫专用决策优先级，强调“可信信息位优先，狼嫌警长不优先，永远只从 target_ids 选”。",
+    "evidence": [
+      "评测摘要显示 guard-base 20 局仅 2 胜 18 负，胜率 0.1；focus_role_only 下 decision_count=200、fallback_count=23、invalid_decision_count=23，recommended_status=discarded，原因是 invalid_decisions=23 > 10。",
+      "随机回放 game3 中，守卫 p8 在 R3、R5、R6 夜间多次返回非法 guard_protect：attempted_action 分别包含 target_id p4、p5、p5，错误均为“target_id 必须是 target_ids 中的一项”，随后 runtime fallback 为 pass。",
+      "game3 中 p8 R2 夜守 p4，而公开信息上 p2 曾跳预言家查杀 p7且 Day1 成功推出狼 p7；p4 是被 p7 警徽移交的玩家，且后续被 p2 查杀。守 p4 体现了模型把警徽/中心位当成高价值目标，却没有过滤狼嫌。",
+      "game3 中 R2 狼刀实际选择 p2，女巫救 p2；若守卫夜间优先保护公开可信预言家 p2，而不是 p4，能减少对女巫救药的依赖并延长真预言家的存活收益。",
+      "game3 中 R3 p8 白天正确识别 p4 穿守卫衣服并跳出反驳，但夜间行动仍曾试图守 p4 或后续守 p5，说明公开推理与夜间守护选择之间没有稳定状态承接。",
+      "current_agent 的 observe 明确丢弃 sync_packet，不维护跨行动状态；每次 decide 只把当前状态和当前轮对话交给模型，没有保存上一夜守护对象、已公开身份冲突、查杀链或自己的发言承诺。",
+      "current_agent 虽有 render_action_contract 和 decision_error，但只做校验与重试；模型连续 3 次仍非法时直接抛 RuleViolationError，没有守卫专用的目标修复逻辑，导致可避免的非法行动变成 pass。",
+      "已有兄弟分支 guard-n00016 的 patch 方向包括 last_protected_id、recent_public_focus_ids、_repair_guard_decision 等，说明针对合法性修复和最小守卫记忆是合理方向；但该 patch 片段较大且包含较宽泛的关键词启发，下一代应更小、更可控。"
+    ],
+    "root_causes": [
+      "缺少守卫行动合法性兜底：模型可能根据语义选择上一夜守过、已死亡或当前 action packet 不允许的目标；现有代码只让模型重试，不在本地把非法 guard_protect 修复为合法 target_ids。",
+      "缺少跨决策最小记忆：守卫的不能连守、自己白天是否已跳守卫、公开查杀链和警徽传递都需要跨昼夜承接，但 base 的 observe 故意不保存任何状态。",
+      "夜间守护价值排序过粗：模型容易机械保护警长或话语权中心，却没有先判断该中心位是否被可信查杀、是否由狼嫌移交警徽、是否在票型中强保狼。",
+      "信息可靠性分层不足：公开查验声称、警徽、遗言、平安夜、自称身份被混在一起使用，导致 p2 这种经 Day1 查杀命中验证过的高价值信息位没有在夜间获得足够保护优先级。",
+      "白天身份叙事不稳定：守卫在需要反制假守卫时可以跳身份，但之后又用“平民、无夜间信息”等模板话术，削弱可信度，也让后续模型会话无法稳定沿用自己的公开身份路线。",
+      "task.md 过于最小化，只要求“猜测刀口、合理选择、不机械宣称保护谁”，没有给出对 current target_ids、连守限制、可信预言家、狼嫌警长的具体优先级。"
+    ],
+    "modification_plan": [
+      {
+        "file": "task_agent.py",
+        "change": "新增守卫专用最小状态字段：self.last_protected_id、self.last_protected_round、self.public_claims、self.suspected_wolves、self.trusted_info_ids、self.self_publicly_claimed_guard。observe(sync_packet) 不再丢弃全部内容，而是从公开同步中提取 alive players、sheriff_id、公开死亡、公开发言中的关键词模式（如“我是预言家/查杀/金水/我是守卫/女巫/猎人”）和自己的已发言身份；不得记录任何不可见审计信息。",
+        "rationale": "守卫必须知道上一夜守过谁以及公开身份冲突。该记忆只来自 sync_packet/turn_packet 中本来可见的公开状态和当前轮对话，不改变信息边界。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 decide 中，normalize_decision 后、decision_error 前增加 _repair_guard_decision(action, request, turn_packet)：仅当 kind=='guard_protect' 时生效；读取 request.allowed_actions 中对应 guard_protect 的 target_ids；若模型目标不在 target_ids，则按 _rank_guard_targets 从合法候选中选择一个替代；若没有合法 guard_protect target_ids 且 pass 合法，则改为 pass。",
+        "rationale": "评测 discard 的直接原因是 23 次非法行动。行动包是唯一合法来源，本地修复到 target_ids 内不会绕过规则，能显著降低 fallback。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "实现 _rank_guard_targets(candidates, turn_packet)：只对 candidates 打分；优先级建议为：公开可信预言家/被多次信息验证的查验提供者 > 已公开女巫/猎人等关键神职 > 明确带队且无强狼嫌的好人警长或高质量发言位 > 自己；降权项包括：被可信预言家查杀、由已出狼嫌传徽且无自证、强保已出狼、上一夜守护对象、已死亡或不在 candidates（后两项应本来已过滤）。",
+        "rationale": "避免 game3 中把 p4、p5 这类狼嫌警长当成自动保护对象，同时确保只能输出当前合法候选。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "成功返回 guard_protect 后调用 _record_successful_guard_action，记录 target_id 与 round；如果返回 pass，不覆盖 last_protected_id。该记录以本 agent 实际提交的 action 为准，而不是模型原始意图。",
+        "rationale": "连守限制和后续排序必须基于实际成功提交的守护目标，否则修复后的目标和记忆会不一致。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 prompt payload 中加入一个小的 guard_memory 字段，例如 last_protected_id、known_public_claims、trusted_info_ids、suspected_wolves、self_public_claim。限制长度，只保留少量玩家 id 和理由标签，不注入完整历史。",
+        "rationale": "每次模型会话重新开始，必须把最小摘要显式交给模型；但不能突破预算，也不能自动塞完整历史。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "调整 _turn_instruction 为实例方法，在守卫行动阶段追加守卫专用约束：最终 target_id 必须来自本次 contract 的 target_ids；不能因为警长身份自动守护；若某玩家被可信查杀或警徽来自狼嫌移交，除非没有其他高价值候选，否则不要守；不确定时选择合法高价值候选而不是臆造目标。",
+        "rationale": "把高频错误直接前置到模型指令，可减少修复触发次数和重试成本。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "为白天发言增加轻量 guard-specific speech note：若 self_publicly_claimed_guard 已为真，不要再自称“平民/无夜间信息”；可说“我从守卫视角只确认自己守过谁，不确认是否守中刀”。若未跳身份，则继续可隐藏，但不要编造平民身份为事实。",
+        "rationale": "修复 game3 中身份叙事前后不一致的问题，提升公开可信度，同时遵守守卫不会获得守护成功确认的规则。"
+      },
+      {
+        "file": "task.md",
+        "change": "增加“守卫行动优先级”小节：1. 永远只从当前 allowed_actions.target_ids 选择；2. 记住上一夜守护目标，默认不可连守；3. 可信预言家、已公开关键神职、能组织好人且未被强查杀的警长优先；4. 被可信查杀、强保狼、由狼嫌传徽的位置降权；5. 平安夜不是守中确认，白天表述必须保持不确定。",
+        "rationale": "当前任务描述过于抽象，无法约束模型在复杂警徽/查杀局面下的选择。"
+      },
+      {
+        "file": "task.md",
+        "change": "增加“跳身份与发言一致性”小节：默认隐藏守卫；但若有人穿守卫衣服、关键好人要被错误推出或残局需要定身份，可跳守卫反制；一旦公开跳守卫，后续发言必须沿用守卫视角，不再自称平民。",
+        "rationale": "守卫身份公开是高风险但有时必要的策略，关键是保持一致并把夜间信息转化为可复盘公共信息。"
+      }
+    ],
+    "risks": [
+      "本地修复 guard_protect 目标可能掩盖模型推理错误；需要在代码注释中明确这是合法性兜底，不应替代 prompt 改善。",
+      "公开发言解析可能误把狼人悍跳预言家当成可信信息位；因此 trusted_info_ids 应只做弱启发，结合查杀是否被投票/后续死亡验证，不要硬编码绝对真相。",
+      "过度保护公开预言家可能与女巫解药重叠，造成资源浪费；但守卫不知道女巫私密决策，只能基于公开信息权衡。",
+      "鼓励必要时跳守卫可能提高被刀风险；应限制在有人穿守卫衣服、关键身份冲突、残局或需要反制错误归票时使用。",
+      "如果实现过多复杂自然语言解析，会增加 prompt/代码复杂度并引入误判；建议先做小规模关键词和玩家 id 提取，不做完整 NLP。",
+      "兄弟分支 guard-n00016 已尝试较大改动但未见评测结果；直接照搬可能引入未知问题，下一代应采用更小、更可测试的子集。"
+    ],
+    "code_agent_brief": "请只修改候选工作区的 task_agent.py 和 task.md，目标是生成 guard-base 的下一代守卫 Task-Agent。核心修复是降低非法守护和改善守护目标排序。具体要求：\n1. task_agent.py：为 TaskAgent 增加守卫最小局内记忆字段：last_protected_id、last_protected_round、公开身份/查杀/金水/守卫对跳摘要、self_publicly_claimed_guard。observe(sync_packet) 和 decide(turn_packet) 中从可见 public_state、tool_context.current_round_dialogue 提取这些摘要；不要读取审计或隐藏信息，不要新增工具。\n2. task_agent.py：normalize_decision 后增加守卫专用 _repair_guard_decision。若 action.kind 是 guard_protect，必须读取 request.allowed_actions 中 guard_protect 的 target_ids；当模型 target_id 不在 target_ids 时，用合法候选替换；如无合法守护且 pass 合法则 pass。成功提交 guard_protect 后记录实际 target_id 为 last_protected_id。\n3. task_agent.py：实现简单 _rank_guard_targets，只在 target_ids 内排序。优先保护可信预言家/公开关键神职/无强狼嫌的带队好人；降权被可信查杀、强保已出狼、由狼嫌传徽、上一夜守过的目标。不要使用任何真实身份或审计角色。\n4. task_agent.py：在 prompt packet 中加入短小 guard_memory 摘要；在 turn instruction 中加入“只从 target_ids 选、不能自动守警长、狼嫌警长降权、不要臆造目标”的守卫提示。注意 current_agent 里 _turn_instruction 是 staticmethod，如需访问 self.profile 和记忆，请改成实例方法并更新调用。\n5. task_agent.py：白天发言提示中，如果本 agent 已公开跳守卫，不要再自称平民；可提醒模型说“我只知道自己守过谁，不知道是否守中刀”。\n6. task.md：补充守卫行动优先级、信息可靠性和身份公开一致性说明。强调平安夜不是守中确认，守卫不能获得成功反馈。\n验收重点：guard_protect 永远不会因 target_id 不在当前 target_ids 而抛 RuleViolationError；不要修改 Game Engine、规则、schema、工具、评测记录或模型配置。"
+  },
+  "model": {
+    "available": true,
+    "model": "gpt-5.5",
+    "protocol": "responses",
+    "reasoning_effort": null,
+    "enable_thinking": true,
+    "max_output_tokens": 900
+  },
+  "token_usage": {
+    "input_tokens": 293149,
+    "output_tokens": 4521,
+    "total_tokens": 297670
+  }
+}

@@ -1,0 +1,90 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00001 已经比 base 更稳，主要不再是 schema/非法行动问题，而是两个更深层的 Task-Agent 问题：跨游戏记忆没有重置、女巫私有资源状态提取不够鲁棒，外加 witch 决策摘要仍过于泛化，导致模型经常保守地 pass，缺少结构化的高价值毒杀判断。下一代应优先做游戏边界清理、资源别名归一化和面向女巫的结构化候选评分。",
+  "evidence": [
+    {
+      "source": "read_evaluation_summary",
+      "fact": "witch-n00001 的总体成绩是 20 局 7 胜 13 负，win_rate=0.35；invalid_decision_count=1、fallback_rate 很低，说明当前瓶颈已不是简单的行动格式错误，而是决策质量。"
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "当前节点保留了 _compact_history、_known_private_state 和 _last_witch_action，但 observe() 没有 game_id / 新局重置逻辑；这意味着若同一 TaskAgent 实例跨局复用，历史摘要可能串局。"
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "_update_private_state() 只抽取 can_heal/can_poison/heal_used/poison_used/used_* 等键，没有兼容 antidote_available/poison_available 这类常见别名。"
+    },
+    {
+      "source": "random_game_replay game19",
+      "fact": "女巫 p6 在第 2、3、4、5 夜都选择 pass，最终仍保留 poison；这局虽赢，但体现出当前提示语对毒药使用的引导偏保守，缺少更明确的高价值出手条件。"
+    },
+    {
+      "source": "random_game_replay game1 final_snapshot",
+      "fact": "女巫 p8 败局结束时 role_state 仍显示 poison_available=true，而村民阵营输了；这说明至少在部分失局中，毒药资源被长期保留，没有形成足够强的局势扭转。"
+    },
+    {
+      "source": "read_other_branch witch-n00003",
+      "fact": "同角色其他分支已经开始加入 memory_game_id/重置式 compact memory 和更宽的资源别名处理，说明这些方向是已有的有效进化点，不是纯推测。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "跨游戏记忆污染风险",
+      "impact": "当前 agent 把历史公开摘要和私有状态长期挂在实例上，但没有在新游戏开始时清空；如果评测复用同一实例，后局会被前局信息污染，影响女巫对票型、死亡和资源状态的判断。"
+    },
+    {
+      "cause": "女巫私有资源状态解析不完整",
+      "impact": "资源字段只兼容一套命名，若运行时使用另一套别名，模型拿到的 self_resource_state 会失真或缺失，导致更保守或更混乱的救/毒决策。"
+    },
+    {
+      "cause": "决策摘要对女巫不够结构化",
+      "impact": "当前 witch_decision_summary 主要是通用推荐模板，没有把公开死亡、票型、警长、对跳、疑似核心狼人等压缩成可直接消费的结构化候选集，模型容易退化成模板化 pass。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 observe() 中加入 game_id 识别与新局重置：当检测到新 game_id 时，清空 _compact_history / _known_private_state / _last_witch_action，并更新当前局标识。",
+      "rationale": "防止跨局状态串污染，保证每一局女巫只依据本局公开信息和本局私有资源做判断。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展 _update_private_state()，兼容 antidote_available、poison_available、antidote_used、poison_used 以及现有 can_heal/can_poison/heal_used/poison_used 等别名，并统一写入规范化字段。",
+      "rationale": "避免因为引擎字段命名差异导致资源状态摘要失真，从而改善救药/毒药的可用性判断。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重做 _witch_decision_summary()，输出紧凑的结构化女巫板面：当前存活人数、最近死亡、警长、公开对跳、投票聚集点、已公开确认身份、资源余量，以及 poison/heal/pass 三类候选的排序理由。",
+      "rationale": "把女巫决策从泛化建议升级成可消费的候选评分，减少“知道该想什么但不知道该毒谁”的空转。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充女巫专属执行规约：明确“高置信毒杀”的触发条件应包含强对跳、稳定票型压缩、公开身份链冲突或终局倒计时；同时强调公开发言只可基于公开事实，不能暗示私有药水余量或夜间目标。",
+      "rationale": "把代码中的结构化判断意图写入长期任务文本，降低模型在夜间阶段过度保守的倾向，并继续强化保密边界。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "更激进的毒杀阈值可能带来误毒。",
+      "mitigation": "保持为候选排序而非硬编码强制动作，只在多条公开证据同时满足时才把目标标为高置信。"
+    },
+    {
+      "risk": "新局重置写错会误清当前局记忆。",
+      "mitigation": "只在 game_id 变化时重置，不在普通 sync 或回合推进时重置。"
+    },
+    {
+      "risk": "结构化摘要过长会挤压 prompt 预算。",
+      "mitigation": "只保留最近 3-4 轮和少量最高优先级候选，避免把完整票型和发言原文塞进系统提示。"
+    },
+    {
+      "risk": "task.md 与 task_agent.py 的规则表述不一致会引起模型混淆。",
+      "mitigation": "让 task.md 只描述原则，具体字段归一化和候选打分逻辑放在 task_agent.py。"
+    }
+  ],
+  "code_agent_brief": "请最小化修改 witch-n00001 的 Task-Agent：1) 在 observe() 里按 game_id 做新局检测并重置 compact memory/private state；2) 把女巫资源状态解析扩展到 antidote_available/poison_available 等别名并规范化；3) 把 witch_decision_summary 改成结构化板面快照，输出可排序的 heal/poison/pass 候选及理由；4) 在 task.md 补一段女巫专属的高置信毒杀与公开保密规约。不要改引擎、schema、可见性或任何外部预算。"
+}

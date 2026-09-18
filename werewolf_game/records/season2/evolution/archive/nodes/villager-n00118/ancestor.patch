@@ -1,0 +1,364 @@
+--- villager-n00030/task_agent.py
++++ villager-n00118/task_agent.py
+@@ -125,6 +125,36 @@
+ _DIALOGUE_TEXT_KEYS = ("text", "content", "message", "speech", "utterance", "dialogue")
+ 
+ 
++def _append_bounded(values: list[Any], value: Any, limit: int) -> None:
++    if value is None or limit <= 0 or value in values:
++        return
++    values.append(value)
++    if len(values) > limit:
++        del values[:-limit]
++
++
++def _direct_values(mapping: Mapping[str, Any], keys: tuple[str, ...]) -> list[Any]:
++    return [mapping[key] for key in keys if key in mapping and mapping[key] is not None]
++
++
++def _extract_players_alive_dead(public_state: Mapping[str, Any]) -> tuple[list[str], list[str]]:
++    alive: list[str] = []
++    dead: list[str] = []
++    for value in _direct_values(public_state, ("alive_ids", "alive_players", "living_ids", "survivor_ids", "living")):
++        alive.extend(_extract_id_list({"value": value}, ("value",)))
++    for value in _direct_values(public_state, ("dead_ids", "dead_players", "deceased_ids", "eliminated_ids", "dead")):
++        dead.extend(_extract_id_list({"value": value}, ("value",)))
++    return _unique_preserve_order(alive), _unique_preserve_order(dead)
++
++
++def _extract_sheriff(public_state: Mapping[str, Any]) -> str | None:
++    for value in _direct_values(public_state, ("sheriff_id", "sheriff_player_id", "sheriff")):
++        player_id = _coerce_player_id(value)
++        if player_id:
++            return player_id
++    return None
++
++
+ def _extract_dialogue_texts(current_dialogue: Any) -> list[str]:
+     texts: list[str] = []
+     if isinstance(current_dialogue, str):
+@@ -165,58 +195,184 @@
+     return _unique_preserve_order(targets)
+ 
+ 
++class PublicLedger:
++    """有界、只读公开事实摘要；不保存私有角色信息或完整历史。"""
++
++    def __init__(self) -> None:
++        self.alive_ids: list[str] = []
++        self.dead_ids: list[str] = []
++        self.revealed_roles: list[str] = []
++        self.current_sheriff_id: str | None = None
++        self.sheriff_alive: bool | None = None
++        self.badge_transfers: list[str] = []
++        self.death_log: list[str] = []
++        self.day_eliminations: list[str] = []
++        self.night_deaths: list[str] = []
++        self.last_vote_counts: list[str] = []
++        self.public_claims: list[str] = []
++
++    def ingest(self, packet: Mapping[str, Any] | None, dialogue: Any = None) -> None:
++        if not isinstance(packet, Mapping):
++            return
++        state = packet.get("public_state")
++        if not isinstance(state, Mapping):
++            state = packet
++        alive, dead = _extract_players_alive_dead(state)
++        if alive:
++            self.alive_ids = alive[:24]
++        if dead:
++            self.dead_ids = dead[:24]
++        sheriff = _extract_sheriff(state)
++        if sheriff:
++            self.current_sheriff_id = sheriff
++            self.sheriff_alive = sheriff in self.alive_ids if self.alive_ids else None
++        elif self.current_sheriff_id and self.alive_ids:
++            self.sheriff_alive = self.current_sheriff_id in self.alive_ids
++        for value in _direct_values(state, ("revealed_roles", "revealed_role_map", "public_roles")):
++            if isinstance(value, Mapping):
++                for player, role in value.items():
++                    player_id = _coerce_player_id(player)
++                    if player_id and role:
++                        _append_bounded(self.revealed_roles, f"{player_id}:{_shorten_text(str(role), 24)}", 8)
++        for value in _direct_values(state, ("badge_transfers", "sheriff_transfers", "public_badge_transfers")):
++            if isinstance(value, list):
++                for transfer in value[-6:]:
++                    if isinstance(transfer, Mapping):
++                        old_id = _coerce_player_id(transfer.get("from_id") or transfer.get("old_sheriff_id"))
++                        new_id = _coerce_player_id(transfer.get("to_id") or transfer.get("new_sheriff_id"))
++                        if old_id and new_id:
++                            _append_bounded(self.badge_transfers, f"{old_id}→{new_id}", 6)
++        for value in _direct_values(state, ("last_vote_counts", "recent_vote_counts", "vote_counts")):
++            if value is not None:
++                _append_bounded(self.last_vote_counts, _shorten_text(str(value), 120), 4)
++        for value in _direct_values(state, ("day_eliminations", "day_eliminated_ids", "public_day_eliminations")):
++            for player_id in _extract_id_list({"value": value}, ("value",)):
++                note = f"日放逐:{player_id}"
++                _append_bounded(self.day_eliminations, note, 6)
++                _append_bounded(self.death_log, note, 8)
++        for value in _direct_values(state, ("night_deaths", "night_dead_ids", "public_night_deaths")):
++            for player_id in _extract_id_list({"value": value}, ("value",)):
++                note = f"夜死:{player_id}"
++                _append_bounded(self.night_deaths, note, 6)
++                _append_bounded(self.death_log, note, 8)
++
++        # 只读取明确标为公开的事件容器，避免递归扫到 private/audit 字段。
++        records: list[Any] = []
++        for key in ("public_events", "public_event_log", "recent_events", "events"):
++            value = packet.get(key)
++            if value is None and isinstance(state, Mapping):
++                value = state.get(key)
++            if isinstance(value, list):
++                records.extend(value[-16:])
++        for record in records:
++            self._ingest_public_record(record)
++        for text in _extract_dialogue_texts(dialogue):
++            claim = _shorten_text(" ".join(text.split()), 96)
++            if claim:
++                _append_bounded(self.public_claims, claim, 8)
++
++    def _ingest_public_record(self, record: Any) -> None:
++        if not isinstance(record, Mapping):
++            return
++        kind = str(record.get("kind") or record.get("type") or record.get("event") or "").lower()
++        target = _coerce_player_id(record.get("player_id") or record.get("target_id") or record.get("victim_id"))
++        actor = _coerce_player_id(record.get("from_id") or record.get("source_id") or record.get("old_sheriff_id"))
++        recipient = _coerce_player_id(record.get("to_id") or record.get("new_sheriff_id"))
++        if target and any(word in kind for word in ("night", "wolf", "kill", "death", "死亡", "夜")):
++            note = f"夜死:{target}"
++            _append_bounded(self.night_deaths, note, 6)
++            _append_bounded(self.death_log, note, 8)
++        elif target and any(word in kind for word in ("day", "eliminat", "放逐", "出局")):
++            note = f"日放逐:{target}"
++            _append_bounded(self.day_eliminations, note, 6)
++            _append_bounded(self.death_log, note, 8)
++        if actor and recipient and any(word in kind for word in ("badge", "sheriff", "警徽", "警长")):
++            _append_bounded(self.badge_transfers, f"{actor}→{recipient}", 6)
++            self.current_sheriff_id = recipient
++        role = record.get("revealed_role") or record.get("role_reveal")
++        if target and role:
++            _append_bounded(self.revealed_roles, f"{target}:{_shorten_text(str(role), 24)}", 8)
++        votes = record.get("vote_counts") or record.get("counts")
++        if votes is not None:
++            _append_bounded(self.last_vote_counts, _shorten_text(str(votes), 120), 4)
++        claim = record.get("claim") or record.get("text") or record.get("message")
++        if isinstance(claim, str) and claim.strip():
++            _append_bounded(self.public_claims, _shorten_text(" ".join(claim.split()), 96), 8)
++
++    def summary(self, limit: int = 1700) -> str:
++        sections: list[str] = []
++        if self.alive_ids:
++            sections.append("存活：" + "、".join(self.alive_ids))
++        if self.dead_ids:
++            sections.append("已死：" + "、".join(self.dead_ids))
++        if self.death_log:
++            sections.append("死亡方式：" + "；".join(self.death_log[-6:]))
++        if self.current_sheriff_id:
++            status = "存活" if self.sheriff_alive is not False else "已死"
++            sections.append(f"警长：{self.current_sheriff_id}（{status}）")
++        if self.badge_transfers:
++            sections.append("警徽传递：" + "；".join(self.badge_transfers[-4:]))
++        if self.revealed_roles:
++            sections.append("公开身份：" + "；".join(self.revealed_roles[-5:]))
++        if self.day_eliminations:
++            sections.append("最近日放逐：" + "；".join(self.day_eliminations[-2:]))
++        if self.night_deaths:
++            sections.append("最近夜死：" + "；".join(self.night_deaths[-2:]))
++        if self.last_vote_counts:
++            sections.append("最近票型：" + "；".join(self.last_vote_counts[-2:]))
++        if self.public_claims:
++            sections.append("最近公开声明：" + "；".join(self.public_claims[-6:]))
++        return _shorten_text("\n".join(sections), limit)
++
++
+ _PUBLIC_CLAIM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+-    ("self_claim", re.compile(r"(?:我是|我就是|自称).{0,8}?(?:预言家|先知)")),
+-    ("wolf_check", re.compile(r"(?:验了|查了|昨晚验了|昨晚查了).{0,10}?(?P<target>p\d+).{0,12}?(?:狼|狼人|查杀)")),
+-    ("wolf_kill", re.compile(r"(?:查杀|归票|投票给|投).{0,4}?(?P<target>p\d+)")),
+-    ("gold", re.compile(r"(?:金水).{0,4}?(?P<target>p\d+)")),
+-    ("opposition", re.compile(r"对跳|跳预言家")),
++    ("seer_claimers", re.compile(r"(?P<claimer>p\d+).{0,8}?(?:我是|我就是|自称).{0,8}?(?:预言家|先知)")),
++    ("wolf_check", re.compile(r"(?:验了|查了|昨晚验了|昨晚查了|查验).{0,10}?(?P<target>p\d+).{0,12}?(?:狼|狼人|查杀)")),
++    ("wolf_check", re.compile(r"(?:查杀|验出狼|验到狼).{0,5}?(?P<target>p\d+)")),
++    ("wolf_check", re.compile(r"(?P<target>p\d+).{0,6}?(?:是|为)?(?:狼|狼人|查杀)")),
++    ("rally", re.compile(r"(?:归票|票出|投票给|建议投|归票给).{0,5}?(?P<target>p\d+)")),
++    ("gold", re.compile(r"(?:金水|好人).{0,5}?(?P<target>p\d+)")),
++    ("gold", re.compile(r"(?P<target>p\d+).{0,4}?(?:是|为)?金水")),
++    ("opposition", re.compile(r"对跳|跳预言家|双预言家|硬反对")),
+ )
+ 
+ 
+ def _extract_public_claim_hint(current_dialogue: Any) -> dict[str, Any]:
+     texts = _extract_dialogue_texts(current_dialogue)
++    buckets: dict[str, list[str]] = {"wolf_check_targets": [], "rally_targets": [], "gold_targets": [], "seer_claimers": [], "strong_role_claimers": []}
+     snippets: list[str] = []
+-    claim_targets: list[str] = []
+     contested = False
+-
+     for raw_text in texts:
+         text = " ".join(str(raw_text).split())
+         if not text:
+             continue
+-        matched_here = False
++        matched = False
+         for label, pattern in _PUBLIC_CLAIM_PATTERNS:
+-            if label == "opposition":
+-                if pattern.search(text):
++            for match in pattern.finditer(text):
++                matched = True
++                if label == "opposition":
+                     contested = True
+-                    matched_here = True
+-                    snippets.append(_shorten_text(text, 48))
+-                continue
+-            for match in pattern.finditer(text):
+-                matched_here = True
+-                if label == "self_claim":
+-                    snippets.append(_shorten_text(text, 48))
++                    snippets.append(_shorten_text(text, 64))
+                     continue
+-                target = match.groupdict().get("target")
++                target = match.groupdict().get("target") or match.groupdict().get("claimer")
+                 if target:
+-                    claim_targets.append(target)
++                    buckets[label].append(target)
+                     snippets.append(f"{label}:{target}")
+-        if matched_here and len(snippets) >= 5:
++        if matched and len(snippets) >= 8:
+             break
+-
+-    claim_targets = _unique_preserve_order(claim_targets)
+-    if len(claim_targets) > 1:
++    for key in buckets:
++        buckets[key] = _unique_preserve_order(buckets[key])[:6]
++    hard_targets = _unique_preserve_order(buckets["wolf_check_targets"] + buckets["rally_targets"])
++    if len(hard_targets) > 1:
+         contested = True
+-
+-    hint: dict[str, Any] = {}
+-    if claim_targets:
+-        hint["claim_targets"] = claim_targets[:4]
++    hint: dict[str, Any] = {key: value for key, value in buckets.items() if value}
+     if snippets:
+-        hint["public_claims"] = _unique_preserve_order(snippets)[:4]
++        hint["claim_snippets"] = _unique_preserve_order(snippets)[:6]
+     if contested:
+         hint["contested"] = True
+-    if len(claim_targets) == 1 and not contested:
+-        hint["clear_target"] = claim_targets[0]
++    if len(hard_targets) == 1 and not contested:
++        hint["clear_target"] = hard_targets[0]
++        hint["clear_target_confident"] = True
+     return hint
+ 
+ 
+@@ -322,6 +478,7 @@
+         lines.append("警长竞选时平民默认不上警；只有需要挡刀、保警徽传递或扰乱狼视角时才考虑上警。")
+     if has_speak:
+         lines.append("发言前先核对存活名单、已死名单和警长是否仍存活；不要把白天放逐说成夜死，也不要把已死玩家当成可继续追责的当前存活对象。")
++        lines.append("若你是平民但持有警徽，只能说继承/采信某人的公开查验链，不能说自己昨晚验了谁；日放逐叫出局、夜晚死亡叫夜死。平安夜不能推出具体刀口、救人或守人对象。")
+         lines.append("发言至少点出一个关注对象和一个暂不投对象，并说明依据哪条公开信息。")
+     if has_last_words:
+         lines.append("遗言只留公开事实、票型、查验链和怀疑对象，不把推测说成系统事实。")
+@@ -471,6 +628,7 @@
+         self.max_tool_calls_per_decision = max(0, int(max_tool_calls_per_decision))
+         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
++        self.public_ledger = PublicLedger()
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -481,10 +639,9 @@
+         }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步；最小基线不把它跨行动保存为模型记忆。"""
+-
+-        # 保留 Participant 接口，但刻意不维护跨行动状态。
+-        del sync_packet
++        """只把同步包中的公开事实压缩进有界台账。"""
++
++        self.public_ledger.ingest(sync_packet)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -511,6 +668,8 @@
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
++        self.public_ledger.ingest(turn_packet, current_dialogue)
++        ledger_summary = self.public_ledger.summary()
+         villager_public_hint = build_villager_public_hint(turn_packet, current_dialogue)
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+@@ -529,7 +688,7 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], feedback, villager_public_hint),
++                "instruction": self._turn_instruction(turn_packet["request"], feedback, villager_public_hint, ledger_summary),
+                 "packet": prompt,
+             }
+             try:
+@@ -561,11 +720,26 @@
+                 quality_error = villager_quality_error(action, turn_packet["request"], villager_public_hint)
+                 if quality_error is None:
+                     return action
++                # 策略质量提示不是 schema 违规：重试耗尽后优先安全跟随高置信公开目标，
++                # 否则提交已经通过 schema 的行动，而不是把分歧升级成 fallback。
+                 error = quality_error
++                if _attempt >= self.max_decision_retries:
++                    clear_target = villager_public_hint.get("clear_target") if isinstance(villager_public_hint, Mapping) else None
++                    vote_targets = _extract_day_vote_targets(turn_packet["request"])
++                    if (
++                        isinstance(clear_target, str)
++                        and villager_public_hint.get("clear_target_confident")
++                        and clear_target in vote_targets
++                        and not villager_public_hint.get("contested")
++                    ):
++                        return {
++                            "request_id": turn_packet["request"]["request_id"],
++                            "player_id": turn_packet["request"]["player_id"],
++                            "kind": "day_vote",
++                            "target_id": clear_target,
++                        }
++                    return action
+             if _attempt >= self.max_decision_retries:
+-                # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+-                # Runner 可将该行动存入管理员审计记录，便于定位 schema / 长度等问题，
+-                # 而不会泄露给公开记录。
+                 raise RuleViolationError(
+                     f"模型返回非法行动：{error}",
+                     attempted_action=action,
+@@ -608,14 +782,20 @@
+         )
+ 
+     @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], feedback: str, public_hint: Mapping[str, Any] | None) -> str:
++    def _turn_instruction(
++        request: Mapping[str, Any],
++        feedback: str,
++        public_hint: Mapping[str, Any] | None,
++        ledger_summary: str = "",
++    ) -> str:
+         checklist = render_villager_decision_checklist(request)
+         feedback_text = f"上一次输出未通过校验：{feedback}" if feedback else ""
++        ledger_text = f"【公开事实台账】\n{_shorten_text(ledger_summary, 1700)}" if ledger_summary else ""
+         hint_text = ""
+         if isinstance(public_hint, Mapping) and public_hint:
+             hint_text = "【公开信息提示】" + json.dumps(public_hint, ensure_ascii=False, separators=(",", ":"))
+         validation_feedback = "\n".join(
+-            part for part in (feedback_text, hint_text, checklist) if part
++            part for part in (feedback_text, ledger_text, hint_text, checklist) if part
+         )
+         return render_prompt(
+             "player_turn_instruction.txt",
+--- villager-n00030/task.md
++++ villager-n00118/task.md
+@@ -15,3 +15,6 @@
+ - 当存活人数较少，或你自己持有警徽时，先复盘四件事：**存活名单、已死名单、可信查验链、灰区名单**；优先找**未被金水覆盖**且存在**事实错误、票型异常、被查杀/爆狼线索**的人。
+ - 少弃票：只有在候选几乎无差异且继续投票会明显误伤强神时才考虑 pass；否则尽量给出当前证据最强的票。
+ - 可以策略性伪装神职或编造信息，但必须把它当作游戏内说法，不能伪造系统事实，也不能把猜测说成事实。
++- 平民即使接到警徽、被金水或负责带队，也没有获得验人能力；只能转述或继承某位玩家已经公开声明的查验链，并明确这是“玩家声明/公开遗产”，不能说成自己昨晚真实查验了谁。
++- 死亡方式必须以公开事件为准：白天投票后称“日放逐/出局”，夜间公开死亡称“夜死”；不得把未知原因、救活或平安夜推成具体刀口。
++- 平安夜不能推出具体刀口、女巫用药、守卫守人或救人对象；这些只能作为不确定推测，不能当作系统事实。

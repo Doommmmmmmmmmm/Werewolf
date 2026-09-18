@@ -1,0 +1,719 @@
+--- seer-n00014/task_agent.py
++++ seer-n00027/task_agent.py
+@@ -22,6 +22,7 @@
+ 
+ _CHINESE_CHARACTER = re.compile(r"[\u3400-\u9fff]")
+ _PLAYER_ID_PATTERN = re.compile(r"\bp\d+\b", re.IGNORECASE)
++_SEAT_REFERENCE_PATTERN = re.compile(r"(?:第\s*)?(?P<num>\d{1,2})\s*(?:号|位|席|號|名)\b")
+ _CURRENT_DIALOGUE_TEXT_LIMIT = 120
+ _CURRENT_DIALOGUE_ITEM_LIMIT = 6
+ _SUMMARY_TEXT_LIMIT = 160
+@@ -60,6 +61,8 @@
+     inspected: list[dict[str, str]] = field(default_factory=list)
+     declared_claims: list[dict[str, str]] = field(default_factory=list)
+     challenged_players: list[str] = field(default_factory=list)
++    seat_to_player_id: dict[str, str] = field(default_factory=dict)
++    player_to_seat: dict[str, str] = field(default_factory=dict)
+     recent_vote_summary: str = ""
+     recent_vote_detail: dict[str, Any] = field(default_factory=dict)
+     dialogue_digest: list[str] = field(default_factory=list)
+@@ -75,6 +78,8 @@
+         self.inspected.clear()
+         self.declared_claims.clear()
+         self.challenged_players.clear()
++        self.seat_to_player_id.clear()
++        self.player_to_seat.clear()
+         self.recent_vote_summary = ""
+         self.recent_vote_detail.clear()
+         self.dialogue_digest.clear()
+@@ -387,10 +392,16 @@
+             pieces.append(
+                 "保持 seer 视角：任何发言都要尽量围绕查验、对跳、票型和可验证推断，不要套通用狼人杀模板。"
+             )
++        if seer_brief.get("self_risk") and any(
++            token in str(seer_brief["self_risk"]) for token in ("自保压力高", "信息竞争激烈")
++        ):
++            pieces.append("高压时只保留：1 个事实 + 1 个可验证推断 + 1 个明确票向，不要展开完整推理链。")
+         if seer_brief.get("facts"):
+-            pieces.append("事实摘要：" + "；".join(seer_brief["facts"]))
++            pieces.append("事实摘要：" + ";".join(seer_brief["facts"]))
+         if seer_brief.get("pressure_points"):
+-            pieces.append("当前压力点：" + "；".join(seer_brief["pressure_points"]))
++            pieces.append("当前压力点：" + ";".join(seer_brief["pressure_points"]))
++        if seer_brief.get("pressure_signals"):
++            pieces.append("压力信号：" + ";".join(seer_brief["pressure_signals"]))
+         if seer_brief.get("self_risk"):
+             pieces.append("自保判断：" + str(seer_brief["self_risk"]))
+         if feedback:
+@@ -446,6 +457,9 @@
+         elif game_id and not self._seer_memory.game_id:
+             self._seer_memory.game_id = game_id
+ 
++        self._update_seat_aliases_from_packet(packet)
++        self._normalize_seer_memory_aliases()
++
+         self._seer_memory.round_no = self._stringify(
+             self._first_present(
+                 packet,
+@@ -579,40 +593,305 @@
+         if value is None:
+             return result
+         if isinstance(value, str):
+-            ids = _PLAYER_ID_PATTERN.findall(value)
+-            if ids:
+-                return self._unique_stable(ids)
++            result.extend(_PLAYER_ID_PATTERN.findall(value))
++            result.extend(self._resolved_player_ids_from_text(value))
++            if result:
++                return self._unique_stable(result)
+             return [value] if value.strip() else []
+         if isinstance(value, Mapping):
+-            for key in ("player_id", "id", "target_id", "speaker", "name"):
++            for key in ("player_id", "id", "target_id", "speaker", "name", "player", "target", "seat_player_id"):
+                 nested = value.get(key)
+                 if isinstance(nested, str) and nested:
+                     result.append(nested)
++            for seat, player_id in self._seat_player_pairs_from_mapping(value):
++                self._remember_seat_alias(seat, player_id)
++                result.append(player_id)
+             for nested in value.values():
+                 result.extend(self._extract_player_ids(nested))
+             return self._unique_stable(result)
+-        if isinstance(value, Sequence):
++        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+             for item in value:
+                 if isinstance(item, Mapping):
+                     result.extend(self._extract_player_ids(item))
+                 elif isinstance(item, str):
+-                    ids = _PLAYER_ID_PATTERN.findall(item)
+-                    result.extend(ids or ([item] if item.strip() else []))
++                    result.extend(_PLAYER_ID_PATTERN.findall(item))
++                    result.extend(self._resolved_player_ids_from_text(item))
++                    if not _PLAYER_ID_PATTERN.search(item) and not self._resolved_player_ids_from_text(item):
++                        result.append(item)
+                 else:
+                     text = self._stringify(item)
+                     if text:
+                         ids = _PLAYER_ID_PATTERN.findall(text)
+-                        result.extend(ids or [text])
++                        result.extend(ids or self._resolved_player_ids_from_text(text) or [text])
+             return self._unique_stable(result)
+         text = self._stringify(value)
+         if text:
+             ids = _PLAYER_ID_PATTERN.findall(text)
+-            return self._unique_stable(ids or [text])
++            resolved = self._resolved_player_ids_from_text(text)
++            return self._unique_stable(ids or resolved or [text])
+         return result
+ 
+     def _extract_single_player_id(self, value: Any) -> str:
+         ids = self._extract_player_ids(value)
+         return ids[0] if ids else ""
++
++    def _seat_player_pairs_from_mapping(self, value: Mapping[str, Any]) -> list[tuple[str, str]]:
++        pairs: list[tuple[str, str]] = []
++        direct_seat = self._extract_seat_label(
++            value.get("seat")
++            or value.get("position")
++            or value.get("seat_no")
++            or value.get("seat_id")
++        )
++        direct_player = self._extract_single_player_id(
++            value.get("player_id")
++            or value.get("id")
++            or value.get("player")
++            or value.get("target_id")
++            or value.get("speaker")
++            or value.get("name")
++        )
++        if direct_seat and direct_player:
++            pairs.append((direct_seat, direct_player))
++        for key, nested in value.items():
++            key_seat = self._extract_seat_label(key)
++            if key_seat:
++                nested_player = self._extract_single_player_id(nested)
++                if nested_player:
++                    pairs.append((key_seat, nested_player))
++        return self._unique_pair_list(pairs)
++
++    def _extract_seat_label(self, value: Any) -> str:
++        if value is None:
++            return ""
++        if isinstance(value, str):
++            match = _SEAT_REFERENCE_PATTERN.search(value)
++            if match:
++                return match.group("num")
++            return ""
++        if isinstance(value, Mapping):
++            for key in ("seat", "position", "seat_no", "seat_id"):
++                label = self._extract_seat_label(value.get(key))
++                if label:
++                    return label
++            for nested in value.values():
++                label = self._extract_seat_label(nested)
++                if label:
++                    return label
++            return ""
++        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
++            for item in value:
++                label = self._extract_seat_label(item)
++                if label:
++                    return label
++            return ""
++        text = self._stringify(value)
++        match = _SEAT_REFERENCE_PATTERN.search(text)
++        return match.group("num") if match else ""
++
++    def _resolved_player_ids_from_text(self, text: str) -> list[str]:
++        result: list[str] = []
++        if not text:
++            return result
++        for seat in self._extract_seat_labels(text):
++            player_id = self._seer_memory.seat_to_player_id.get(seat)
++            if player_id:
++                result.append(player_id)
++                continue
++            fallback = self._seat_label_to_player_id(seat)
++            if fallback:
++                result.append(fallback)
++        return self._unique_stable(result)
++
++    def _extract_seat_labels(self, value: Any) -> list[str]:
++        labels: list[str] = []
++        if value is None:
++            return labels
++        if isinstance(value, str):
++            labels.extend(match.group("num") for match in _SEAT_REFERENCE_PATTERN.finditer(value))
++            return self._unique_stable(labels)
++        if isinstance(value, Mapping):
++            for key in ("seat", "position", "seat_no", "seat_id"):
++                labels.extend(self._extract_seat_labels(value.get(key)))
++            for nested in value.values():
++                labels.extend(self._extract_seat_labels(nested))
++            return self._unique_stable(labels)
++        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
++            for item in value:
++                labels.extend(self._extract_seat_labels(item))
++            return self._unique_stable(labels)
++        text = self._stringify(value)
++        labels.extend(match.group("num") for match in _SEAT_REFERENCE_PATTERN.finditer(text))
++        return self._unique_stable(labels)
++
++    def _seat_label_to_player_id(self, seat_label: str) -> str:
++        seat_label = self._stringify(seat_label)
++        if not seat_label:
++            return ""
++        if seat_label in self._seer_memory.seat_to_player_id:
++            return self._seer_memory.seat_to_player_id[seat_label]
++        if seat_label.isdigit():
++            return f"p{seat_label}"
++        return ""
++
++    def _seat_reference_variants(self, seat_label: str) -> list[str]:
++        seat_label = self._stringify(seat_label)
++        if not seat_label:
++            return []
++        variants = [seat_label]
++        if seat_label.isdigit():
++            variants.extend(
++                [
++                    f"{seat_label}号",
++                    f"{seat_label}位",
++                    f"第{seat_label}号",
++                    f"第{seat_label}位",
++                    f"{seat_label}席",
++                    f"{seat_label}名",
++                    f"{seat_label}號",
++                ]
++            )
++        return self._unique_stable(variants)
++
++    def _reference_aliases(self, reference: str) -> list[str]:
++        reference = self._stringify(reference)
++        if not reference:
++            return []
++        aliases = [reference]
++        if reference in self._seer_memory.player_to_seat:
++            aliases.extend(self._seat_reference_variants(self._seer_memory.player_to_seat[reference]))
++        match = _PLAYER_ID_PATTERN.fullmatch(reference)
++        if match:
++            seat_label = match.group(0)[1:]
++            aliases.extend(self._seat_reference_variants(seat_label))
++        elif reference.isdigit():
++            aliases.extend(self._seat_reference_variants(reference))
++            aliases.append(f"p{reference}")
++        return self._unique_stable(aliases)
++
++    def _text_mentions_reference(self, text: str, reference: str) -> bool:
++        text = self._stringify(text)
++        if not text or not reference:
++            return False
++        for alias in self._reference_aliases(reference):
++            if alias.startswith("p") and alias[1:].isdigit():
++                if re.search(rf"(?<![A-Za-z0-9_]){re.escape(alias)}(?![A-Za-z0-9_])", text):
++                    return True
++            elif alias in text:
++                return True
++        return False
++
++    def _normalize_alias_text(self, text: str) -> str:
++        text = self._stringify(text)
++        if not text or not self._seer_memory.seat_to_player_id:
++            return text
++        normalized = text
++        for seat_label, player_id in sorted(
++            self._seer_memory.seat_to_player_id.items(), key=lambda item: -len(item[0])
++        ):
++            for variant in self._seat_reference_variants(seat_label):
++                normalized = re.sub(re.escape(variant), player_id, normalized)
++        return normalized
++
++    def _remember_seat_alias(self, seat_label: str, player_id: str) -> None:
++        seat_label = self._stringify(seat_label)
++        player_id = self._stringify(player_id)
++        if not seat_label or not player_id:
++            return
++        existing = self._seer_memory.seat_to_player_id.get(seat_label)
++        if existing and existing != player_id:
++            return
++        self._seer_memory.seat_to_player_id[seat_label] = player_id
++        self._seer_memory.player_to_seat[player_id] = seat_label
++
++    def _update_seat_aliases_from_packet(self, packet: Mapping[str, Any]) -> None:
++        if not isinstance(packet, Mapping):
++            return
++        visited: set[int] = set()
++        stack: list[Any] = [packet]
++        while stack:
++            value = stack.pop()
++            if isinstance(value, Mapping):
++                value_id = id(value)
++                if value_id in visited:
++                    continue
++                visited.add(value_id)
++                for seat_label, player_id in self._seat_player_pairs_from_mapping(value):
++                    self._remember_seat_alias(seat_label, player_id)
++                for nested in value.values():
++                    if isinstance(nested, (Mapping, Sequence)) and not isinstance(nested, (str, bytes, bytearray)):
++                        stack.append(nested)
++            elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
++                for item in value:
++                    if isinstance(item, (Mapping, Sequence)) and not isinstance(item, (str, bytes, bytearray)):
++                        stack.append(item)
++
++    def _normalize_seer_memory_aliases(self) -> None:
++        if self._seer_memory.sheriff_id:
++            self._seer_memory.sheriff_id = self._normalize_reference(self._seer_memory.sheriff_id)
++        self._seer_memory.alive = [self._normalize_reference(item) for item in self._seer_memory.alive]
++        self._seer_memory.dead = [self._normalize_reference(item) for item in self._seer_memory.dead]
++        self._seer_memory.sheriff_candidates = [
++            self._normalize_reference(item) for item in self._seer_memory.sheriff_candidates
++        ]
++        self._seer_memory.challenged_players = [
++            self._normalize_reference(item) for item in self._seer_memory.challenged_players
++        ]
++        self._seer_memory.inspected = [
++            {
++                "round": self._stringify(item.get("round")),
++                "target": self._normalize_reference(item.get("target")),
++                "result": self._stringify(item.get("result")),
++            }
++            for item in self._seer_memory.inspected
++            if isinstance(item, Mapping)
++        ]
++        self._seer_memory.declared_claims = [
++            {
++                "speaker": self._normalize_reference(item.get("speaker")),
++                "claim": self._normalize_alias_text(self._stringify(item.get("claim"))),
++            }
++            for item in self._seer_memory.declared_claims
++            if isinstance(item, Mapping)
++        ]
++        self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
++        self._seer_memory.dialogue_digest = [self._normalize_alias_text(line) for line in self._seer_memory.dialogue_digest]
++        self._seer_memory.recent_vote_summary = self._normalize_alias_text(self._seer_memory.recent_vote_summary)
++        if self._seer_memory.recent_vote_detail:
++            self._seer_memory.recent_vote_detail = self._normalize_vote_detail(self._seer_memory.recent_vote_detail)
++
++    def _normalize_vote_detail(self, value: Any) -> Any:
++        if isinstance(value, Mapping):
++            normalized: dict[str, Any] = {}
++            for key, nested in value.items():
++                normalized[self._stringify(key)] = self._normalize_vote_detail(nested)
++            return normalized
++        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
++            return [self._normalize_vote_detail(item) for item in value]
++        if isinstance(value, str):
++            return self._normalize_alias_text(value)
++        return value
++
++    def _normalize_reference(self, value: Any) -> str:
++        text = self._extract_single_player_id(value)
++        if text:
++            return text
++        raw = self._stringify(value)
++        return self._normalize_alias_text(raw)
++
++    def _unique_pair_list(self, values: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
++        seen: set[tuple[str, str]] = set()
++        ordered: list[tuple[str, str]] = []
++        for seat_label, player_id in values:
++            key = (self._stringify(seat_label), self._stringify(player_id))
++            if not key[0] or not key[1] or key in seen:
++                continue
++            seen.add(key)
++            ordered.append((key[0], key[1]))
++        return ordered
++
++    def _mentions_player_with_alias(self, text: str, target_id: str) -> bool:
++        return self._text_mentions_reference(text, target_id)
+ 
+     def _summarize_vote_info(self, packet: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+         vote_value = self._first_present(
+@@ -696,19 +975,21 @@
+             if len(items) >= _CURRENT_DIALOGUE_ITEM_LIMIT:
+                 break
+             if isinstance(item, Mapping):
+-                speaker = self._extract_single_player_id(
++                speaker = self._normalize_reference(
+                     item.get("speaker") or item.get("player_id") or item.get("id") or item.get("from")
+                 )
+-                text = self._stringify(
+-                    item.get("text")
+-                    or item.get("content")
+-                    or item.get("message")
+-                    or item.get("utterance")
+-                    or item
++                text = self._normalize_alias_text(
++                    self._stringify(
++                        item.get("text")
++                        or item.get("content")
++                        or item.get("message")
++                        or item.get("utterance")
++                        or item
++                    )
+                 )
+             else:
+                 speaker = ""
+-                text = self._stringify(item)
++                text = self._normalize_alias_text(self._stringify(item))
+             text = self._truncate_text(text.strip(), _CURRENT_DIALOGUE_TEXT_LIMIT)
+             if not text:
+                 continue
+@@ -736,11 +1017,14 @@
+             text = line
+             if ":" in line:
+                 speaker, text = line.split(":", 1)
+-                speaker = speaker.strip()
+-                text = text.strip()
++                speaker = self._normalize_reference(speaker.strip())
++                text = self._normalize_alias_text(text.strip())
+             claim_keywords = ("我是", "我跳", "我真", "预言家", "对跳", "查验", "警长", "竞选", "验了", "验过")
+             if any(keyword in text for keyword in claim_keywords):
+-                entry = {"speaker": speaker or self._speaker_from_text(text), "claim": self._truncate_text(text, _SUMMARY_TEXT_LIMIT)}
++                entry = {
++                    "speaker": speaker or self._speaker_from_text(text),
++                    "claim": self._truncate_text(self._normalize_alias_text(text), _SUMMARY_TEXT_LIMIT),
++                }
+                 if entry["speaker"] or entry["claim"]:
+                     self._seer_memory.declared_claims.append(entry)
+             if any(keyword in text for keyword in ("对跳", "质疑", "假", "狼", "冲票", "先出", "出他", "票他")):
+@@ -751,6 +1035,8 @@
+                     list(self._seer_memory.challenged_players) + ids
+                 )
+         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
++        self._seer_memory.challenged_players = [self._normalize_reference(item) for item in self._seer_memory.challenged_players]
++        self._seer_memory.challenged_players = self._unique_stable(self._seer_memory.challenged_players)
+ 
+     def _update_claims_and_challenges_from_packet(self, packet: Mapping[str, Any]) -> None:
+         claims = self._first_present(
+@@ -765,16 +1051,18 @@
+         if isinstance(claims, Sequence) and not isinstance(claims, (str, bytes, bytearray)):
+             for item in claims:
+                 if isinstance(item, Mapping):
+-                    speaker = self._extract_single_player_id(
++                    speaker = self._normalize_reference(
+                         item.get("speaker") or item.get("player_id") or item.get("id")
+                     )
+                     claim = self._truncate_text(
+-                        self._stringify(
+-                            item.get("claim")
+-                            or item.get("role")
+-                            or item.get("text")
+-                            or item.get("content")
+-                            or item
++                        self._normalize_alias_text(
++                            self._stringify(
++                                item.get("claim")
++                                or item.get("role")
++                                or item.get("text")
++                                or item.get("content")
++                                or item
++                            )
+                         ),
+                         _SUMMARY_TEXT_LIMIT,
+                     )
+@@ -791,7 +1079,7 @@
+             ),
+         )
+         if challenged is not None:
+-            ids = self._extract_player_ids(challenged)
++            ids = [self._normalize_reference(pid) for pid in self._extract_player_ids(challenged)]
+             if ids:
+                 self._seer_memory.challenged_players = self._unique_stable(
+                     list(self._seer_memory.challenged_players) + ids
+@@ -810,7 +1098,7 @@
+         )
+         if not isinstance(private, Mapping):
+             return
+-        target = self._extract_single_player_id(
++        target = self._normalize_reference(
+             self._first_present(
+                 private,
+                 (
+@@ -862,12 +1150,14 @@
+         preferred_targets, reasons = self._rank_inspect_targets(turn_packet, target_candidates)
+         facts = self._seer_facts_summary()
+         pressure_points = self._pressure_points_summary(turn_packet)
++        pressure_signals = self._recent_pressure_signals()
+         self_risk = self._self_risk_summary(turn_packet)
+         brief: dict[str, Any] = {
+             "mode": mode,
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+             "facts": facts,
+             "pressure_points": pressure_points,
++            "pressure_signals": pressure_signals,
+             "self_risk": self_risk,
+         }
+         if preferred_targets:
+@@ -895,6 +1185,12 @@
+             claim = self._stringify(latest.get("claim"))
+             if speaker or claim:
+                 facts.append(f"最新公开声明：{speaker + ' ' if speaker else ''}{claim}".strip())
++        if self._seer_memory.seat_to_player_id:
++            seat_map = ", ".join(
++                f"{seat}->{player}" for seat, player in list(self._seer_memory.seat_to_player_id.items())[:3]
++            )
++            if seat_map:
++                facts.append(f"席位映射：{seat_map}")
+         return facts[:_SUMMARY_LIST_LIMIT]
+ 
+     def _pressure_points_summary(self, turn_packet: Mapping[str, Any]) -> list[str]:
+@@ -906,6 +1202,9 @@
+         vote_detail = self._seer_memory.recent_vote_detail
+         if isinstance(vote_detail, Mapping) and vote_detail:
+             points.append("票型详情已更新")
++        pressure = self._recent_pressure_signals()
++        if pressure:
++            points.append("压力信号：" + "、".join(pressure[:_SUMMARY_LIST_LIMIT]))
+         request = turn_packet.get("request") or {}
+         allowed_targets = self._allowed_target_ids(request.get("allowed_actions") if isinstance(request, Mapping) else None)
+         ranked, _ = self._rank_inspect_targets(turn_packet, allowed_targets)
+@@ -917,13 +1216,30 @@
+         self_seen = self.player_id in self._seer_memory.challenged_players
+         other_claims = len(self._seer_memory.declared_claims)
+         phase = self._extract_phase(turn_packet).lower()
++        pressure_count = len(self._recent_pressure_signals())
+         if self_seen:
+             return "自保压力高：已在公开内容中被质疑，发言宜先简后实。"
++        if pressure_count >= 3:
++            return "自保压力高：近期点名和票型压力偏多，发言要压缩成可验证结论。"
+         if "elect" in phase or "sheriff" in phase or "警长" in phase or "竞选" in phase:
+             return "身份暴露风险中等：竞选期要先立可信事实，再给投票方向。"
+         if other_claims >= 3:
+             return "信息竞争激烈：要把查验事实尽快转成压票点。"
+         return "常规风险：优先保留信息优势，不要过度展开。"
++
++    def _recent_pressure_signals(self) -> list[str]:
++        signals: list[str] = []
++        if self._seer_memory.challenged_players:
++            signals.append("被质疑/对跳")
++        if self._seer_memory.recent_vote_summary:
++            signals.append("票型已更新")
++        if len(self._seer_memory.declared_claims) >= 2:
++            signals.append("公开声明较多")
++        if any(self._speaker_claim_variation_count(item.get("speaker", "")) >= 2 for item in self._seer_memory.declared_claims if isinstance(item, Mapping)):
++            signals.append("同一发言者多次自述")
++        if any(self._recent_mention_count(target_id) >= 3 for target_id in self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT]):
++            signals.append("点名反复")
++        return self._unique_stable(signals)
+ 
+     def _decide_mode(self, turn_packet: Mapping[str, Any]) -> str:
+         request = turn_packet.get("request") or {}
+@@ -993,21 +1309,26 @@
+                 scores[target_id] += 50
+                 reasons[target_id].append("警长/候选")
+             if target_id in self._seer_memory.challenged_players:
+-                scores[target_id] += 30
++                scores[target_id] += 28
+                 reasons[target_id].append("对跳/质疑焦点")
+             if self._has_declared_claim(target_id):
+                 scores[target_id] += 20
+                 reasons[target_id].append("公开身份声明")
+             if self._appears_in_recent_vote(target_id):
+-                scores[target_id] += 18
++                scores[target_id] += 16
+                 reasons[target_id].append("近期票型关键位")
+             if self._speaks_a_lot(target_id):
+                 scores[target_id] += 8
+                 reasons[target_id].append("发言密集")
+ 
++            pressure_reasons = self._target_pressure_signals(target_id)
++            if pressure_reasons:
++                scores[target_id] += min(18, 3 * len(pressure_reasons))
++                reasons[target_id].extend(pressure_reasons)
++
+         ranked = sorted(candidates, key=lambda item: (-scores[item], candidates.index(item)))
+         ranked_reasons = [
+-            f"{target_id}:{'、'.join(reasons[target_id]) or '默认信息增益'}"
++            f"{target_id}:{'、'.join(self._unique_stable(reasons[target_id])) or '默认信息增益'}"
+             for target_id in ranked
+         ]
+         return ranked, ranked_reasons
+@@ -1016,7 +1337,7 @@
+         seen: set[str] = set()
+         for item in self._seer_memory.inspected:
+             if isinstance(item, Mapping):
+-                target = self._stringify(item.get("target"))
++                target = self._normalize_reference(item.get("target"))
+                 if target:
+                     seen.add(target)
+         return seen
+@@ -1025,9 +1346,11 @@
+         for claim in self._seer_memory.declared_claims:
+             if not isinstance(claim, Mapping):
+                 continue
+-            if self._stringify(claim.get("speaker")) == target_id:
++            speaker = self._normalize_reference(claim.get("speaker"))
++            claim_text = self._normalize_alias_text(self._stringify(claim.get("claim")))
++            if speaker == target_id or self._text_mentions_reference(speaker, target_id):
+                 return True
+-            if target_id and target_id in self._stringify(claim.get("claim")):
++            if self._text_mentions_reference(claim_text, target_id):
+                 return True
+         return False
+ 
+@@ -1036,12 +1359,85 @@
+         if not vote_detail:
+             return False
+         text = json.dumps(vote_detail, ensure_ascii=False, separators=(",", ":"))
+-        return target_id in text
++        return self._text_mentions_reference(text, target_id)
++
++    def _recent_mention_count(self, target_id: str) -> int:
++        count = 0
++        for line in self._seer_memory.dialogue_digest:
++            if self._text_mentions_reference(line, target_id):
++                count += 1
++        for claim in self._seer_memory.declared_claims:
++            if not isinstance(claim, Mapping):
++                continue
++            if self._text_mentions_reference(self._stringify(claim.get("speaker")), target_id):
++                count += 1
++            if self._text_mentions_reference(self._stringify(claim.get("claim")), target_id):
++                count += 1
++        if self._text_mentions_reference(self._seer_memory.recent_vote_summary, target_id):
++            count += 1
++        if self._appears_in_recent_vote(target_id):
++            count += 1
++        if target_id in self._seer_memory.challenged_players:
++            count += 1
++        return count
++
++    def _speaker_claim_variation_count(self, target_id: str) -> int:
++        claims: list[str] = []
++        for claim in self._seer_memory.declared_claims:
++            if not isinstance(claim, Mapping):
++                continue
++            speaker = self._normalize_reference(claim.get("speaker"))
++            if speaker == target_id:
++                claim_text = self._truncate_text(self._normalize_alias_text(self._stringify(claim.get("claim"))), 80)
++                if claim_text:
++                    claims.append(claim_text)
++        return len(self._unique_stable(claims))
++
++    def _target_pressure_signals(self, target_id: str) -> list[str]:
++        signals: list[str] = []
++        mention_count = self._recent_mention_count(target_id)
++        if mention_count >= 3:
++            signals.append(f"近期被点名{mention_count}次")
++        variation_count = self._speaker_claim_variation_count(target_id)
++        if variation_count >= 2:
++            signals.append("跨轮声明不一致")
++        if target_id in self._seer_memory.challenged_players and self._has_declared_claim(target_id):
++            signals.append("对跳与自述同在")
++        if self._appears_in_recent_vote(target_id) and self._text_mentions_reference(self._seer_memory.recent_vote_summary, target_id):
++            signals.append("票型转折焦点")
++        if self._claim_conflicts_with_known_inspection(target_id):
++            signals.append("与已知查验矛盾")
++        return self._unique_stable(signals)
++
++    def _claim_conflicts_with_known_inspection(self, target_id: str) -> bool:
++        target_result = ""
++        for item in self._seer_memory.inspected:
++            if not isinstance(item, Mapping):
++                continue
++            if self._normalize_reference(item.get("target")) == target_id:
++                target_result = self._stringify(item.get("result")).lower()
++        if not target_result:
++            return False
++        claim_texts = []
++        for claim in self._seer_memory.declared_claims:
++            if not isinstance(claim, Mapping):
++                continue
++            if self._normalize_reference(claim.get("speaker")) == target_id:
++                claim_texts.append(self._normalize_alias_text(self._stringify(claim.get("claim"))).lower())
++        if not claim_texts:
++            return False
++        wolf_like = any(token in target_result for token in ("wolf", "狼", "bad", "evil"))
++        villager_like = any(token in target_result for token in ("villager", "好人", "human", "村民", "平民"))
++        if wolf_like:
++            return any(token in text for text in claim_texts for token in ("好人", "金水", "查杀", "验好", "村民", "平民"))
++        if villager_like:
++            return any(token in text for text in claim_texts for token in ("狼人", "狼", "查杀", "黑", "坏人"))
++        return False
+ 
+     def _speaks_a_lot(self, target_id: str) -> bool:
+         count = 0
+         for line in self._seer_memory.dialogue_digest:
+-            if target_id in line:
++            if self._text_mentions_reference(line, target_id):
+                 count += 1
+         return count >= 2
+ 
+@@ -1085,6 +1481,8 @@
+             "dead": self._seer_memory.dead[:_SUMMARY_LIST_LIMIT],
+             "sheriff_id": self._seer_memory.sheriff_id,
+             "sheriff_candidates": self._seer_memory.sheriff_candidates[:_SUMMARY_LIST_LIMIT],
++            "seat_to_player_id": dict(list(self._seer_memory.seat_to_player_id.items())[:_SUMMARY_LIST_LIMIT]),
++            "player_to_seat": dict(list(self._seer_memory.player_to_seat.items())[:_SUMMARY_LIST_LIMIT]),
+             "inspected": self._seer_memory.inspected[-_SUMMARY_LIST_LIMIT:],
+             "declared_claims": self._seer_memory.declared_claims[-_SUMMARY_LIST_LIMIT:],
+             "challenged_players": self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT],
+@@ -1146,7 +1544,10 @@
+ 
+     def _speaker_from_text(self, text: str) -> str:
+         ids = _PLAYER_ID_PATTERN.findall(text)
+-        return ids[0] if ids else ""
++        if ids:
++            return ids[0]
++        resolved = self._resolved_player_ids_from_text(text)
++        return resolved[0] if resolved else ""
+ 
+     @staticmethod
+     def _truncate_text(text: str, limit: int) -> str:
+--- seer-n00014/task.md
++++ seer-n00027/task.md
+@@ -25,6 +25,12 @@
+ 5. **持续记录公开信息**
+    - 记录已查验目标、公开身份声明、被质疑对象和最近票型。
+    - 每轮都用这些记忆更新判断，不要当成新的一局。
++   - 必须把中文席位称呼归一化成玩家 ID：例如“1号 / 1位 / 第1号 / 第1位”都要按同一玩家处理，不要把席位数字、回合数和票数混淆。
++
++6. **高压发言要压缩**
++   - 当自己被点名、公开压力高、或信息竞争激烈时，发言只保留“1 个事实 + 1 个可验证推断 + 1 个明确票向”。
++   - 先说查验事实，再说推断，最后给投票方向；不要一次性展开完整推理链。
++   - 被集火时优先保命和落票，不要为了讲完整逻辑而丢失发言力度。
+ 
+ ## 额外要求
+ 

@@ -1,0 +1,679 @@
+--- witch-n00079/task_agent.py
++++ witch-n00114/task_agent.py
+@@ -472,17 +472,39 @@
+             ),
+         }
+ 
+-        ledger_snapshot = self._build_witch_ledger_snapshot()
+-        current_night_death_targets = sorted(self._extract_current_night_death_targets(turn_packet))[:5]
+-        high_confidence_targets = self._rank_witch_targets(ledger_snapshot, min_score=_WITCH_POISON_MIN_SCORE, min_evidence_types=_WITCH_POISON_MIN_EVIDENCE_TYPES)
++        private_context = self._extract_current_witch_private_context(
++            private,
++            request,
++            turn_packet.get("game") if isinstance(turn_packet.get("game"), Mapping) else {},
++        )
++        ledger_snapshot = self._build_witch_ledger_snapshot(limit=None)
++        ledger_for_prompt = ledger_snapshot[:4]
++        current_night_death_targets = sorted(private_context["current_night_death_targets"])[:5]
++        high_confidence_targets = self._rank_witch_targets(
++            ledger_snapshot,
++            min_score=_WITCH_POISON_MIN_SCORE,
++            min_evidence_types=_WITCH_POISON_MIN_EVIDENCE_TYPES,
++            allowed_target_ids=self._allowed_target_ids(allowed_actions, "poison"),
++            public_state=turn_packet.get("public_state"),
++        )
+         high_value_rescue_targets = self._rank_witch_rescue_targets(
+             ledger_snapshot,
+             current_night_death_targets=current_night_death_targets,
++            legal_target_ids=self._allowed_target_ids(allowed_actions, "heal"),
++            public_state=turn_packet.get("public_state"),
+         )
+         recommendation = "pass"
+-        if resource_state.get("antidote_available") and high_value_rescue_targets:
++        if (
++            resource_state.get("antidote_available") is True
++            and high_value_rescue_targets
++            and any(self._is_heal_action_kind(kind) for kind in action_kinds)
++        ):
+             recommendation = f"heal:{high_value_rescue_targets[0]}"
+-        elif resource_state.get("poison_available") and high_confidence_targets:
++        elif (
++            resource_state.get("poison_available") is True
++            and high_confidence_targets
++            and any(self._is_poison_action_kind(kind) for kind in action_kinds)
++        ):
+             recommendation = f"poison:{high_confidence_targets[0]}"
+ 
+         return {
+@@ -491,17 +513,21 @@
+             "current_action_targets": action_targets[:6],
+             "current_night_death_targets": current_night_death_targets,
+             "night_death_targets": current_night_death_targets,
++            "private_current_night_target": current_night_death_targets[0] if len(current_night_death_targets) == 1 else current_night_death_targets,
++            "private_target_source": private_context["source"],
++            "private_target_confidence": private_context["confidence"],
+             "high_value_rescue_targets": high_value_rescue_targets,
+             "high_confidence_targets": high_confidence_targets,
+             "recent_public_deaths": self._witch_recent_public_deaths[-3:],
+             "recent_vote_pressure": self._witch_recent_vote_pressure[-3:],
+             "counterclaim_summary": self._witch_recent_counterclaims[-3:],
+             "role_chain_summary": self._witch_recent_role_chain[-3:],
+-            "ledger_top_suspects": ledger_snapshot,
++            "ledger_top_suspects": ledger_for_prompt,
+             "evidence_gate": {
+                 "poison_min_score": _WITCH_POISON_MIN_SCORE,
+                 "poison_min_evidence_types": _WITCH_POISON_MIN_EVIDENCE_TYPES,
+-                "heal_min_score": _WITCH_HEAL_MIN_SCORE,
++                "poison_requires_independent_structured_sources": True,
++                "heal_requires_private_current_target": True,
+             },
+             "recommendation": recommendation,
+         }
+@@ -513,48 +539,171 @@
+             self._extract_first_scalar(sync_packet, ("round", "day", "night", "turn"))
+         )
+         for signal, weight, sink, keywords in self._witch_signal_specs():
+-            targets = self._collect_structured_targets(sync_packet, keywords)
+-            if not targets:
+-                continue
++            records = self._collect_structured_target_records(sync_packet, signal, keywords)
++            if not records:
++                continue
++            targets = list(dict.fromkeys(record[0] for record in records))
+             note = f"{signal}:{','.join(targets[:4])}"
+-            self._bump_witch_evidence(targets, signal, weight, note, round_value)
++            self._bump_witch_evidence(
++                targets, signal, weight, note, round_value,
++                event_ids={record[1] for record in records},
++            )
+             self._append_compact_entry(sink, note)
++
++    def _extract_current_witch_private_context(
++        self,
++        private: Mapping[str, Any],
++        request: Mapping[str, Any] | None = None,
++        game: Mapping[str, Any] | None = None,
++    ) -> dict[str, Any]:
++        """只从引擎提供的 private 字段读取本夜狼刀，不从公开历史反推。"""
++        del request, game
++        aliases = {
++            "wolf_target", "wolf_target_id", "wolf_kill_target", "wolf_killed_target",
++            "night_attack_target", "night_attack_target_id", "attack_target",
++            "attack_target_id", "killed_target", "killed_target_id",
++            "night_death_target", "night_death_target_id", "current_night_death_target",
++            "current_night_death_targets", "night_kill_target", "night_kill_target_id",
++            "victim_target", "victim_target_id",
++        }
++        targets: set[str] = set()
++
++        def add(value: Any) -> None:
++            if isinstance(value, str):
++                candidate = value.strip()
++                if re.fullmatch(r"p\d+", candidate, re.IGNORECASE):
++                    targets.add(candidate)
++            elif isinstance(value, (list, tuple, set)):
++                for item in value:
++                    add(item)
++            elif isinstance(value, Mapping):
++                for key in ("player_id", "target_id", "id"):
++                    if key in value:
++                        add(value[key])
++
++        def walk(node: Any) -> None:
++            if isinstance(node, Mapping):
++                for key, value in node.items():
++                    normalized = re.sub(r"[^a-z0-9_]", "", str(key).lower())
++                    explicit = normalized in aliases
++                    combined = (
++                        "target" in normalized
++                        and any(token in normalized for token in ("wolf", "attack", "kill", "death", "victim"))
++                    )
++                    if explicit or combined:
++                        add(value)
++                    # 允许 private_information 下有 private/state/night 等有限嵌套，
++                    # 但不会把任意文本中的 p 数字当成狼刀目标。
++                    if isinstance(value, (Mapping, list, tuple)):
++                        walk(value)
++            elif isinstance(node, (list, tuple)):
++                for item in node:
++                    walk(item)
++
++        walk(private)
++        return {
++            "current_night_death_targets": sorted(targets, key=lambda item: (int(item[1:]), item)),
++            "source": "engine_private" if targets else "none",
++            "confidence": "certain" if targets else "unknown",
++        }
++
++    @staticmethod
++    def _allowed_target_ids(allowed_actions: Any, action_family: str) -> set[str]:
++        if not isinstance(allowed_actions, list):
++            return set()
++        matcher = TaskAgent._is_heal_action_kind if action_family == "heal" else TaskAgent._is_poison_action_kind
++        result: set[str] = set()
++        for allowed in allowed_actions:
++            if not isinstance(allowed, Mapping) or not matcher(str(allowed.get("kind") or "")):
++                continue
++            targets = allowed.get("target_ids")
++            if isinstance(targets, list):
++                result.update(str(item).strip() for item in targets if str(item).strip())
++            elif allowed.get("target_id") is not None:
++                result.add(str(allowed["target_id"]).strip())
++        return result
+ 
+     @staticmethod
+     def _witch_signal_specs() -> tuple[tuple[str, int, list[str], tuple[str, ...]], ...]:
+         return (
+             ("death_chain", 3, ["死亡", "出局", "淘汰", "night kill", "wolf kill", "被刀", "刀口"], ("死亡", "出局", "淘汰", "night kill", "wolf kill", "被刀", "刀口", "killed", "dead")),
+             ("vote_pressure", 2, ["投票", "票型", "归票", "vote", "ballot", "pressure"], ("投票", "票型", "归票", "vote", "ballot", "pressure")),
+-            ("claim_conflict", 2, ["悍跳", "对跳", "查杀", "金水", "claim", "counterclaim"], ("悍跳", "对跳", "查杀", "金水", "claim", "counterclaim", "reveal")),
++            ("claim_conflict", 2, ["悍跳", "对跳", "查杀", "金水", "claim", "counterclaim"], ("悍跳", "对跳", "查杀", "金水", "claim", "counterclaim")), 
+             ("role_chain", 1, ["警长", "警徽", "验出", "查验", "sheriff", "seer", "reveal", "确认"], ("警长", "警徽", "验出", "查验", "sheriff", "seer", "reveal", "确认", "investigate")),
+         )
+ 
+     def _collect_structured_targets(self, node: Any, keywords: tuple[str, ...]) -> list[str]:
+-        results: list[str] = []
+-        seen: set[str] = set()
+-
+-        def walk(value: Any, key_hit: bool) -> None:
++        """兼容接口：仅返回显式 target 关系，不扫描命中关键词的整棵子树。"""
++        signal = "vote_pressure" if any("投票" in item or "vote" in item.lower() for item in keywords) else "role_chain"
++        return [item[0] for item in self._collect_structured_target_records(node, signal, keywords)]
++
++    def _collect_structured_target_records(
++        self, node: Any, signal: str, keywords: tuple[str, ...]
++    ) -> list[tuple[str, str]]:
++        target_keys = {
++            "target", "target_id", "checked_id", "against_id", "candidate_id",
++            "candidate_ids", "accused_id", "accused_player_id", "checked_player_id",
++            "voted_id", "voted_player_id", "vote_target", "nominee_id", "eliminated_id",
++        }
++        voter_keys = {"voter", "voter_id", "voting_player_id", "speaker", "speaker_id"}
++        records: list[tuple[str, str]] = []
++
++        def scalar_ids(value: Any) -> list[str]:
++            if isinstance(value, str):
++                return [value.strip()] if re.fullmatch(r"p\d+", value.strip(), re.IGNORECASE) else []
++            if isinstance(value, (list, tuple)):
++                return [item for child in value for item in scalar_ids(child)]
+             if isinstance(value, Mapping):
++                return [item for key in ("player_id", "target_id", "id") if key in value for item in scalar_ids(value[key])]
++            return []
++
++        def event_id(value: Mapping[str, Any], path: str) -> str:
++            for key in ("event_id", "id", "record_id", "message_id", "vote_id"):
++                if key in value and isinstance(value[key], (str, int, float)):
++                    return f"{signal}:{value[key]}"
++            return f"{signal}:{path}:{hashlib.sha256(self._safe_json_dump(value).encode('utf-8')).hexdigest()[:16]}"
++
++        def add_event(value: Mapping[str, Any], path: str, inherited_hit: bool) -> None:
++            local_hit = inherited_hit or any(
++                any(keyword.lower() in str(key).lower() for keyword in keywords)
++                for key in value
++            )
++            target_values: list[str] = []
++            if local_hit:
+                 for key, child in value.items():
+-                    key_text = str(key).lower()
+-                    child_hit = key_hit or any(keyword.lower() in key_text for keyword in keywords)
+-                    if child_hit:
+-                        for player_id in self._extract_player_ids(self._safe_json_dump(child)):
+-                            if player_id not in seen:
+-                                seen.add(player_id)
+-                                results.append(player_id)
+-                    walk(child, child_hit)
+-            elif isinstance(value, list):
+-                for item in value:
+-                    walk(item, key_hit)
+-            elif isinstance(value, str) and key_hit:
+-                for player_id in self._extract_player_ids(value):
+-                    if player_id not in seen:
+-                        seen.add(player_id)
+-                        results.append(player_id)
+-
+-        walk(node, False)
+-        return results
++                    normalized = re.sub(r"[^a-z0-9_]", "", str(key).lower())
++                    if normalized in target_keys:
++                        target_values.extend(scalar_ids(child))
++                # 投票事件的 voter 只作为来源信息，绝不成为被投目标。
++                target_values = list(dict.fromkeys(target_values))
++                if target_values:
++                    eid = event_id(value, path)
++                    for target in target_values:
++                        records.append((target, eid))
++            for key, child in value.items():
++                key_hit = any(keyword.lower() in str(key).lower() for keyword in keywords)
++                child_hit = inherited_hit or key_hit
++                if isinstance(child, Mapping):
++                    add_event(child, f"{path}.{key}", child_hit)
++                elif isinstance(child, list):
++                    for index, item in enumerate(child):
++                        if isinstance(item, Mapping):
++                            add_event(item, f"{path}.{key}[{index}]", child_hit)
++
++        if isinstance(node, Mapping):
++            add_event(node, "$", False)
++        elif isinstance(node, list):
++            for index, item in enumerate(node):
++                if isinstance(item, Mapping):
++                    add_event(item, f"$[{index}]", False)
++
++        unique: list[tuple[str, str]] = []
++        seen: set[tuple[str, str]] = set()
++        for record in records:
++            if record not in seen:
++                seen.add(record)
++                unique.append(record)
++        return unique
+ 
+     def _bump_witch_evidence(
+         self,
+@@ -563,6 +712,7 @@
+         weight: int,
+         note: str,
+         round_value: int | None,
++        event_ids: set[str] | None = None,
+     ) -> None:
+         if not players:
+             return
+@@ -585,11 +735,27 @@
+                     "evidence_types": [],
+                     "last_round": None,
+                     "notes": [],
++                    "event_ids": [],
++                    "distinct_evidence_sources": [],
++                    "supporting_event_count": 0,
++                    "contradiction_count": 0,
++                    "alive": None,
+                 },
+             )
+-            entry["score"] = int(entry.get("score", 0)) + weight
+-            entry[field_name] = int(entry.get(field_name, 0)) + weight
++            observed_events = event_ids or {f"{signal}:{note}"}
++            known_events = entry.setdefault("event_ids", [])
++            new_events = [item for item in observed_events if item not in known_events]
++            if not new_events:
++                continue
++            known_events.extend(new_events)
++            del known_events[:-30]
++            entry["supporting_event_count"] = len(known_events)
++            entry["score"] = int(entry.get("score", 0)) + weight * len(new_events)
++            entry[field_name] = int(entry.get(field_name, 0)) + weight * len(new_events)
+             evidence_types = entry.setdefault("evidence_types", [])
++            sources = entry.setdefault("distinct_evidence_sources", [])
++            if signal not in sources:
++                sources.append(signal)
+             if signal not in evidence_types:
+                 evidence_types.append(signal)
+             if round_value is not None:
+@@ -611,13 +777,14 @@
+         if len(sink) > limit:
+             del sink[:-limit]
+ 
+-    def _build_witch_ledger_snapshot(self) -> list[dict[str, Any]]:
++    def _build_witch_ledger_snapshot(self, limit: int | None = 4) -> list[dict[str, Any]]:
+         items: list[dict[str, Any]] = []
+         for player_id, payload in self._witch_evidence_ledger.items():
+             evidence_types = list(dict.fromkeys(str(item) for item in payload.get("evidence_types", []) if str(item).strip()))
+             items.append(
+                 {
+                     "player_id": player_id,
++                    "target_id": player_id,
+                     "score": int(payload.get("score", 0)),
+                     "vote_pressure": int(payload.get("vote_pressure", 0)),
+                     "claim_conflict": int(payload.get("claim_conflict", 0)),
+@@ -627,6 +794,10 @@
+                     "evidence_type_count": len(evidence_types),
+                     "last_round": self._coerce_round_number(payload.get("last_round")),
+                     "notes": list(payload.get("notes", []))[-2:],
++                    "distinct_evidence_sources": list(payload.get("distinct_evidence_sources", [])),
++                    "supporting_event_count": int(payload.get("supporting_event_count", 0)),
++                    "contradiction_count": int(payload.get("contradiction_count", 0)),
++                    "alive": payload.get("alive"),
+                 }
+             )
+         items.sort(
+@@ -637,7 +808,7 @@
+                 str(item.get("player_id", "")),
+             )
+         )
+-        return items[:4]
++        return items if limit is None else items[:limit]
+ 
+     def _compact_witch_context(self, witch_context: Mapping[str, Any]) -> str:
+         summary = {
+@@ -658,8 +829,8 @@
+             "任何内部状态都不能被说成已公开事实。",
+         ]
+         if witch_context:
+-            notes.append("决策时先核对 current_night_death_targets、high_value_rescue_targets、high_confidence_targets；")
+-            notes.append("救人只在当夜真实夜死存在且命中关键公开链时使用，毒药只在结构化高置信候选集内使用。")
++            notes.append("硬顺序：先服从 allowed_actions 与资源状态；私密当前夜目标只来自 engine_private，只用于内部救药，不得公开；没有该目标就不救。")
++            notes.append("救药候选与毒药候选分离：救药看私密刀口加公开价值，毒药只看指向同一目标的独立结构化公开来源；否则 pass。")
+         return "".join(notes)
+ 
+     def _apply_role_safe_fallback(
+@@ -679,7 +850,13 @@
+             }
+             return action
+ 
+-        pass_action = self._find_pass_action(turn_packet["request"].get("allowed_actions", []), turn_packet["request"])
++        allowed_actions = turn_packet["request"].get("allowed_actions", [])
++        pass_action = self._find_pass_action(allowed_actions, turn_packet["request"])
++        allowed_kinds = {
++            str(item.get("kind") or "") for item in allowed_actions if isinstance(item, Mapping)
++        }
++        if kind not in allowed_kinds and pass_action is not None:
++            return pass_action
+         target_id = str(action.get("target_id") or "").strip()
+         if not target_id:
+             if pass_action is not None:
+@@ -696,25 +873,38 @@
+             }
+             return action
+ 
+-        ledger_snapshot = self._build_witch_ledger_snapshot()
++        request = turn_packet["request"]
++        ledger_snapshot = self._build_witch_ledger_snapshot(limit=None)
+         poison_targets = set(
+             self._rank_witch_targets(
+                 ledger_snapshot,
+                 min_score=_WITCH_POISON_MIN_SCORE,
+                 min_evidence_types=_WITCH_POISON_MIN_EVIDENCE_TYPES,
++                allowed_target_ids=self._allowed_target_ids(allowed_actions, "poison"),
++                public_state=turn_packet.get("public_state"),
+             )
+         )
+-        current_night_death_targets = sorted(self._extract_current_night_death_targets(turn_packet))
++        private = turn_packet.get("private_information")
++        private_context = (
++            self._extract_current_witch_private_context(private, request, turn_packet.get("game"))
++            if isinstance(private, Mapping) else {"current_night_death_targets": []}
++        )
++        current_night_death_targets = sorted(private_context.get("current_night_death_targets", []))
+         rescue_targets = set(
+             self._rank_witch_rescue_targets(
+                 ledger_snapshot,
+                 current_night_death_targets=current_night_death_targets,
++                legal_target_ids=self._allowed_target_ids(allowed_actions, "heal"),
++                public_state=turn_packet.get("public_state"),
+             )
+         )
+         candidate = self._lookup_witch_candidate(target_id, ledger_snapshot)
+ 
+         if is_poison:
+-            if self._is_witch_poison_candidate(candidate) and target_id in poison_targets:
++            poison_available = self._coerce_bool_scalar(
++                self._extract_first_scalar(private or {}, ("poison_available", "poison_left", "kill_available"))
++            ) if isinstance(private, Mapping) else None
++            if poison_available is True and self._is_witch_poison_candidate(candidate) and target_id in poison_targets:
+                 self._last_decision_audit = {
+                     "raw_response": raw_response,
+                     "normalized_action": action,
+@@ -740,7 +930,10 @@
+             return action
+ 
+         if is_heal:
+-            if target_id in rescue_targets:
++            antidote_available = self._coerce_bool_scalar(
++                self._extract_first_scalar(private or {}, ("antidote_available", "save_available", "heal_available"))
++            ) if isinstance(private, Mapping) else None
++            if antidote_available is True and target_id in rescue_targets and target_id in set(current_night_death_targets):
+                 self._last_decision_audit = {
+                     "raw_response": raw_response,
+                     "normalized_action": action,
+@@ -766,30 +959,60 @@
+         return action
+ 
+     def _extract_current_night_death_targets(self, turn_packet: Mapping[str, Any]) -> set[str]:
+-        targets: set[str] = set()
+-        for key in ("public_state", "game", "request", "tool_context"):
+-            value = turn_packet.get(key)
+-            if value is None:
+-                continue
+-            targets.update(
+-                self._collect_structured_targets(
+-                    value,
+-                    (
+-                        "night kill",
+-                        "wolf kill",
+-                        "被刀",
+-                        "刀口",
+-                        "狼刀",
+-                        "夜杀",
+-                        "死亡",
+-                        "出局",
+-                        "淘汰",
+-                        "dead",
+-                        "killed",
+-                    ),
+-                )
+-            )
+-        return targets
++        """兼容旧调用者；当前夜目标仍严格只来自 private_information。"""
++        private = turn_packet.get("private_information")
++        if not isinstance(private, Mapping):
++            return set()
++        context = self._extract_current_witch_private_context(
++            private,
++            turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {},
++            turn_packet.get("game") if isinstance(turn_packet.get("game"), Mapping) else {},
++        )
++        return set(context["current_night_death_targets"])
++
++    def _extract_public_dead_ids(self, public_state: Any) -> set[str]:
++        """读取公开的死亡/出局状态，仅用于排除毒药目标；不解释私密刀口。"""
++        dead: set[str] = set()
++        dead_keys = {
++            "dead", "dead_players", "dead_player_ids", "deceased", "eliminated",
++            "eliminated_players", "eliminated_player_ids", "out_players", "死亡玩家",
++        }
++
++        def ids(value: Any) -> None:
++            if isinstance(value, str) and re.fullmatch(r"p\d+", value.strip(), re.IGNORECASE):
++                dead.add(value.strip())
++            elif isinstance(value, (list, tuple, set)):
++                for item in value:
++                    ids(item)
++            elif isinstance(value, Mapping):
++                for key in ("player_id", "target_id", "id"):
++                    if key in value:
++                        ids(value[key])
++
++        def walk(node: Any) -> None:
++            if isinstance(node, Mapping):
++                for key, value in node.items():
++                    normalized = str(key).lower().replace("-", "_")
++                    if normalized in dead_keys or any(token in normalized for token in ("dead_player", "eliminated_player")):
++                        ids(value)
++                    if normalized in {"players", "player_states", "status_by_player"} and isinstance(value, (list, Mapping)):
++                        if isinstance(value, list):
++                            for item in value:
++                                if isinstance(item, Mapping) and self._coerce_bool_scalar(item.get("alive")) is False:
++                                    ids(item)
++                        else:
++                            for player_id, state in value.items():
++                                if self._coerce_bool_scalar(state) is False or (
++                                    isinstance(state, Mapping) and self._coerce_bool_scalar(state.get("alive")) is False
++                                ):
++                                    ids(player_id)
++                    walk(value)
++            elif isinstance(node, list):
++                for item in node:
++                    walk(item)
++
++        walk(public_state)
++        return dead
+ 
+     def _rank_witch_targets(
+         self,
+@@ -797,15 +1020,26 @@
+         *,
+         min_score: int,
+         min_evidence_types: int,
++        allowed_target_ids: set[str] | None = None,
++        public_state: Any = None,
+     ) -> list[str]:
++        alive = self._extract_public_dead_ids(public_state)
+         ranked: list[str] = []
+         for item in ledger_snapshot:
+             player_id = str(item.get("player_id") or "").strip()
+-            if not player_id:
+-                continue
+-            score = int(item.get("score", 0))
+-            evidence_type_count = int(item.get("evidence_type_count", 0))
+-            if score < min_score or evidence_type_count < min_evidence_types:
++            if not player_id or player_id == self.player_id or player_id in alive:
++                continue
++            if self._coerce_bool_scalar(item.get("alive")) is False:
++                continue
++            if allowed_target_ids is not None and player_id not in allowed_target_ids:
++                continue
++            sources = set(str(value) for value in item.get("distinct_evidence_sources", []))
++            if len(sources) < min_evidence_types:
++                continue
++            if int(item.get("contradiction_count", 0)) > 0:
++                continue
++            # score 仅用于排序/兼容旧账本，放行依据是独立结构化来源。
++            if int(item.get("score", 0)) < min_score:
+                 continue
+             ranked.append(player_id)
+         return ranked
+@@ -815,17 +1049,68 @@
+         ledger_snapshot: list[dict[str, Any]],
+         *,
+         current_night_death_targets: list[str],
++        legal_target_ids: set[str] | None = None,
++        public_state: Any = None,
+     ) -> list[str]:
+-        death_target_set = {str(item).strip() for item in current_night_death_targets if str(item).strip()}
+-        ranked: list[str] = []
+-        for item in ledger_snapshot:
+-            player_id = str(item.get("player_id") or "").strip()
+-            if not player_id or player_id not in death_target_set:
+-                continue
+-            if not self._is_witch_heal_candidate(item):
+-                continue
+-            ranked.append(player_id)
+-        return ranked
++        death_target_set = {
++            str(item).strip() for item in current_night_death_targets if re.fullmatch(r"p\d+", str(item).strip(), re.IGNORECASE)
++        }
++        if legal_target_ids is not None:
++            death_target_set &= legal_target_ids
++        if not death_target_set:
++            return []
++        by_id = {str(item.get("player_id") or "").strip(): item for item in ledger_snapshot}
++        public_value_targets = self._extract_public_value_targets(public_state)
++        ranked: list[tuple[int, str]] = []
++        for player_id in death_target_set:
++            if player_id == self.player_id:
++                continue
++            item = by_id.get(player_id)
++            if not self._is_witch_heal_candidate(item) and player_id not in public_value_targets:
++                continue
++            score = self._public_value_score(item) + (2 if player_id in public_value_targets else 0)
++            ranked.append((score, player_id))
++        ranked.sort(key=lambda pair: (-pair[0], pair[1]))
++        return [player_id for _, player_id in ranked]
++
++    def _extract_public_value_targets(self, public_state: Any) -> set[str]:
++        """提取公开关键位的拥有者；这是救药的价值信号，不是毒药证据。"""
++        result: set[str] = set()
++        value_words = ("sheriff", "警长", "警徽", "seer", "预言", "查验", "金水", "claim", "跳")
++        owner_keys = {"speaker_id", "speaker", "owner_id", "seer_id", "sheriff_id", "player_id"}
++
++        def add(value: Any) -> None:
++            if isinstance(value, str) and re.fullmatch(r"p\d+", value.strip(), re.IGNORECASE):
++                result.add(value.strip())
++            elif isinstance(value, Mapping):
++                for key in ("player_id", "speaker_id", "owner_id", "seer_id", "sheriff_id"):
++                    if key in value:
++                        add(value[key])
++
++        def walk(node: Any, relevant: bool = False) -> None:
++            if isinstance(node, Mapping):
++                local = relevant or any(any(word in str(key).lower() for word in value_words) for key in node)
++                if local:
++                    for key, value in node.items():
++                        if str(key).lower() in owner_keys:
++                            add(value)
++                for value in node.values():
++                    walk(value, local)
++            elif isinstance(node, list):
++                for item in node:
++                    walk(item, relevant)
++
++        walk(public_state)
++        return result
++
++    @staticmethod
++    def _public_value_score(candidate: Mapping[str, Any] | None) -> int:
++        if not isinstance(candidate, Mapping):
++            return 0
++        return sum(
++            1 for field in ("role_chain", "claim_conflict", "vote_pressure")
++            if int(candidate.get(field, 0)) > 0
++        )
+ 
+     def _lookup_witch_candidate(
+         self,
+@@ -844,19 +1129,27 @@
+     def _is_witch_poison_candidate(candidate: Mapping[str, Any] | None) -> bool:
+         if not isinstance(candidate, Mapping):
+             return False
+-        score = int(candidate.get("score", 0))
+-        evidence_type_count = int(candidate.get("evidence_type_count", 0))
+-        return score >= _WITCH_POISON_MIN_SCORE and evidence_type_count >= _WITCH_POISON_MIN_EVIDENCE_TYPES
++        sources = {
++            str(item).strip() for item in candidate.get("distinct_evidence_sources", []) if str(item).strip()
++        }
++        return (
++            bool(re.fullmatch(r"p\d+", str(candidate.get("player_id") or ""), re.IGNORECASE))
++            and len(sources) >= _WITCH_POISON_MIN_EVIDENCE_TYPES
++            and int(candidate.get("supporting_event_count", 0)) >= 2
++            and int(candidate.get("contradiction_count", 0)) == 0
++        )
+ 
+     @staticmethod
+     def _is_witch_heal_candidate(candidate: Mapping[str, Any] | None) -> bool:
+         if not isinstance(candidate, Mapping):
+             return False
+-        score = int(candidate.get("score", 0))
+-        if score < _WITCH_HEAL_MIN_SCORE:
+-            return False
+-        evidence_types = {str(item) for item in candidate.get("evidence_types", []) if str(item).strip()}
+-        return bool(evidence_types & {"death_chain", "claim_conflict", "role_chain"})
++        # 救药只要求真实私密刀口已经确定；这些字段只是公开价值信号，
++        # death_chain 不算价值，因为它通常表示历史死亡而非存活关键位。
++        fields = ("role_chain", "claim_conflict", "vote_pressure")
++        if any(int(candidate.get(field, 0)) > 0 for field in fields):
++            return True
++        evidence_types = {str(item) for item in candidate.get("evidence_types", [])}
++        return bool(evidence_types & set(fields))
+ 
+     def _extract_targets_from_text(self, text: str, keywords: tuple[str, ...]) -> set[str]:
+         snippet = self._extract_keyword_snippet(text, keywords)
+--- witch-n00079/task.md
++++ witch-n00114/task.md
+@@ -5,12 +5,13 @@
+ ## 每次决策的强约束
+ 
+ 1. 先确认当前动作是否属于女巫可用动作，以及解药、毒药是否还可用。
+-2. **没有当前夜真实夜死/狼刀目标时，默认选择 pass，不要把解药当成默认动作。**
+-3. **公开讨论里被点名、被提到、被围绕讨论，不等于高置信嫌疑。** 只有结构化、多源、一致的公开证据才能进入毒药候选。
+-4. **毒药只能在结构化高置信候选集内使用。** 如果目标只是“看起来可疑”“被多人提到”“来自自生成嫌疑名单”，一律不够。
+-5. **自生成的嫌疑名单、模型自己拼出来的候选集、或单一文本片段，不能作为毒药依据。**
+-6. 如果证据不足、目标不在高价值/高置信范围内，默认选择合法弃权（pass），不要为了“尽量做事”而乱救乱毒。
+-7. 任何时候都不要把当前回合的私密信息解释成公开事实。
++2. **没有当前夜真实夜死/狼刀目标时，默认选择 pass，不要把解药当成默认动作。** 救药候选只能来自当前行动包的私密狼刀目标；公开信息只用于判断这个目标是否值得救，不能用公开历史死亡反推刀口。
++3. **救药判定与毒药判定完全分离。** 私密当前夜目标只用于内部救药判断，不得公开，也不得直接作为毒药依据；毒药候选只能来自结构化公开的目标关系。
++4. **公开讨论里被点名、被提到、被围绕讨论，不等于高置信嫌疑。** 只有结构化、多源、一致的公开证据才能进入毒药候选。
++5. **毒药只能在结构化高置信候选集内使用。** 目标必须当前存活，并由至少两种独立的结构化公开来源一致指向同一个 target_id，且没有明显冲突；死亡链、宽泛分数、发言文本或自生成名单都不能单独放行。
++6. **自生成的嫌疑名单、模型自己拼出来的候选集、或单一文本片段，不能作为毒药依据。**
++7. 如果证据不足、目标不在高价值/高置信范围内，默认选择合法弃权（pass），不要为了“尽量做事”而乱救乱毒。
++8. 任何时候都不要把当前回合的私密信息解释成公开事实。
+ 
+ ## 允许的高价值判断
+ 

@@ -1,0 +1,513 @@
+--- guard-n00017/task_agent.py
++++ guard-n00049/task_agent.py
+@@ -188,13 +188,14 @@
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
+         self.last_protected_id: str | None = None
+         self.last_protected_round: Any = None
+-        self.public_claims: dict[str, set[str]] = {}
++        self.public_claims: dict[str, dict[str, Any]] = {}
+         self.suspected_wolves: set[str] = set()
+         self.trusted_info_ids: set[str] = set()
+         self.self_publicly_claimed_guard = False
+         self.current_public_sheriff_id: str | None = None
+         self.public_alive_ids: list[str] = []
+         self.public_dead_ids: set[str] = set()
++        self._current_ingest_round: Any = None
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -237,7 +238,9 @@
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
++        self._current_ingest_round = self._current_round_value(turn_packet)
+         self._ingest_dialogue(current_dialogue)
++        self._current_ingest_round = None
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -255,7 +258,7 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], feedback),
++                "instruction": self._turn_instruction(turn_packet["request"], feedback, turn_packet),
+                 "packet": prompt,
+             }
+             try:
+@@ -332,7 +335,7 @@
+             max_prompt_chars=self.max_prompt_chars,
+         )
+ 
+-    def _turn_instruction(self, request: Mapping[str, Any], feedback: str) -> str:
++    def _turn_instruction(self, request: Mapping[str, Any], feedback: str, turn_packet: Mapping[str, Any] | None = None) -> str:
+         instruction = render_prompt(
+             "player_turn_instruction.txt",
+             action_contract=render_action_contract(request),
+@@ -340,15 +343,19 @@
+         )
+         extra_notes: list[str] = []
+         if self.profile.role == _GUARD_ROLE_NAME:
++            top_hints = self._compact_guard_priority_hints(turn_packet or {"request": request}, limit=3)
++            hint_text = "、".join(
++                f"{item['target']}({item['score']})" for item in top_hints if item.get("target")
++            ) or "无"
+             extra_notes.append(
+-                "守卫专用：最终 target_id 只能从本次 contract 的 target_ids 中选择；"
+-                "不要因为警长身份自动守护；可信查杀目标、狼嫌警长和上一夜守过的人要降权；"
+-                "不确定时选择当前合法的高价值目标，不要臆造目标。"
++                "守卫专用：严格按层级选人；公开预言家/金水 > 已公开关键神职 > 可信组织位 > 无明显狼嫌警长 > 平民。"
++                f"当前 top 候选：{hint_text}。"
++                "不要连续守同一人；首夜优先信息位；残局人数很少或关键位暴露时才考虑自守；"
++                "平安夜不等于守中成功，不要把没死人说成确认守中。"
+             )
+             if self.self_publicly_claimed_guard:
+                 extra_notes.append(
+-                    "你已经公开跳过守卫时，后续不要再把自己说成平民或无夜间信息；"
+-                    "可以说你只知道自己守过谁，但不能确认是否守中刀。"
++                    "你已经公开跳过守卫：后续保持守卫视角，不要再自称平民或无夜间信息。"
+                 )
+         if extra_notes:
+             instruction = instruction + "\n\n" + "\n".join(extra_notes)
+@@ -386,25 +393,47 @@
+             if self._pass_allowed(request):
+                 return self._make_pass_action(request, action)
+             return action
+-        target_id = action.get("target_id")
+-        if target_id in allowed_target_ids:
++        ranked = self._rank_guard_targets(allowed_target_ids, turn_packet)
++        if not ranked:
++            if self._pass_allowed(request):
++                return self._make_pass_action(request, action)
+             return action
+-        ranked = self._rank_guard_targets(allowed_target_ids, turn_packet)
+-        if ranked:
++        target_id = str(action.get("target_id") or "")
++        if target_id not in allowed_target_ids:
+             repaired = dict(action)
+             repaired["target_id"] = ranked[0]
+             return repaired
+-        if self._pass_allowed(request):
+-            return self._make_pass_action(request, action)
++        if target_id == ranked[0]:
++            return action
++        score_map = {candidate: self._score_guard_target(candidate, turn_packet)[0] for candidate in allowed_target_ids}
++        best_target = ranked[0]
++        best_score = score_map.get(best_target, self._score_guard_target(best_target, turn_packet)[0])
++        selected_score = score_map.get(target_id, self._score_guard_target(target_id, turn_packet)[0])
++        selected_rank = ranked.index(target_id) + 1 if target_id in ranked else None
++        if selected_rank is not None and selected_rank <= 3 and best_score - selected_score < 35:
++            return action
++        if best_score - selected_score >= 35:
++            repaired = dict(action)
++            repaired["target_id"] = best_target
++            return repaired
+         return action
+ 
+-    def _rank_guard_targets(
++    def _score_guard_candidates(
+         self,
+         candidates: list[str],
+         turn_packet: Mapping[str, Any],
+-    ) -> list[str]:
+-        request = turn_packet.get("request") if isinstance(turn_packet, Mapping) else {}
++    ) -> list[tuple[int, int, str]]:
++        candidate_scores: list[tuple[int, int, str]] = []
++        for index, candidate in enumerate(candidates):
++            score, _reasons = self._score_guard_target(candidate, turn_packet)
++            candidate_scores.append((score, index, candidate))
++        candidate_scores.sort(key=lambda item: (-item[0], item[1]))
++        return candidate_scores
++
++    def _score_guard_target(self, candidate: str, turn_packet: Mapping[str, Any]) -> tuple[int, list[str]]:
+         public_state = turn_packet.get("public_state") if isinstance(turn_packet, Mapping) else {}
++        if not isinstance(public_state, Mapping):
++            public_state = {}
+         sheriff_id = self._extract_first_player_id(
+             self._first_present(
+                 public_state,
+@@ -414,44 +443,86 @@
+                 "badge_owner_id",
+             )
+         )
++        alive_set = self._alive_id_set(public_state)
++        alive_count = len(alive_set) if alive_set else len(self.public_alive_ids)
+         current_round = self._current_round_value(turn_packet)
+-        candidate_scores: list[tuple[int, int, str]] = []
+-        for index, candidate in enumerate(candidates):
+-            score = 0
+-            labels = self.public_claims.get(candidate, set())
+-            if candidate == self.last_protected_id and current_round is not None and self.last_protected_round == current_round:
+-                score -= 200
+-            elif candidate == self.last_protected_id:
+-                score -= 80
+-            if candidate in self.public_dead_ids:
+-                score -= 200
+-            if self.public_alive_ids and candidate not in self.public_alive_ids:
+-                score -= 60
+-            if candidate in self.suspected_wolves:
+-                score -= 140
+-            if "public_check_kill" in labels or "sheriff_from_suspect" in labels:
+-                score -= 110
+-            if candidate == sheriff_id:
+-                score += 25
+-                if candidate in self.suspected_wolves or "sheriff_from_suspect" in labels:
+-                    score -= 90
+-            if candidate in self.trusted_info_ids:
+-                score += 120
+-            if "seer_claim" in labels or "check_kill" in labels or "check_clear" in labels:
+-                score += 65
+-            if "witch_claim" in labels or "hunter_claim" in labels:
++        record = self._claim_record(candidate)
++        claim_types = self._claim_types(record)
++        target_ids = set(self._record_target_ids(record))
++        score = 0
++        reasons: list[str] = []
++
++        if candidate in self.public_dead_ids:
++            return -1000, ["已死亡"]
++        if alive_set and candidate not in alive_set:
++            score -= 260
++            reasons.append("不在存活")
++        if candidate in self.suspected_wolves:
++            score -= 220
++            reasons.append("狼嫌")
++        if candidate == self.last_protected_id and current_round is not None and self.last_protected_round == current_round:
++            score -= 180
++            reasons.append("刚守过")
++        elif candidate == self.last_protected_id:
++            score -= 100
++            reasons.append("上夜守过")
++
++        if candidate == self.player_id:
++            if alive_count and alive_count <= 4:
++                score += 90
++                reasons.append("残局自守")
++            else:
++                score -= 70
++                reasons.append("默认不自守")
++
++        if "public_check_kill" in claim_types:
++            score -= 180
++            reasons.append("被公开查杀")
++        if "sheriff_from_suspect" in claim_types:
++            score -= 150
++            reasons.append("狼嫌移交")
++        if "sheriff_transfer" in claim_types:
++            score -= 60
++            reasons.append("警徽移交")
++
++        if candidate in self.trusted_info_ids:
++            score += 150
++            reasons.append("可信信息位")
++        if "check_kill" in claim_types:
++            score += 140 if candidate in self.trusted_info_ids else 90
++            reasons.append("公开查杀")
++        if "check_clear" in claim_types:
++            score += 135 if candidate in self.trusted_info_ids else 85
++            reasons.append("公开金水")
++        if "seer_claim" in claim_types:
++            score += 120
++            reasons.append("预言家")
++        if "witch_claim" in claim_types or "hunter_claim" in claim_types or "guard_claim" in claim_types:
++            score += 105
++            reasons.append("关键神职")
++        if candidate == sheriff_id:
++            if candidate in self.suspected_wolves or "sheriff_from_suspect" in claim_types:
++                score -= 95
++                reasons.append("狼嫌警长")
++            else:
+                 score += 45
+-            if candidate == self.player_id:
+-                score += 18
+-            if "guard_claim" in labels:
+-                score += 8
+-            if "sheriff_transfer" in labels:
+-                score -= 35
+-            if candidate in self._alive_id_set(public_state):
+-                score += 0
+-            candidate_scores.append((score, index, candidate))
+-        candidate_scores.sort(key=lambda item: (-item[0], item[1]))
+-        return [candidate for _, _, candidate in candidate_scores]
++                reasons.append("警长")
++        if "sheriff_related" in claim_types:
++            score += 8
++        if target_ids and any(target in self.suspected_wolves for target in target_ids):
++            score += 10
++            reasons.append("指向狼嫌")
++        if candidate not in self.trusted_info_ids and not claim_types and candidate not in self.suspected_wolves:
++            score += 0
++        return score, reasons
++
++    def _rank_guard_targets(
++        self,
++        candidates: list[str],
++        turn_packet: Mapping[str, Any],
++    ) -> list[str]:
++        scored = self._score_guard_candidates(candidates, turn_packet)
++        return [candidate for _, _, candidate in scored]
+ 
+     def _record_successful_guard_action(self, action: Mapping[str, Any], turn_packet: Mapping[str, Any]) -> None:
+         if action.get("kind") != "guard_protect":
+@@ -465,6 +536,7 @@
+     def _ingest_public_packet(self, packet: Mapping[str, Any] | Any) -> None:
+         if not isinstance(packet, Mapping):
+             return
++        self._current_ingest_round = self._current_round_value(packet)
+         public_state = packet.get("public_state")
+         if isinstance(public_state, Mapping):
+             self._ingest_public_state(public_state)
+@@ -474,6 +546,7 @@
+         if isinstance(tool_context, Mapping):
+             self._ingest_dialogue(tool_context.get("current_round_dialogue"))
+         self._ingest_dialogue(packet.get("current_round_dialogue"))
++        self._current_ingest_round = None
+ 
+     def _ingest_public_state(self, public_state: Mapping[str, Any]) -> None:
+         alive_ids = self._alive_id_list(public_state)
+@@ -554,67 +627,111 @@
+         speaker = self._normalize_player_id(speaker_id)
+         lower = cleaned.lower()
+         ids_in_text = self._extract_player_ids(cleaned)
++        round_value = self._current_ingest_round
+ 
+         if speaker == self.player_id and ("守卫" in cleaned or "guard" in lower):
+             self.self_publicly_claimed_guard = True
+         if "我是守卫" in cleaned or ("守卫" in cleaned and ("我是" in cleaned or "跳守卫" in cleaned)):
+-            self._note_public_claim(speaker, "guard_claim")
++            self._note_public_claim(speaker, "guard_claim", source=speaker, round_value=round_value)
+             if speaker == self.player_id:
+                 self.self_publicly_claimed_guard = True
+         if "我是预言家" in cleaned or ("预言家" in cleaned and ("查杀" in cleaned or "金水" in cleaned or "验" in cleaned)):
+-            self._note_public_claim(speaker, "seer_claim")
++            self._note_public_claim(speaker, "seer_claim", source=speaker, target_ids=ids_in_text, round_value=round_value)
+         if "我是女巫" in cleaned or ("女巫" in cleaned and "我是" in cleaned):
+-            self._note_public_claim(speaker, "witch_claim")
++            self._note_public_claim(speaker, "witch_claim", source=speaker, round_value=round_value)
+         if "我是猎人" in cleaned or ("猎人" in cleaned and "我是" in cleaned):
+-            self._note_public_claim(speaker, "hunter_claim")
++            self._note_public_claim(speaker, "hunter_claim", source=speaker, round_value=round_value)
+         if "警长" in cleaned or "警徽" in cleaned:
+-            self._note_public_claim(speaker, "sheriff_related")
++            self._note_public_claim(speaker, "sheriff_related", source=speaker, target_ids=ids_in_text, round_value=round_value)
+         if "移交" in cleaned and "警徽" in cleaned:
+-            self._note_public_claim(speaker, "sheriff_transfer")
++            self._note_public_claim(speaker, "sheriff_transfer", source=speaker, target_ids=ids_in_text, round_value=round_value)
+             if speaker in self.suspected_wolves:
+                 for pid in ids_in_text:
+                     if pid != speaker:
+-                        self._note_public_claim(pid, "sheriff_from_suspect")
++                        self._note_public_claim(pid, "sheriff_from_suspect", source=speaker, round_value=round_value)
+         if "查杀" in cleaned:
+-            self._note_public_claim(speaker, "check_kill")
++            self._note_public_claim(speaker, "check_kill", source=speaker, target_ids=ids_in_text, round_value=round_value)
+             if self._looks_like_info_provider(cleaned, speaker):
+                 self.trusted_info_ids.add(speaker)
+             for pid in ids_in_text:
+                 if pid != speaker:
+                     self.suspected_wolves.add(pid)
+-                    self._note_public_claim(pid, "public_check_kill")
++                    self._note_public_claim(pid, "public_check_kill", source=speaker, round_value=round_value)
+         if "金水" in cleaned:
+-            self._note_public_claim(speaker, "check_clear")
++            self._note_public_claim(speaker, "check_clear", source=speaker, target_ids=ids_in_text, round_value=round_value)
+             if self._looks_like_info_provider(cleaned, speaker):
+                 self.trusted_info_ids.add(speaker)
+             for pid in ids_in_text:
+                 if pid != speaker:
+-                    self._note_public_claim(pid, "public_check_clear")
++                    self._note_public_claim(pid, "public_check_clear", source=speaker, round_value=round_value)
+         if "对跳" in cleaned and "守卫" in cleaned:
+-            self._note_public_claim(speaker, "guard_counterclaim")
++            self._note_public_claim(speaker, "guard_counterclaim", source=speaker, round_value=round_value)
+         if speaker and speaker == self.player_id and "守卫" in cleaned:
+             self.self_publicly_claimed_guard = True
+ 
+     def _looks_like_info_provider(self, text: str, speaker: str | None) -> bool:
+         if speaker is None:
+             return False
+-        if "预言家" in text or "验" in text:
+-            return True
+-        labels = self.public_claims.get(speaker, set())
+-        return "seer_claim" in labels
+-
+-    def _note_public_claim(self, player_id: str | None, label: str) -> None:
++        normalized = self._normalize_player_id(speaker)
++        record = self._claim_record(normalized)
++        if record is not None:
++            claim_types = self._claim_types(record)
++            if {"seer_claim", "check_kill", "check_clear"} & claim_types:
++                return True
++        return "预言家" in text or "验" in text
++
++    def _note_public_claim(
++        self,
++        player_id: str | None,
++        claim_type: str,
++        *,
++        source: str | None = None,
++        target_ids: list[str] | None = None,
++        round_value: Any | None = None,
++    ) -> None:
+         normalized = self._normalize_player_id(player_id)
+-        if not normalized or not label:
+-            return
+-        labels = self.public_claims.setdefault(normalized, set())
+-        labels.add(label)
++        if not normalized or not claim_type:
++            return
++        record = self.public_claims.setdefault(
++            normalized,
++            {
++                "claim_types": set(),
++                "first_seen_round": None,
++                "first_seen_source": None,
++                "first_seen_speaker": None,
++                "last_seen_round": None,
++                "target_ids": set(),
++                "evidence_count": 0,
++            },
++        )
++        claim_types = record.setdefault("claim_types", set())
++        if isinstance(claim_types, set):
++            claim_types.add(str(claim_type))
++        else:
++            record["claim_types"] = {str(claim_type)}
++        if record.get("first_seen_round") is None and round_value is not None:
++            record["first_seen_round"] = round_value
++        if round_value is not None:
++            record["last_seen_round"] = round_value
++        if record.get("first_seen_source") is None and source is not None:
++            record["first_seen_source"] = source
++        if record.get("first_seen_speaker") is None and source is not None:
++            record["first_seen_speaker"] = source
++        if target_ids:
++            stored_targets = record.setdefault("target_ids", set())
++            if isinstance(stored_targets, set):
++                stored_targets.update(self._dedupe_ids(target_ids))
++            else:
++                record["target_ids"] = set(self._dedupe_ids(target_ids))
++        evidence_count = record.get("evidence_count")
++        record["evidence_count"] = int(evidence_count) + 1 if isinstance(evidence_count, int) else 1
+ 
+     def _guard_memory_snapshot(self, turn_packet: Mapping[str, Any]) -> dict[str, Any]:
+         request = turn_packet.get("request") if isinstance(turn_packet, Mapping) else None
+         round_value = self._current_round_value(turn_packet)
+         guard_targets = self._extract_allowed_target_ids(request, "guard_protect") if isinstance(request, Mapping) else []
+         known_claims = self._compact_public_claims(max_players=6)
++        top_candidates = self._compact_guard_priority_hints(turn_packet, limit=3)
+         if guard_targets and len(guard_targets) > 6:
+             guard_targets = guard_targets[:6]
+         return {
+@@ -627,16 +744,59 @@
+             "known_public_claims": known_claims,
+             "current_sheriff_id": self.current_public_sheriff_id,
+             "current_guard_targets": guard_targets,
++            "guard_top_candidates": top_candidates,
+         }
+ 
+-    def _compact_public_claims(self, *, max_players: int) -> dict[str, list[str]]:
+-        compact: dict[str, list[str]] = {}
++    def _compact_public_claims(self, *, max_players: int) -> dict[str, dict[str, Any]]:
++        compact: dict[str, dict[str, Any]] = {}
+         for player_id in sorted(self.public_claims):
+-            labels = sorted(self.public_claims[player_id])
+-            compact[player_id] = labels[:4]
++            record = self.public_claims[player_id]
++            compact[player_id] = {
++                "claim_types": sorted(self._claim_types(record))[:5],
++                "first_seen_round": record.get("first_seen_round"),
++                "source": record.get("first_seen_source"),
++                "targets": self._compact_id_list(self._record_target_ids(record), limit=3),
++            }
+             if len(compact) >= max_players:
+                 break
+         return compact
++
++    def _compact_guard_priority_hints(self, turn_packet: Mapping[str, Any], *, limit: int) -> list[dict[str, Any]]:
++        request = turn_packet.get("request") if isinstance(turn_packet, Mapping) else None
++        candidates = self._extract_allowed_target_ids(request, "guard_protect") if isinstance(request, Mapping) else []
++        hints: list[dict[str, Any]] = []
++        for score, _index, candidate in self._score_guard_candidates(candidates, turn_packet)[:limit]:
++            reasons: list[str]
++            score, reasons = self._score_guard_target(candidate, turn_packet)
++            hints.append({"target": candidate, "score": score, "reasons": reasons[:3]})
++        return hints
++
++    def _claim_record(self, player_id: str | None) -> dict[str, Any] | None:
++        normalized = self._normalize_player_id(player_id)
++        if not normalized:
++            return None
++        record = self.public_claims.get(normalized)
++        return record if isinstance(record, dict) else None
++
++    def _claim_types(self, record: Mapping[str, Any] | None) -> set[str]:
++        if not isinstance(record, Mapping):
++            return set()
++        claim_types = record.get("claim_types")
++        if isinstance(claim_types, set):
++            return {str(item) for item in claim_types if item is not None}
++        if isinstance(claim_types, list):
++            return {str(item) for item in claim_types if item is not None}
++        return set()
++
++    def _record_target_ids(self, record: Mapping[str, Any] | None) -> list[str]:
++        if not isinstance(record, Mapping):
++            return []
++        target_ids = record.get("target_ids")
++        if isinstance(target_ids, set):
++            return self._dedupe_ids([str(item) for item in target_ids if item is not None])
++        if isinstance(target_ids, list):
++            return self._dedupe_ids([str(item) for item in target_ids if item is not None])
++        return []
+ 
+     def _extract_allowed_target_ids(self, request: Mapping[str, Any] | None, kind: str) -> list[str]:
+         if not isinstance(request, Mapping):
+--- guard-n00017/task.md
++++ guard-n00049/task.md
+@@ -1,23 +1,31 @@
+ # 守卫最小任务
+ 
+-你的任务是用守护行动延长好人关键角色的生存时间，并自然参与白天讨论。
++你的任务是用守护行动延长好人关键资产的生存时间，并在白天保持守卫视角的一致发言。
+ 
+-## 守卫行动优先级
++## 守卫行动硬规则
+ 
+-1. 永远只从本次行动包里的 `allowed_actions.target_ids` 里选守护目标，不要臆造目标。
+-2. 记住上一夜实际守过谁，默认不要连续守同一人。
+-3. 公开可信的预言家、已公开的关键神职、能稳定组织好人且没有明显狼嫌的警长或发言位，优先级高于普通路人。
+-4. 被可信查杀、被公开强保为狼、由狼嫌移交警徽的位置要降权；狼嫌警长不要因为“像中心位”就自动保护。
+-5. 平安夜不等于守中成功；白天发言必须保持不确定，不要把“没死人”说成系统确认的守中结果。
++1. 永远只从本次行动包的 `allowed_actions.target_ids` 里选 `target_id`；不要臆造目标。
++2. 记住上一夜实际守过谁，默认不要连续守同一人；除非规则和行动包允许且已到关键残局，否则不要强行连守。
++3. 平安夜不等于守中成功。你不知道狼刀目标，发言只能说“可能”“不能确定”，不能宣称系统确认守中。
+ 
+-## 信息可靠性
++## 目标优先级
+ 
+-- 公开查杀、金水、警徽、遗言和当轮公开发言都可以作为线索，但它们不是绝对真相。
+-- 公开神职的发言只能作为强弱不一的启发，不要把单次自称直接当成最终事实。
+-- 守卫不知道自己的守护是否生效，不能在发言里编造“我确定守到了”。
++按层级选择，低层级只有在高层级无人合法、明显狼嫌或刚守过时才上升：
++
++1. **公开预言家 / 明确信息位**：公开跳预言家并给出查杀、金水、验人逻辑的人最高；明确金水、稳定产出信息的人也高优先。
++2. **已公开关键神职**：女巫、猎人、守卫对跳等关键身份，在需要定身份或防狼刀时优先于普通组织位。
++3. **高可信组织位**：发言、票型和公开信息稳定站好人、能带队且没有明显狼嫌的人。
++4. **普通警长**：警长只提供加权，不自动成为首选；狼嫌警长、被狼嫌移交警徽的位置要降权。
++5. **普通平民 / 对话热度位**：没有信息价值的人通常不值得优先守。
++
++## 降权与例外
++
++- 被可信查杀、被公开强踩为狼、由狼嫌移交警徽、上夜刚守过、已死亡或不在存活名单的人强降权。
++- 自守只在残局人数很少、自己已公开守卫且很可能吃刀、或没有更高价值合法目标时考虑；不要首夜无理由自守。
++- 首夜若已有公开预言家或强信息位，优先保护该信息位；不要被普通话题中心或普通警长带偏。
+ 
+ ## 跳身份与发言一致性
+ 
+-- 默认可以隐藏守卫身份；但在有人穿守卫衣服、关键好人需要反制、或残局需要定身份时，可以跳守卫。
+-- 一旦公开跳守卫，后续发言要保持守卫视角，不要再自称平民、无夜间信息或其他与公开身份冲突的叙述。
+-- 如果不跳身份，就尽量围绕票型、矛盾和公开信息讨论，不要机械宣称自己在保护谁。
++- 默认隐藏守卫身份；有人穿守卫衣服、关键好人需要反制、或残局需要定身份时，可以跳守卫。
++- 一旦公开跳守卫，后续发言必须保持守卫视角，不要再自称平民、无夜间信息或其他冲突身份。
++- 不跳身份时，围绕票型、矛盾和公开信息讨论，不要机械公开守护目标。

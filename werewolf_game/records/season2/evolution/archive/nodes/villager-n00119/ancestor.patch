@@ -1,0 +1,558 @@
+--- villager-n00046/task_agent.py
++++ villager-n00119/task_agent.py
+@@ -190,6 +190,14 @@
+             "public_reveals": [],
+             "death_log": [],
+             "target_pressure": {},
++            "accusation_edges": [],
++            "vote_edges": [],
++            "claim_edges": [],
++            "seen_event_keys": [],
++            "seen_event_key_set": set(),
++            "game_id": None,
++            "alive_ids": set(),
++            "dead_ids": set(),
+             "suspicion_scores": {},
+             "last_public_round": None,
+             "late_mode": False,
+@@ -346,7 +354,8 @@
+             + "2. 发言必须点名当前局面里的具体人、具体票型或具体话术，避免空泛重复。\n"
+             + "3. 投票或其他目标类行动前，先比较至少两个候选，再说明为什么当前目标更优。\n"
+             + "4. 用 claim ledger 核对谁自称了什么、谁被公开翻牌、谁的票型和说法冲突。\n"
+-            + "5. 如果信息不足，给出当前怀疑顺序和下一步观察点，不要只说‘没信息’或‘先听’。\n"
++            + "5. decision_aid 中 statement_only=true 只是玩家观点，不得升级为系统事实或身份改口。\n"
++            + "6. 如果信息不足，给出当前怀疑顺序和下一步观察点，不要只说‘没信息’或‘先听’。\n"
+             + f"【本次可见工作记忆】{memory_text}\n"
+             + f"【本次允许行动】{action_hint}"
+         )
+@@ -355,6 +364,7 @@
+         self, turn_packet: Mapping[str, Any], current_dialogue: list[Any]
+     ) -> dict[str, Any]:
+         public_summary = self._summarize_public_packet(turn_packet.get("public_state"))
++        self._refresh_alive_memory(public_summary)
+         self._refresh_late_mode(public_summary)
+         candidate_table = self._build_candidate_table(turn_packet, public_summary)
+         focus_players = [str(item.get("player_id") or "") for item in candidate_table]
+@@ -377,6 +387,11 @@
+                 "late_mode": self._working_memory.get("late_mode", False),
+             },
+             "verified_info": verified_info,
++            "public_claims": list(self._working_memory.get("claim_log", []))[-6:],
++            "vote_edges": list(self._working_memory.get("vote_edges", []))[-8:],
++            "death_order": list(self._working_memory.get("death_log", []))[-8:],
++            "sheriff_chain": self._sheriff_chain_snapshot(),
++            "suspicion_reasons": suspect_list,
+             "suspect_list": suspect_list,
+             "candidate_table": candidate_table,
+             "working_memory": working_memory,
+@@ -399,7 +414,11 @@
+         return {
+             "late_mode": self._working_memory.get("late_mode", False),
+             "last_public_round": self._working_memory.get("last_public_round"),
++            "alive_ids": sorted(self._working_memory.get("alive_ids", set())),
++            "dead_ids": sorted(self._working_memory.get("dead_ids", set())),
+             "verified_facts": list(self._working_memory.get("verified_facts", []))[-8:],
++            "claim_edges": list(self._working_memory.get("claim_edges", []))[-6:],
++            "accusation_edges": list(self._working_memory.get("accusation_edges", []))[-8:],
+             "suspicion_order": [name for name, _score in ranked[:5]],
+             "player_cards": player_cards,
+         }
+@@ -408,6 +427,8 @@
+         summary = self._summarize_public_packet(sync_packet)
+         if not summary:
+             return
++        self._reset_memory_if_new_game(summary.get("game_id"))
++        self._refresh_alive_memory(summary)
+         round_value = summary.get("round")
+         if round_value is not None:
+             self._working_memory["last_public_round"] = round_value
+@@ -418,6 +439,101 @@
+             recent.append(event_line)
+             del recent[:-6]
+         self._recompute_suspicion_scores()
++
++    def _reset_memory_if_new_game(self, game_id: Any) -> None:
++        gid = self._compact_text(game_id, 48)
++        if not gid:
++            return
++        old_gid = self._working_memory.get("game_id")
++        if old_gid and old_gid != gid:
++            keep_late = self._working_memory.get("late_mode", False)
++            self._working_memory.clear()
++            self._working_memory.update(
++                {
++                    "players": {},
++                    "verified_facts": [],
++                    "recent_public_events": [],
++                    "claim_log": [],
++                    "vote_log": [],
++                    "public_reveals": [],
++                    "death_log": [],
++                    "target_pressure": {},
++                    "accusation_edges": [],
++                    "vote_edges": [],
++                    "claim_edges": [],
++                    "seen_event_keys": [],
++                    "seen_event_key_set": set(),
++                    "game_id": gid,
++                    "alive_ids": set(),
++                    "dead_ids": set(),
++                    "suspicion_scores": {},
++                    "last_public_round": None,
++                    "late_mode": keep_late,
++                }
++            )
++        else:
++            self._working_memory["game_id"] = gid
++
++    def _refresh_alive_memory(self, summary: Mapping[str, Any]) -> None:
++        alive = {pid for pid in summary.get("alive_ids", []) if pid}
++        dead = {pid for pid in summary.get("dead_ids", []) if pid}
++        if alive:
++            self._working_memory["alive_ids"] = alive
++        if dead:
++            self._working_memory.setdefault("dead_ids", set()).update(dead)
++        if alive:
++            self._working_memory["dead_ids"] = set(self._working_memory.get("dead_ids", set())) - alive | dead
++
++    def _accept_public_event(
++        self,
++        kind: str,
++        event: Mapping[str, Any],
++        round_value: Any,
++        phase_value: Any,
++    ) -> bool:
++        speaker = event.get("player_id") or event.get("speaker") or event.get("voter_id")
++        key_parts = [
++            kind,
++            self._compact_text(round_value, 16),
++            self._compact_text(phase_value, 16),
++            self._compact_text(speaker, 24),
++            self._compact_text(event.get("target_id"), 24),
++            self._compact_text(event.get("role_hint"), 24),
++            self._compact_text(event.get("claim_text") or event.get("text") or event, 120),
++        ]
++        digest = hashlib.sha1("|".join(key_parts).encode("utf-8")).hexdigest()
++        seen_set: set[str] = self._working_memory.setdefault("seen_event_key_set", set())
++        if digest in seen_set:
++            return False
++        seen_set.add(digest)
++        seen_keys: list[str] = self._working_memory.setdefault("seen_event_keys", [])
++        seen_keys.append(digest)
++        while len(seen_keys) > 240:
++            old = seen_keys.pop(0)
++            seen_set.discard(old)
++        return True
++
++    def _append_edge_once(self, bucket_name: str, entry: dict[str, Any], *, limit: int = 40) -> bool:
++        bucket = self._working_memory.setdefault(bucket_name, [])
++        key = (
++            entry.get("kind"),
++            entry.get("round"),
++            entry.get("phase"),
++            entry.get("player_id"),
++            entry.get("target_id"),
++        )
++        for existing in bucket:
++            if isinstance(existing, Mapping) and (
++                existing.get("kind"),
++                existing.get("round"),
++                existing.get("phase"),
++                existing.get("player_id"),
++                existing.get("target_id"),
++            ) == key:
++                return False
++        bucket.append(entry)
++        del bucket[:-limit]
++        return True
+ 
+     def _ingest_summary(self, summary: Mapping[str, Any]) -> None:
+         round_value = summary.get("round")
+@@ -437,7 +553,21 @@
+         scores: dict[str, int] = {}
+         for player_id in self._known_player_ids():
+             scores[player_id] = 0
++        edge_pressure: dict[str, int] = {}
++        for edge in self._working_memory.get("accusation_edges", []):
++            if isinstance(edge, Mapping):
++                target = self._compact_text(edge.get("target_id"), 24)
++                if target:
++                    edge_pressure[target] = edge_pressure.get(target, 0) + 1
++        for edge in self._working_memory.get("vote_edges", []):
++            if isinstance(edge, Mapping):
++                target = self._compact_text(edge.get("target_id"), 24)
++                if target:
++                    edge_pressure[target] = edge_pressure.get(target, 0) + (2 if self._working_memory.get("late_mode") else 1)
++        for player_id, pressure in edge_pressure.items():
++            scores[player_id] = scores.get(player_id, 0) + min(pressure, 4 if self._working_memory.get("late_mode") else 3)
+         for player_id, pressure in self._working_memory.get("target_pressure", {}).items():
++            # target_pressure is now reserved for verified reveal/death residuals, not popularity.
+             scores[player_id] = scores.get(player_id, 0) + int(pressure)
+ 
+         players: dict[str, dict[str, Any]] = self._working_memory.get("players", {})
+@@ -468,6 +598,8 @@
+             late_mode = alive_count <= 8
+         elif isinstance(alive_count, str) and alive_count.isdigit():
+             late_mode = int(alive_count) <= 8
++        elif self._working_memory.get("alive_ids"):
++            late_mode = len(self._working_memory.get("alive_ids", set())) <= 8
+         self._working_memory["late_mode"] = late_mode
+ 
+     def _build_candidate_table(
+@@ -480,6 +612,11 @@
+         candidate_ids.update(self._extract_player_ids(turn_packet.get("public_state")))
+         candidate_ids.update(self._extract_player_ids(public_summary))
+         candidate_ids.discard(self.player_id)
++        alive_ids = set(public_summary.get("alive_ids", [])) or set(self._working_memory.get("alive_ids", set()))
++        dead_ids = set(public_summary.get("dead_ids", [])) | set(self._working_memory.get("dead_ids", set()))
++        candidate_ids.difference_update(dead_ids)
++        if alive_ids:
++            candidate_ids.intersection_update(alive_ids)
+ 
+         ranked = sorted(candidate_ids, key=lambda pid: (-scores.get(pid, 0), pid))
+         table: list[dict[str, Any]] = []
+@@ -554,7 +691,7 @@
+         if contradictions:
+             parts.append(f"矛盾{len(contradictions)}")
+         if recent_reveals:
+-            parts.append("有公开翻牌")
++            parts.append(f"公开事实{recent_reveals[-1]}")
+         if recent_deaths:
+             parts.append("有死亡信息")
+         if recent_votes:
+@@ -604,6 +741,15 @@
+                 if text:
+                     texts.append(text)
+         return texts
++
++    def _sheriff_chain_snapshot(self) -> list[str]:
++        chain: list[str] = []
++        for player_id, record in self._working_memory.get("players", {}).items():
++            for item in record.get("public_reveals", []):
++                text = self._compact_text(item.get("text") if isinstance(item, Mapping) else item, 60)
++                if text and "警" in text:
++                    chain.append(f"{player_id}:{text}")
++        return chain[-6:]
+ 
+     def _format_verified_facts(self) -> list[str]:
+         return list(self._working_memory.get("verified_facts", []))[-8:]
+@@ -637,10 +783,12 @@
+         speaker = self._compact_text(claim.get("player_id"), 24)
+         if not speaker:
+             return
+-        record = self._update_player_record(speaker, round_value, phase_value)
+         claim_text = self._compact_text(claim.get("claim_text"), 80)
+         target_id = self._compact_text(claim.get("target_id"), 24)
+-        role_hint = self._compact_text(claim.get("role_hint"), 24)
++        role_hint = self._normalize_role_hint(self._compact_text(claim.get("role_hint") or claim_text, 80))
++        if not self._accept_public_event("claim", {**dict(claim), "role_hint": role_hint}, round_value, phase_value):
++            return
++        record = self._update_player_record(speaker, round_value, phase_value)
+         entry = {
+             "round": self._compact_text(round_value, 12),
+             "phase": self._compact_text(phase_value, 16),
+@@ -649,21 +797,30 @@
+             "role_hint": role_hint,
+             "text": claim_text,
+         }
+-        record["claims"].append(entry)
++        record["claims"].append({**entry, "statement_only": not bool(role_hint)})
+         del record["claims"][:-4]
+         if target_id:
+             record["target_mentions"].append(target_id)
+             del record["target_mentions"][:-4]
++            self._append_edge_once(
++                "accusation_edges",
++                {**entry, "kind": "claim_target", "player_id": speaker, "statement_only": not bool(role_hint)},
++                limit=40,
++            )
+         if role_hint:
+             record["role_claims"].append(role_hint)
+             del record["role_claims"][:-4]
++            self._append_edge_once(
++                "claim_edges",
++                {**entry, "kind": "role_claim", "player_id": speaker},
++                limit=40,
++            )
+         if claim_text:
+             log = self._working_memory.setdefault("claim_log", [])
+-            log.append(f"{speaker}:{claim_text}")
++            line = f"{speaker}:{claim_text}"
++            if line not in log:
++                log.append(line)
+             del log[:-6]
+-        if target_id:
+-            pressure = self._working_memory.setdefault("target_pressure", {})
+-            pressure[target_id] = pressure.get(target_id, 0) + self._claim_pressure_weight()
+         self._add_claim_contradictions(speaker, record, role_hint, claim_text)
+         self._maybe_register_verified_alignment(speaker, record)
+ 
+@@ -671,6 +828,8 @@
+         voter = self._compact_text(vote.get("player_id"), 24)
+         target_id = self._compact_text(vote.get("target_id"), 24)
+         if not voter or not target_id:
++            return
++        if not self._accept_public_event("vote", vote, round_value, phase_value):
+             return
+         record = self._update_player_record(voter, round_value, phase_value)
+         entry = {
+@@ -682,11 +841,10 @@
+         record["votes"].append(entry)
+         del record["votes"][:-4]
+         record["last_vote_target"] = target_id
+-        if target_id:
+-            pressure = self._working_memory.setdefault("target_pressure", {})
+-            pressure[target_id] = pressure.get(target_id, 0) + self._vote_pressure_weight()
++        self._append_edge_once("vote_edges", {**entry, "kind": "vote", "player_id": voter}, limit=48)
+         vote_log = self._working_memory.setdefault("vote_log", [])
+-        vote_log.append(entry["text"])
++        if entry["text"] not in vote_log:
++            vote_log.append(entry["text"])
+         del vote_log[:-8]
+         last_claim_target = self._last_claim_target(record)
+         if last_claim_target and last_claim_target != target_id:
+@@ -704,8 +862,10 @@
+         player_id = self._compact_text(reveal.get("player_id"), 24)
+         if not player_id:
+             return
++        role_hint = self._normalize_role_hint(self._compact_text(reveal.get("role_hint"), 80))
++        if not self._accept_public_event("reveal", {**dict(reveal), "role_hint": role_hint}, round_value, phase_value):
++            return
+         record = self._update_player_record(player_id, round_value, phase_value)
+-        role_hint = self._compact_text(reveal.get("role_hint"), 24)
+         text = self._compact_text(reveal.get("text"), 80)
+         entry = {
+             "round": self._compact_text(round_value, 12),
+@@ -729,8 +889,11 @@
+         player_id = self._compact_text(death.get("player_id"), 24)
+         if not player_id:
+             return
++        role_hint = self._normalize_role_hint(self._compact_text(death.get("role_hint"), 80))
++        if not self._accept_public_event("death", {**dict(death), "role_hint": role_hint}, round_value, phase_value):
++            return
++        self._working_memory.setdefault("dead_ids", set()).add(player_id)
+         record = self._update_player_record(player_id, round_value, phase_value)
+-        role_hint = self._compact_text(death.get("role_hint"), 24)
+         reason = self._compact_text(death.get("reason"), 40)
+         text = self._compact_text(death.get("text"), 80)
+         entry = {
+@@ -754,6 +917,8 @@
+     def _ingest_sheriff_event(self, sheriff: Mapping[str, Any], round_value: Any, phase_value: Any) -> None:
+         holder = self._compact_text(sheriff.get("player_id"), 24)
+         if not holder:
++            return
++        if not self._accept_public_event("sheriff", sheriff, round_value, phase_value):
+             return
+         record = self._update_player_record(holder, round_value, phase_value)
+         text = self._compact_text(sheriff.get("text"), 80) or f"{holder}(警长)"
+@@ -877,6 +1042,11 @@
+             for item in self._working_memory.get(bucket_key, []):
+                 known.update(self._extract_player_ids(item))
+         known.update(self._working_memory.get("target_pressure", {}).keys())
++        for bucket in ("accusation_edges", "vote_edges", "claim_edges"):
++            for edge in self._working_memory.get(bucket, []):
++                if isinstance(edge, Mapping):
++                    known.update(self._extract_player_ids(edge))
++        known.update(self._working_memory.get("alive_ids", set()))
+         known.discard("")
+         return known
+ 
+@@ -956,9 +1126,12 @@
+         if not isinstance(packet, Mapping):
+             return {}
+         summary: dict[str, Any] = {
++            "game_id": self._extract_game_id(packet),
+             "round": None,
+             "phase": None,
+             "alive_count": None,
++            "alive_ids": [],
++            "dead_ids": [],
+             "deaths": [],
+             "sheriff": [],
+             "claims": [],
+@@ -968,7 +1141,12 @@
+         self._walk_public_packet(packet, summary)
+         for key in ("deaths", "sheriff", "claims", "votes", "public_reveals"):
+             summary[key] = self._dedupe_events(summary[key])[:6]
++        alive_ids, dead_ids = self._extract_alive_dead_ids(packet)
++        summary["alive_ids"] = alive_ids
++        summary["dead_ids"] = dead_ids
+         summary["alive_count"] = self._extract_alive_count(packet)
++        if summary["alive_count"] is None and alive_ids:
++            summary["alive_count"] = len(alive_ids)
+         return summary
+ 
+     def _walk_public_packet(self, node: object, summary: dict[str, Any]) -> None:
+@@ -991,10 +1169,10 @@
+             for key in ("sheriff", "police", "badge", "captain", "leader"):
+                 if key in lower:
+                     self._append_event_labels(summary["sheriff"], node[lower[key]], kind="sheriff")
+-            for key in ("claim", "claims", "identity", "self_claim", "claimed_role", "description"):
++            for key in ("claim", "claims", "self_claim", "claimed_role"):
+                 if key in lower:
+                     self._append_event_labels(summary["claims"], node[lower[key]], kind="claim")
+-            for key in ("reveal", "revealed", "public_reveal", "flip", "flipped"):
++            for key in ("reveal", "revealed", "public_reveal", "flip", "flipped", "public_role"):
+                 if key in lower:
+                     self._append_event_labels(summary["public_reveals"], node[lower[key]], kind="reveal")
+             for key in ("vote", "votes", "ballot", "voting"):
+@@ -1019,6 +1197,8 @@
+         else:
+             labels = self._extract_death_events(value)
+         for label in labels:
++            if label:
++                label.setdefault("source_kind", kind)
+             if label and label not in bucket:
+                 bucket.append(label)
+ 
+@@ -1334,9 +1514,59 @@
+             return []
+         return self._dedupe_preserve_order(_PLAYER_TOKEN.findall(text))
+ 
++    def _extract_game_id(self, packet: object) -> str:
++        if not isinstance(packet, Mapping):
++            return ""
++        for key in ("game_id", "gameId", "id"):
++            value = packet.get(key)
++            text = self._compact_text(value, 48)
++            if text:
++                return text
++        game = packet.get("game")
++        if isinstance(game, Mapping):
++            for key in ("game_id", "id"):
++                text = self._compact_text(game.get(key), 48)
++                if text:
++                    return text
++        return ""
++
++    def _extract_alive_dead_ids(self, packet: object) -> tuple[list[str], list[str]]:
++        alive: list[str] = []
++        dead: list[str] = []
++        if not isinstance(packet, Mapping):
++            return alive, dead
++        players = self._find_value_by_key(packet, "players")
++        if isinstance(players, list):
++            for item in players:
++                if not isinstance(item, Mapping):
++                    continue
++                pid = self._first_key_text(item, ("player_id", "id", "name", "player"))
++                if not pid:
++                    continue
++                alive_value = item.get("alive")
++                status_text = self._compact_text(item.get("status") or item.get("state"), 24).lower()
++                if alive_value is True or status_text in {"alive", "living", "存活", "在场"}:
++                    alive.append(pid)
++                elif alive_value is False or status_text in {"dead", "死亡", "出局", "eliminated", "out"}:
++                    dead.append(pid)
++        for key in ("alive_ids", "alive_players", "living_players", "survivors"):
++            value = self._find_value_by_key(packet, key)
++            if value is not None:
++                alive.extend(self._extract_player_ids(value))
++        for key in ("dead_ids", "dead_players", "deaths", "death", "eliminated"):
++            value = self._find_value_by_key(packet, key)
++            if value is not None:
++                dead.extend(self._extract_player_ids(value))
++        alive = self._dedupe_preserve_order(alive)
++        dead = [pid for pid in self._dedupe_preserve_order(dead) if pid not in set(alive)]
++        return alive, dead
++
+     def _extract_alive_count(self, packet: object) -> int | None:
+         if not isinstance(packet, Mapping):
+             return None
++        alive_ids, _dead_ids = self._extract_alive_dead_ids(packet)
++        if alive_ids:
++            return len(alive_ids)
+         for key in (
+             "alive_count",
+             "living_count",
+@@ -1397,7 +1627,7 @@
+         for needle, normalized in candidates:
+             if needle.lower() in lowered or needle in text:
+                 return normalized
+-        return self._compact_text(text, 24)
++        return ""
+ 
+     def _looks_like_player_id(self, text: str) -> bool:
+         return bool(text and _PLAYER_TOKEN.fullmatch(text))
+@@ -1489,6 +1719,7 @@
+             "- 只把可见信息当事实，推测必须明确标注为推测。\n"
+             "- 投票前至少比较两个候选，说明为什么当前目标比备选更优先。\n"
+             "- 优先使用票型、死亡、公开翻牌、改口冲突和警徽信息；少看空泛话术。\n"
++            "- 被多人指向只是低权重线索；普通观点不是身份声明，也不是系统事实。\n"
+             "- 如果暂时不确定，就给出当前怀疑顺序和下一步观察点。"
+         )
+ 
+@@ -1529,3 +1760,64 @@
+         except (TypeError, ValueError):
+             return fallback
+         return normalized if normalized >= 0 else fallback
++
++
++def _new_self_test_agent() -> TaskAgent:
++    agent = TaskAgent.__new__(TaskAgent)
++    agent.player_id = "p1"
++    agent._working_memory = {
++        "players": {},
++        "verified_facts": [],
++        "recent_public_events": [],
++        "claim_log": [],
++        "vote_log": [],
++        "public_reveals": [],
++        "death_log": [],
++        "target_pressure": {},
++        "accusation_edges": [],
++        "vote_edges": [],
++        "claim_edges": [],
++        "seen_event_keys": [],
++        "seen_event_key_set": set(),
++        "game_id": None,
++        "alive_ids": set(),
++        "dead_ids": set(),
++        "suspicion_scores": {},
++        "last_public_round": None,
++        "late_mode": False,
++    }
++    return agent
++
++
++def _run_self_tests() -> None:
++    agent = _new_self_test_agent()
++    packet = {
++        "game_id": "g1",
++        "round": 1,
++        "phase": "day",
++        "players": [{"id": f"p{i}", "alive": i != 3} for i in range(1, 10)],
++        "claims": [{"player_id": "p2", "text": "我怀疑p4，先听后置位"}],
++        "votes": [{"player_id": "p2", "target_id": "p4"}],
++        "deaths": [{"player_id": "p3", "reason": "night"}],
++    }
++    summary = agent._summarize_public_packet(packet)
++    agent._refresh_alive_memory(summary)
++    agent._refresh_late_mode(summary)
++    agent._ingest_summary(summary)
++    first_claims = len(agent._working_memory["players"]["p2"]["claims"])
++    first_votes = len(agent._working_memory["vote_edges"])
++    agent._ingest_summary(summary)
++    assert len(agent._working_memory["players"]["p2"]["claims"]) == first_claims
++    assert len(agent._working_memory["vote_edges"]) == first_votes
++    assert agent._working_memory["players"]["p2"].get("role_claims") == []
++    assert agent._working_memory["players"]["p2"].get("contradictions") == []
++    assert agent._working_memory["late_mode"] is True
++    agent._recompute_suspicion_scores()
++    table = agent._build_candidate_table({"public_state": packet}, summary)
++    assert "p3" not in [row["player_id"] for row in table]
++    agent._ingest_vote_event({"player_id": "p2", "target_id": "p4"}, 1, "day")
++    assert len(agent._working_memory["vote_edges"]) == first_votes
++
++
++if __name__ == "__main__":
++    _run_self_tests()
+--- villager-n00046/task.md
++++ villager-n00119/task.md
+@@ -12,4 +12,6 @@
+ 6. 不要只因为“像狼”或“带节奏”就下结论；必须把结论落到可核对的票、翻牌、声明或前后矛盾上。
+ 7. 后期剩余人数变少时，提高票型残差、公开翻牌、死亡顺序和警徽流向的权重，降低纯发言风格的影响。
+ 
+-如果需要输出行动描述，优先给出“事实 → 候选对比 → 当前决定”的顺序。+如果需要输出行动描述，优先给出“事实 → 候选对比 → 当前决定”的顺序。
++
++补充短规则：重复出现的公共同步只记一次，不得重复计分；普通怀疑、站边或建议不是身份声明，不能当作自称改口。被多人指向只算低权重线索，必须结合指向者、轮次、票型和可验证事实冲突。投票前先检查当前存活名单与最近一轮可核对事件，避免把死者或过期票型放进主候选。

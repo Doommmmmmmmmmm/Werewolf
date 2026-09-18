@@ -1,0 +1,364 @@
+--- villager-n00012/task_agent.py
++++ villager-n00030/task_agent.py
+@@ -29,6 +29,8 @@
+ # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
++_DAY_VOTE_PASS_KINDS = frozenset({"pass", "skip", "noop", "idle"})
++_PUBLIC_ID_KEYS = ("player_id", "playerId", "id", "target_id", "targetId")
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -42,6 +44,243 @@
+ }
+ 
+ 
++def _shorten_text(text: str, limit: int) -> str:
++    text = str(text).strip()
++    if limit <= 0:
++        return ""
++    return text if len(text) <= limit else text[: max(0, limit - 1)] + "…"
++
++
++def _unique_preserve_order(values: list[str]) -> list[str]:
++    seen: set[str] = set()
++    ordered: list[str] = []
++    for value in values:
++        normalized = str(value).strip()
++        if not normalized or normalized in seen:
++            continue
++        seen.add(normalized)
++        ordered.append(normalized)
++    return ordered
++
++
++def _coerce_player_id(value: Any) -> str | None:
++    if isinstance(value, bool) or value is None:
++        return None
++    if isinstance(value, str):
++        text = value.strip()
++        return text or None
++    if isinstance(value, Mapping):
++        for key in _PUBLIC_ID_KEYS:
++            nested = value.get(key)
++            coerced = _coerce_player_id(nested)
++            if coerced:
++                return coerced
++        return None
++    if isinstance(value, (list, tuple, set)):
++        for item in value:
++            coerced = _coerce_player_id(item)
++            if coerced:
++                return coerced
++        return None
++    text = str(value).strip()
++    return text or None
++
++
++def _collect_values_by_keys(node: Any, key_names: set[str], results: list[Any], seen: set[int]) -> None:
++    if node is None:
++        return
++    if isinstance(node, (str, bytes, int, float, bool)):
++        return
++    node_id = id(node)
++    if node_id in seen:
++        return
++    seen.add(node_id)
++    if isinstance(node, Mapping):
++        for key, value in node.items():
++            if str(key) in key_names:
++                results.append(value)
++            _collect_values_by_keys(value, key_names, results, seen)
++    elif isinstance(node, (list, tuple, set)):
++        for item in node:
++            _collect_values_by_keys(item, key_names, results, seen)
++
++
++def _extract_id_list(node: Mapping[str, Any], key_names: tuple[str, ...]) -> list[str]:
++    candidates: list[Any] = []
++    _collect_values_by_keys(node, set(key_names), candidates, set())
++    ids: list[str] = []
++    for candidate in candidates:
++        if isinstance(candidate, (list, tuple, set)):
++            for item in candidate:
++                coerced = _coerce_player_id(item)
++                if coerced:
++                    ids.append(coerced)
++        else:
++            coerced = _coerce_player_id(candidate)
++            if coerced:
++                ids.append(coerced)
++    return _unique_preserve_order(ids)
++
++
++_DIALOGUE_TEXT_KEYS = ("text", "content", "message", "speech", "utterance", "dialogue")
++
++
++def _extract_dialogue_texts(current_dialogue: Any) -> list[str]:
++    texts: list[str] = []
++    if isinstance(current_dialogue, str):
++        text = current_dialogue.strip()
++        if text:
++            texts.append(text)
++        return texts
++    if isinstance(current_dialogue, Mapping):
++        for key in _DIALOGUE_TEXT_KEYS:
++            value = current_dialogue.get(key)
++            if isinstance(value, str) and value.strip():
++                texts.append(value.strip())
++        return texts
++    if isinstance(current_dialogue, (list, tuple, set)):
++        for item in current_dialogue:
++            texts.extend(_extract_dialogue_texts(item))
++    return texts
++
++
++def _extract_day_vote_targets(request: Mapping[str, Any]) -> list[str]:
++    phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "").lower()
++    allowed_actions = request.get("allowed_actions")
++    if not isinstance(allowed_actions, list):
++        return []
++    targets: list[str] = []
++    for item in allowed_actions:
++        if not isinstance(item, Mapping):
++            continue
++        kind = str(item.get("kind") or "").lower()
++        if "vote" not in kind or "sheriff" in kind:
++            continue
++        if "day" not in kind and "day" not in phase and kind != "vote":
++            continue
++        for target_id in item.get("target_ids") or []:
++            coerced = _coerce_player_id(target_id)
++            if coerced:
++                targets.append(coerced)
++    return _unique_preserve_order(targets)
++
++
++_PUBLIC_CLAIM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
++    ("self_claim", re.compile(r"(?:我是|我就是|自称).{0,8}?(?:预言家|先知)")),
++    ("wolf_check", re.compile(r"(?:验了|查了|昨晚验了|昨晚查了).{0,10}?(?P<target>p\d+).{0,12}?(?:狼|狼人|查杀)")),
++    ("wolf_kill", re.compile(r"(?:查杀|归票|投票给|投).{0,4}?(?P<target>p\d+)")),
++    ("gold", re.compile(r"(?:金水).{0,4}?(?P<target>p\d+)")),
++    ("opposition", re.compile(r"对跳|跳预言家")),
++)
++
++
++def _extract_public_claim_hint(current_dialogue: Any) -> dict[str, Any]:
++    texts = _extract_dialogue_texts(current_dialogue)
++    snippets: list[str] = []
++    claim_targets: list[str] = []
++    contested = False
++
++    for raw_text in texts:
++        text = " ".join(str(raw_text).split())
++        if not text:
++            continue
++        matched_here = False
++        for label, pattern in _PUBLIC_CLAIM_PATTERNS:
++            if label == "opposition":
++                if pattern.search(text):
++                    contested = True
++                    matched_here = True
++                    snippets.append(_shorten_text(text, 48))
++                continue
++            for match in pattern.finditer(text):
++                matched_here = True
++                if label == "self_claim":
++                    snippets.append(_shorten_text(text, 48))
++                    continue
++                target = match.groupdict().get("target")
++                if target:
++                    claim_targets.append(target)
++                    snippets.append(f"{label}:{target}")
++        if matched_here and len(snippets) >= 5:
++            break
++
++    claim_targets = _unique_preserve_order(claim_targets)
++    if len(claim_targets) > 1:
++        contested = True
++
++    hint: dict[str, Any] = {}
++    if claim_targets:
++        hint["claim_targets"] = claim_targets[:4]
++    if snippets:
++        hint["public_claims"] = _unique_preserve_order(snippets)[:4]
++    if contested:
++        hint["contested"] = True
++    if len(claim_targets) == 1 and not contested:
++        hint["clear_target"] = claim_targets[0]
++    return hint
++
++
++def build_villager_public_hint(turn_packet: Mapping[str, Any], current_dialogue: Any) -> dict[str, Any]:
++    public_state = turn_packet.get("public_state")
++    request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
++    hint: dict[str, Any] = {}
++
++    if isinstance(public_state, Mapping):
++        alive_ids = _extract_id_list(
++            public_state,
++            ("alive_ids", "alive_players", "living_ids", "survivor_ids", "living"),
++        )
++        dead_ids = _extract_id_list(
++            public_state,
++            ("dead_ids", "dead_players", "deceased_ids", "eliminated_ids", "dead"),
++        )
++        sheriff_ids = _extract_id_list(
++            public_state,
++            ("sheriff_id", "sheriff_player_id", "sheriff", "警长", "警徽"),
++        )
++        if alive_ids:
++            hint["alive_ids"] = alive_ids[:16]
++        if dead_ids:
++            hint["dead_ids"] = dead_ids[:16]
++        if sheriff_ids:
++            hint["sheriff_id"] = sheriff_ids[0]
++            if alive_ids:
++                hint["sheriff_alive"] = sheriff_ids[0] in alive_ids
++
++    day_vote_targets = _extract_day_vote_targets(request) if request else []
++    if day_vote_targets:
++        hint["day_vote_targets"] = day_vote_targets[:16]
++
++    claim_hint = _extract_public_claim_hint(current_dialogue)
++    hint.update(claim_hint)
++    return hint
++
++
++def villager_quality_error(action: dict[str, Any], request: Mapping[str, Any], hint: Mapping[str, Any] | None) -> str | None:
++    phase = str(request.get("phase") or request.get("channel") or request.get("kind") or "").lower()
++    allowed_actions = request.get("allowed_actions")
++    if not isinstance(allowed_actions, list):
++        return None
++    if "vote" not in phase and not any("vote" in str(item.get("kind") or "").lower() for item in allowed_actions if isinstance(item, Mapping)):
++        return None
++    vote_targets = _extract_day_vote_targets(request)
++    if not vote_targets:
++        return None
++    action_kind = str(action.get("kind") or "").lower()
++    if not isinstance(hint, Mapping):
++        hint = {}
++    if not hint.get("contested"):
++        clear_target = hint.get("clear_target")
++        if isinstance(clear_target, str) and clear_target in vote_targets:
++            selected_target = str(action.get("target_id") or "")
++            if action_kind in _DAY_VOTE_PASS_KINDS or selected_target != clear_target:
++                return f"公开查杀/警长归票目标为{clear_target}；请说明硬反证。无硬反证时应投{clear_target}。"
++    if action_kind in _DAY_VOTE_PASS_KINDS:
++        return "当前有可投目标，平民除非会明显误伤强神或金水，否则不要弃票；请比较两个候选后投证据最强者。"
++
++    return None
++
++
+ def render_villager_decision_checklist(request: Mapping[str, Any]) -> str:
+     """给平民用的短决策清单，只作为提示文本，不引入任何隐藏状态。"""
+ 
+@@ -54,18 +293,35 @@
+         if isinstance(item, Mapping)
+     } if isinstance(allowed_actions, list) else set()
+     lines = ["【平民决策清单】先分系统事实 / 玩家声明 / 自己推测；投票前至少比较两个候选。"]
+-    has_vote = any(key in phase_lower for key in ("vote", "投票")) or any("vote" in kind for kind in allowed_kinds)
+-    has_speak = any(key in phase_lower for key in ("speak", "discussion", "发言", "白天", "day")) or any(
+-        kind in {"speak", "discussion", "day_speak"} for kind in allowed_kinds
+-    )
++    has_sheriff_vote = any(key in phase_lower for key in ("sheriff_vote", "警长投票", "警徽投票")) or any(
++        kind in {"sheriff_vote", "sheriff"} or "sheriff_vote" in kind for kind in allowed_kinds
++    )
++    has_sheriff_candidacy = any(key in phase_lower for key in ("sheriff_candidacy", "警长竞选", "竞选", "竞警")) or any(
++        "candidate" in kind or "candid" in kind or "sheriff_candidacy" in kind for kind in allowed_kinds
++    )
++    has_day_vote = (
++        (any(key in phase_lower for key in ("vote", "投票")) or any("vote" in kind for kind in allowed_kinds))
++        and not has_sheriff_vote
++        and not has_sheriff_candidacy
++    )
++    has_speak = (
++        any(key in phase_lower for key in ("speak", "discussion", "发言", "白天"))
++        or any(kind in {"speak", "discussion", "day_speak"} for kind in allowed_kinds)
++    ) and not has_day_vote and not has_sheriff_vote and not has_sheriff_candidacy
+     has_last_words = any(key in phase_lower for key in ("last", "遗言")) or "last_words" in allowed_kinds
+     has_sheriff = any(key in phase_lower for key in ("sheriff", "警长", "警徽")) or any(
+         key in allowed_kinds for key in ("sheriff_vote", "sheriff")
+     )
+-    if has_vote:
++    if has_day_vote:
+         lines.append("投票时优先保护可信金水、持续报验且查杀被支持的预言家、强神声明者和警徽传递链；只有硬对跳、明显矛盾、查杀命中或事实错误时才推翻。")
++        lines.append("若当前轮或此前公开链中只有一名持续报验的预言家/警长明确查杀或归票，且没有硬对跳、事实矛盾、被公开查杀等强反证，day_vote 默认投被查杀/归票目标；其他嫌疑只能做备选，不要压过查杀目标，更不要轻易 pass。")
+         lines.append("优先找未被金水覆盖且存在票型异常、事实错误、被查杀或爆狼线索指向的人。")
++    if has_sheriff_vote:
++        lines.append("警长投票时优先看谁的公开报验链更清晰、更稳定；不要把空泛自证或低权重印象压过查杀和归票信息。")
++    if has_sheriff_candidacy:
++        lines.append("警长竞选时平民默认不上警；只有需要挡刀、保警徽传递或扰乱狼视角时才考虑上警。")
+     if has_speak:
++        lines.append("发言前先核对存活名单、已死名单和警长是否仍存活；不要把白天放逐说成夜死，也不要把已死玩家当成可继续追责的当前存活对象。")
+         lines.append("发言至少点出一个关注对象和一个暂不投对象，并说明依据哪条公开信息。")
+     if has_last_words:
+         lines.append("遗言只留公开事实、票型、查验链和怀疑对象，不把推测说成系统事实。")
+@@ -136,6 +392,9 @@
+ 
+     lines.append(
+         "kind 和 target_id 是协议字段，使用英文是合法且必须原样保留；不要把它们翻译成中文。"
++    )
++    lines.append(
++        "最终 JSON 只能包含实际行动字段；比较、复盘和理由先在内部完成，除非是 speak / last_words 才把简短依据写进 text。"
+     )
+     return "\n".join(lines)
+ 
+@@ -252,6 +511,7 @@
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
++        villager_public_hint = build_villager_public_hint(turn_packet, current_dialogue)
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -269,7 +529,7 @@
+             # 当前轮对话；所有后续纠错尝试都是没有工具的新会话。
+             allow_tool = _attempt == 0 and self.max_tool_calls_per_decision > 0
+             user_content: dict[str, Any] = {
+-                "instruction": self._turn_instruction(turn_packet["request"], feedback),
++                "instruction": self._turn_instruction(turn_packet["request"], feedback, villager_public_hint),
+                 "packet": prompt,
+             }
+             try:
+@@ -298,7 +558,10 @@
+             action = normalize_decision(raw, turn_packet["request"])
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+-                return action
++                quality_error = villager_quality_error(action, turn_packet["request"], villager_public_hint)
++                if quality_error is None:
++                    return action
++                error = quality_error
+             if _attempt >= self.max_decision_retries:
+                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。
+                 # Runner 可将该行动存入管理员审计记录，便于定位 schema / 长度等问题，
+@@ -345,11 +608,14 @@
+         )
+ 
+     @staticmethod
+-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
++    def _turn_instruction(request: Mapping[str, Any], feedback: str, public_hint: Mapping[str, Any] | None) -> str:
+         checklist = render_villager_decision_checklist(request)
+         feedback_text = f"上一次输出未通过校验：{feedback}" if feedback else ""
++        hint_text = ""
++        if isinstance(public_hint, Mapping) and public_hint:
++            hint_text = "【公开信息提示】" + json.dumps(public_hint, ensure_ascii=False, separators=(",", ":"))
+         validation_feedback = "\n".join(
+-            part for part in (feedback_text, checklist) if part
++            part for part in (feedback_text, hint_text, checklist) if part
+         )
+         return render_prompt(
+             "player_turn_instruction.txt",
+--- villager-n00012/task.md
++++ villager-n00030/task.md
+@@ -7,7 +7,9 @@
+ - 先把信息分成三栏：**系统事实/公开事件**、**玩家声明**、**自己的推测**；只有前两栏能直接当依据。
+ - 白天发言不要空转：至少点出**一个你关注的人**和**一个你暂不投的人**，并说明各自基于哪条公开信息。
+ - 投票前必须先比较**至少两个候选**，再给出最终票；不要只凭模糊印象或跟票习惯决定。
++- 若当前轮或此前公开链中只有一名持续报验的预言家/警长明确给出**查杀**或**归票**，且没有**硬对跳、事实矛盾、被公开查杀、明显票型反证**，则 **day_vote 默认投这个被查杀/归票目标**；其他嫌疑只能做备选，不要压过查杀目标，更不要轻易 pass。
+ - 保护可信公开链：对**持续报验且查杀被票型或发言支持的预言家**、**已公开金水**、**强神声明者**、**警徽传递链**，默认提高保护权重；除非出现**硬对跳、明显矛盾、查杀命中、事实错误**，否则不要优先投他们。
++- 发言或投票前先核对**存活名单、已死名单、警长是否仍存活**；不要把白天放逐说成夜死，也不要把已死玩家当成当前仍可追责的活人。
+ - 公开信息权重从高到低通常是：**系统死亡/存活/投票** > **清晰且持续的查验链** > **玩家遗言与自报** > **你的猜测**。
+ - 狼人遗言自爆、点队友或反咬他人都只能算玩家声明，不能当系统事实；但如果它和查杀、票型、发言矛盾一起出现，要纳入高权重候选。
+ - 当存活人数较少，或你自己持有警徽时，先复盘四件事：**存活名单、已死名单、可信查验链、灰区名单**；优先找**未被金水覆盖**且存在**事实错误、票型异常、被查杀/爆狼线索**的人。

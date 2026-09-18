@@ -1,0 +1,606 @@
+--- seer-n00027/task_agent.py
++++ seer-n00052/task_agent.py
+@@ -66,6 +66,11 @@
+     recent_vote_summary: str = ""
+     recent_vote_detail: dict[str, Any] = field(default_factory=dict)
+     dialogue_digest: list[str] = field(default_factory=list)
++    claim_timeline: list[dict[str, str]] = field(default_factory=list)
++    vote_timeline: list[dict[str, Any]] = field(default_factory=list)
++    pressure_targets: list[dict[str, str]] = field(default_factory=list)
++    self_risk_mode: str = "normal"
++    inspection_map: dict[str, str] = field(default_factory=dict)
+ 
+     def reset(self, game_id: str = "") -> None:
+         self.game_id = game_id
+@@ -83,6 +88,11 @@
+         self.recent_vote_summary = ""
+         self.recent_vote_detail.clear()
+         self.dialogue_digest.clear()
++        self.claim_timeline.clear()
++        self.vote_timeline.clear()
++        self.pressure_targets.clear()
++        self.self_risk_mode = "normal"
++        self.inspection_map.clear()
+ 
+ 
+ def render_action_contract(request: Mapping[str, Any]) -> str:
+@@ -368,42 +378,51 @@
+         seer_brief: dict[str, Any],
+     ) -> str:
+         pieces = [render_action_contract(request)]
++        facts = seer_brief.get("facts") or []
++        pressure_points = seer_brief.get("pressure_points") or []
++        pressure_signals = seer_brief.get("pressure_signals") or []
++        self_risk = str(seer_brief.get("self_risk") or "")
++        preferred_targets = seer_brief.get("preferred_targets") or []
++        target_reasons = seer_brief.get("target_reasons") or []
++
++        def fixed_speech_skeleton(label: str) -> str:
++            return (
++                f"{label}必须按固定骨架输出：1个事实→1个主要矛盾→1个明确票向/自保位；"
++                "不要并列多个目标，不要解释整套推理链。"
++            )
++
+         if mode == "night_inspect":
+             pieces.append(
+-                "夜间优先验信息增益最高的目标：优先 sheriff 候选、强对跳、发言强但立场模糊者、票型关键位；"
+-                "严格避开自己和已验过的人。"
++                "夜验只选一个目标，优先未解决对跳链、公共压力位、票型关键位和警长链关键位；"
++                "避开已验过、自己和信息增益已耗尽的人。"
+             )
+-            if seer_brief.get("preferred_targets"):
+-                pieces.append("建议目标：" + "、".join(seer_brief["preferred_targets"]))
++            if preferred_targets:
++                pieces.append("建议目标：" + "、".join(preferred_targets[:_SUMMARY_LIST_LIMIT]))
++            if target_reasons:
++                pieces.append("目标理由：" + "；".join(target_reasons[:_SUMMARY_LIST_LIMIT]))
+         elif mode == "sheriff_election_speech":
+-            pieces.append(
+-                "竞选警长发言必须先讲已知查验事实，再讲可验证推断和带队计划；"
+-                "若有对跳，直接对比查验、时间线和动机，不要泛泛而谈。"
+-            )
++            pieces.append(fixed_speech_skeleton("竞选警长发言"))
++            pieces.append("优先说明已知查验与对跳时间线，再给出带队票向。")
+         elif mode == "day_speech":
+-            pieces.append(
+-                "白天发言要先给查验事实，再给基于票型和发言的推断；先压最危险的矛盾点，再给出可执行投票方向。"
+-            )
++            pieces.append(fixed_speech_skeleton("白天发言"))
++            pieces.append("优先压住最危险的矛盾点，再落到单点投票方向。")
+         elif mode == "vote":
+-            pieces.append(
+-                "投票优先级：查验事实 > 明显对跳/矛盾 > 票型关键位 > 其他怀疑对象；若正在被集火，优先选择能自保且不背离事实的票。"
+-            )
++            pieces.append("投票必须单点落票：查验事实→主要矛盾→最终票向，只输出一个最值得投的对象。")
++        elif mode == "self_risk":
++            pieces.append("自保短模板：1个事实→1个压迫点→1个自保位/跟票位，句子短、目标单一。")
+         else:
+-            pieces.append(
+-                "保持 seer 视角：任何发言都要尽量围绕查验、对跳、票型和可验证推断，不要套通用狼人杀模板。"
+-            )
+-        if seer_brief.get("self_risk") and any(
+-            token in str(seer_brief["self_risk"]) for token in ("自保压力高", "信息竞争激烈")
+-        ):
+-            pieces.append("高压时只保留：1 个事实 + 1 个可验证推断 + 1 个明确票向，不要展开完整推理链。")
+-        if seer_brief.get("facts"):
+-            pieces.append("事实摘要：" + ";".join(seer_brief["facts"]))
+-        if seer_brief.get("pressure_points"):
+-            pieces.append("当前压力点：" + ";".join(seer_brief["pressure_points"]))
+-        if seer_brief.get("pressure_signals"):
+-            pieces.append("压力信号：" + ";".join(seer_brief["pressure_signals"]))
+-        if seer_brief.get("self_risk"):
+-            pieces.append("自保判断：" + str(seer_brief["self_risk"]))
++            pieces.append("保持 seer 视角，围绕查验、对跳和票型输出，不要套通用狼人杀模板。")
++
++        if self_risk and self_risk != "常规风险：优先保留信息优势，不要过度展开。":
++            pieces.append("高压提示：" + self_risk)
++        if facts:
++            pieces.append("事实：" + "；".join(facts[:_SUMMARY_LIST_LIMIT]))
++        if pressure_points:
++            pieces.append("矛盾：" + "；".join(pressure_points[:_SUMMARY_LIST_LIMIT]))
++        if pressure_signals:
++            pieces.append("压力信号：" + "；".join(pressure_signals[:_SUMMARY_LIST_LIMIT]))
++        if seer_brief.get("pressure_targets"):
++            pieces.append("压力位：" + "；".join(seer_brief["pressure_targets"]))
+         if feedback:
+             pieces.append(f"上一次输出未通过校验：{feedback}")
+         pieces.append("最终回答只能是符合契约的 JSON 对象。")
+@@ -541,6 +560,8 @@
+         vote_summary, vote_detail = self._summarize_vote_info(packet)
+         if vote_summary:
+             self._seer_memory.recent_vote_summary = vote_summary
++        if vote_summary or vote_detail:
++            self._append_vote_timeline(vote_summary, vote_detail)
+         if vote_detail:
+             self._seer_memory.recent_vote_detail = vote_detail
+ 
+@@ -551,6 +572,7 @@
+ 
+         self._update_claims_and_challenges_from_packet(packet)
+         self._update_inspection_records(packet)
++        self._refresh_pressure_state()
+ 
+     def _extract_game_id(self, packet: Mapping[str, Any]) -> str:
+         for path in (("game", "game_id"), ("game", "id"), ("game_id",), ("match_id",), ("session_id",)):
+@@ -841,11 +863,16 @@
+             {
+                 "round": self._stringify(item.get("round")),
+                 "target": self._normalize_reference(item.get("target")),
+-                "result": self._stringify(item.get("result")),
++                "result": self._normalize_inspection_result(item.get("result")),
+             }
+             for item in self._seer_memory.inspected
+             if isinstance(item, Mapping)
+         ]
++        self._seer_memory.inspection_map = {
++            self._normalize_reference(key): self._normalize_inspection_result(value)
++            for key, value in self._seer_memory.inspection_map.items()
++            if self._normalize_reference(key)
++        }
+         self._seer_memory.declared_claims = [
+             {
+                 "speaker": self._normalize_reference(item.get("speaker")),
+@@ -857,6 +884,10 @@
+         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
+         self._seer_memory.dialogue_digest = [self._normalize_alias_text(line) for line in self._seer_memory.dialogue_digest]
+         self._seer_memory.recent_vote_summary = self._normalize_alias_text(self._seer_memory.recent_vote_summary)
++        self._seer_memory.claim_timeline = [self._normalize_claim_timeline(item) for item in self._seer_memory.claim_timeline if isinstance(item, Mapping)]
++        self._seer_memory.vote_timeline = [self._normalize_vote_timeline(item) for item in self._seer_memory.vote_timeline if isinstance(item, Mapping)]
++        self._seer_memory.pressure_targets = [self._normalize_pressure_target(item) for item in self._seer_memory.pressure_targets if isinstance(item, Mapping)]
++        self._seer_memory.self_risk_mode = self._normalize_self_risk_mode(self._seer_memory.self_risk_mode)
+         if self._seer_memory.recent_vote_detail:
+             self._seer_memory.recent_vote_detail = self._normalize_vote_detail(self._seer_memory.recent_vote_detail)
+ 
+@@ -871,6 +902,45 @@
+         if isinstance(value, str):
+             return self._normalize_alias_text(value)
+         return value
++
++    def _normalize_inspection_result(self, value: Any) -> str:
++        text = self._inspection_result_text(value)
++        return text if text else ""
++
++    def _normalize_claim_timeline(self, item: Mapping[str, Any]) -> dict[str, str]:
++        return {
++            "round": self._stringify(item.get("round")),
++            "phase": self._stringify(item.get("phase")),
++            "order": self._stringify(item.get("order")),
++            "speaker": self._normalize_reference(item.get("speaker")),
++            "claim": self._truncate_text(self._normalize_alias_text(self._stringify(item.get("claim"))), _SUMMARY_TEXT_LIMIT),
++        }
++
++    def _normalize_vote_timeline(self, item: Mapping[str, Any]) -> dict[str, Any]:
++        normalized = {
++            "round": self._stringify(item.get("round")),
++            "phase": self._stringify(item.get("phase")),
++            "summary": self._truncate_text(self._normalize_alias_text(self._stringify(item.get("summary"))), _SUMMARY_TEXT_LIMIT),
++        }
++        detail = item.get("detail")
++        if detail is not None:
++            normalized["detail"] = self._normalize_vote_detail(detail)
++        return normalized
++
++    def _normalize_pressure_target(self, item: Mapping[str, Any]) -> dict[str, str]:
++        return {
++            "round": self._stringify(item.get("round")),
++            "target": self._normalize_reference(item.get("target")),
++            "reason": self._truncate_text(self._normalize_alias_text(self._stringify(item.get("reason"))), _SUMMARY_TEXT_LIMIT),
++        }
++
++    def _normalize_self_risk_mode(self, value: Any) -> str:
++        text = self._stringify(value).lower()
++        if any(token in text for token in ("high", "risk", "self", "自保")):
++            return "high"
++        if any(token in text for token in ("mid", "medium", "中等")):
++            return "medium"
++        return "normal"
+ 
+     def _normalize_reference(self, value: Any) -> str:
+         text = self._extract_single_player_id(value)
+@@ -912,6 +982,48 @@
+         detail = self._compact_value(vote_value, max_depth=2)
+         summary = self._vote_summary_text(vote_value)
+         return summary, detail if isinstance(detail, dict) else {"vote": detail}
++
++    def _append_claim_timeline(self, speaker: str, claim: str, source: str) -> None:
++        if not speaker and not claim:
++            return
++        entry = {
++            "round": self._seer_memory.round_no,
++            "phase": self._seer_memory.phase,
++            "order": str(len(self._seer_memory.claim_timeline) + 1),
++            "speaker": speaker,
++            "claim": claim,
++            "source": source,
++        }
++        self._seer_memory.claim_timeline.append(entry)
++
++    def _append_vote_timeline(self, summary: str, detail: dict[str, Any]) -> None:
++        entry = {
++            "round": self._seer_memory.round_no,
++            "phase": self._seer_memory.phase,
++            "summary": summary,
++            "detail": detail,
++        }
++        self._seer_memory.vote_timeline.append(entry)
++
++    def _append_pressure_target(self, target: str, reason: str) -> None:
++        if not target and not reason:
++            return
++        entry = {
++            "round": self._seer_memory.round_no,
++            "target": target,
++            "reason": reason,
++        }
++        self._seer_memory.pressure_targets.append(entry)
++
++    def _refresh_pressure_state(self) -> None:
++        current = "normal"
++        if self.player_id in self._seer_memory.challenged_players:
++            current = "high"
++        elif len(self._recent_pressure_signals()) >= 3:
++            current = "high"
++        elif self._seer_memory.challenged_players or self._seer_memory.pressure_targets:
++            current = "medium"
++        self._seer_memory.self_risk_mode = current
+ 
+     def _vote_summary_text(self, value: Any) -> str:
+         if isinstance(value, Mapping):
+@@ -1027,13 +1139,17 @@
+                 }
+                 if entry["speaker"] or entry["claim"]:
+                     self._seer_memory.declared_claims.append(entry)
++                    self._append_claim_timeline(entry["speaker"], entry["claim"], "dialogue")
+             if any(keyword in text for keyword in ("对跳", "质疑", "假", "狼", "冲票", "先出", "出他", "票他")):
+                 ids = self._extract_player_ids(text)
+                 if speaker:
+                     ids.append(speaker)
++                normalized_ids = [self._normalize_reference(pid) for pid in ids]
+                 self._seer_memory.challenged_players = self._unique_stable(
+-                    list(self._seer_memory.challenged_players) + ids
++                    list(self._seer_memory.challenged_players) + normalized_ids
+                 )
++                for pid in normalized_ids:
++                    self._append_pressure_target(pid, self._truncate_text(self._normalize_alias_text(text), _SUMMARY_TEXT_LIMIT))
+         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
+         self._seer_memory.challenged_players = [self._normalize_reference(item) for item in self._seer_memory.challenged_players]
+         self._seer_memory.challenged_players = self._unique_stable(self._seer_memory.challenged_players)
+@@ -1068,6 +1184,7 @@
+                     )
+                     if speaker or claim:
+                         self._seer_memory.declared_claims.append({"speaker": speaker, "claim": claim})
++                        self._append_claim_timeline(speaker, claim, "packet")
+         challenged = self._first_present(
+             packet,
+             (
+@@ -1084,6 +1201,8 @@
+                 self._seer_memory.challenged_players = self._unique_stable(
+                     list(self._seer_memory.challenged_players) + ids
+                 )
++                for pid in ids:
++                    self._append_pressure_target(pid, "公开被质疑/对跳")
+         self._seer_memory.declared_claims = self._dedupe_dict_list(self._seer_memory.declared_claims)
+         self._seer_memory.challenged_players = self._unique_stable(self._seer_memory.challenged_players)
+ 
+@@ -1130,22 +1249,33 @@
+             entry = {"round": round_no, "target": target, "result": result_text}
+             if entry not in self._seer_memory.inspected:
+                 self._seer_memory.inspected.append(entry)
++            self._seer_memory.inspection_map[target] = result_text
+ 
+     def _inspection_result_text(self, value: Any) -> str:
+         text = self._truncate_text(self._stringify(value), _SUMMARY_TEXT_LIMIT)
+         if not text:
+             return ""
+         normalized = text.lower()
+-        if any(token in normalized for token in ("wolf", "werewolf", "evil", "狼", "bad")):
++        if any(token in normalized for token in ("wolf", "werewolf", "evil", "狼", "bad", "killer")):
+             return "wolf"
+-        if any(token in normalized for token in ("villager", "good", "human", "好人", "村民", "平民")):
++        if any(token in normalized for token in ("villager", "good", "human", "好人", "村民", "平民", "village")):
+             return "villager"
++        if isinstance(value, Mapping):
++            team = self._stringify(value.get("team") or value.get("camp") or value.get("alignment")).lower()
++            if team in {"village", "villager", "good", "human", "好人", "村民", "平民"}:
++                return "villager"
++            if team in {"wolf", "werewolf", "evil", "狼", "bad"}:
++                return "wolf"
+         return text
+ 
+     def _build_seer_brief(self, turn_packet: Mapping[str, Any], mode: str) -> dict[str, Any]:
+         request = turn_packet.get("request") or {}
+         allowed_actions = request.get("allowed_actions") if isinstance(request, Mapping) else None
+-        allowed_kinds = [str(item.get("kind")) for item in allowed_actions if isinstance(item, Mapping) and item.get("kind")]
++        allowed_kinds = [
++            str(item.get("kind"))
++            for item in allowed_actions
++            if isinstance(item, Mapping) and item.get("kind")
++        ] if isinstance(allowed_actions, Sequence) and not isinstance(allowed_actions, (str, bytes, bytearray)) else []
+         target_candidates = self._allowed_target_ids(allowed_actions)
+         preferred_targets, reasons = self._rank_inspect_targets(turn_packet, target_candidates)
+         facts = self._seer_facts_summary()
+@@ -1155,14 +1285,22 @@
+         brief: dict[str, Any] = {
+             "mode": mode,
+             "allowed_kinds": allowed_kinds[:_SUMMARY_LIST_LIMIT],
+-            "facts": facts,
+-            "pressure_points": pressure_points,
+-            "pressure_signals": pressure_signals,
++            "facts": facts[:_SUMMARY_LIST_LIMIT],
++            "pressure_points": pressure_points[:_SUMMARY_LIST_LIMIT],
++            "pressure_signals": pressure_signals[:_SUMMARY_LIST_LIMIT],
+             "self_risk": self_risk,
++            "self_risk_mode": self._seer_memory.self_risk_mode,
+         }
+         if preferred_targets:
+             brief["preferred_targets"] = preferred_targets[:_SUMMARY_LIST_LIMIT]
+             brief["target_reasons"] = reasons[:_SUMMARY_LIST_LIMIT]
++            brief["pressure_targets"] = preferred_targets[:_SUMMARY_LIST_LIMIT]
++        if self._seer_memory.claim_timeline:
++            brief["claim_timeline"] = self._seer_memory.claim_timeline[-_SUMMARY_LIST_LIMIT:]
++        if self._seer_memory.vote_timeline:
++            brief["vote_timeline"] = self._seer_memory.vote_timeline[-_SUMMARY_LIST_LIMIT:]
++        if self._seer_memory.pressure_targets:
++            brief["pressure_target_history"] = self._seer_memory.pressure_targets[-_SUMMARY_LIST_LIMIT:]
+         return brief
+ 
+     def _seer_facts_summary(self) -> list[str]:
+@@ -1172,19 +1310,31 @@
+                 continue
+             round_no = self._stringify(item.get("round"))
+             target = self._stringify(item.get("target"))
+-            result = self._stringify(item.get("result"))
++            result = self._normalize_inspection_result(item.get("result"))
+             if target and result:
+                 facts.append(f"{round_no + '轮' if round_no else '查验'}{target}={result}")
++        if self._seer_memory.inspection_map:
++            recent_map = ", ".join(
++                f"{target}->{result}" for target, result in list(self._seer_memory.inspection_map.items())[-3:]
++            )
++            if recent_map:
++                facts.append(f"查验映射：{recent_map}")
+         if self._seer_memory.sheriff_id:
+             facts.append(f"警长/队长位：{self._seer_memory.sheriff_id}")
+         if self._seer_memory.recent_vote_summary:
+             facts.append(f"最近票型：{self._seer_memory.recent_vote_summary}")
+-        if self._seer_memory.declared_claims:
+-            latest = self._seer_memory.declared_claims[-1]
+-            speaker = self._stringify(latest.get("speaker"))
+-            claim = self._stringify(latest.get("claim"))
++        if self._seer_memory.claim_timeline:
++            last_claim = self._seer_memory.claim_timeline[-1]
++            speaker = self._stringify(last_claim.get("speaker"))
++            claim = self._stringify(last_claim.get("claim"))
+             if speaker or claim:
+                 facts.append(f"最新公开声明：{speaker + ' ' if speaker else ''}{claim}".strip())
++        if self._seer_memory.pressure_targets:
++            latest_pressure = self._seer_memory.pressure_targets[-1]
++            target = self._stringify(latest_pressure.get("target"))
++            reason = self._stringify(latest_pressure.get("reason"))
++            if target or reason:
++                facts.append(f"当前压力位：{target + ' ' if target else ''}{reason}".strip())
+         if self._seer_memory.seat_to_player_id:
+             seat_map = ", ".join(
+                 f"{seat}->{player}" for seat, player in list(self._seer_memory.seat_to_player_id.items())[:3]
+@@ -1198,7 +1348,12 @@
+         if self._seer_memory.sheriff_candidates:
+             points.append("警长候选：" + "、".join(self._seer_memory.sheriff_candidates[:_SUMMARY_LIST_LIMIT]))
+         if self._seer_memory.challenged_players:
+-            points.append("已被质疑/对跳关注：" + "、".join(self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT]))
++            points.append("未解决对跳链：" + "、".join(self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT]))
++        if self._seer_memory.pressure_targets:
++            latest_targets = [self._stringify(item.get("target")) for item in self._seer_memory.pressure_targets[-_SUMMARY_LIST_LIMIT:]]
++            latest_targets = [item for item in latest_targets if item]
++            if latest_targets:
++                points.append("压力目标：" + "、".join(self._unique_stable(latest_targets)))
+         vote_detail = self._seer_memory.recent_vote_detail
+         if isinstance(vote_detail, Mapping) and vote_detail:
+             points.append("票型详情已更新")
+@@ -1207,9 +1362,11 @@
+             points.append("压力信号：" + "、".join(pressure[:_SUMMARY_LIST_LIMIT]))
+         request = turn_packet.get("request") or {}
+         allowed_targets = self._allowed_target_ids(request.get("allowed_actions") if isinstance(request, Mapping) else None)
+-        ranked, _ = self._rank_inspect_targets(turn_packet, allowed_targets)
++        ranked, reasons = self._rank_inspect_targets(turn_packet, allowed_targets)
+         if ranked:
+             points.append("夜验优先：" + "、".join(ranked[:_SUMMARY_LIST_LIMIT]))
++        if reasons:
++            points.append("夜验理由：" + "；".join(reasons[:_SUMMARY_LIST_LIMIT]))
+         return points[:_SUMMARY_LIST_LIMIT]
+ 
+     def _self_risk_summary(self, turn_packet: Mapping[str, Any]) -> str:
+@@ -1217,10 +1374,10 @@
+         other_claims = len(self._seer_memory.declared_claims)
+         phase = self._extract_phase(turn_packet).lower()
+         pressure_count = len(self._recent_pressure_signals())
+-        if self_seen:
+-            return "自保压力高：已在公开内容中被质疑，发言宜先简后实。"
+-        if pressure_count >= 3:
+-            return "自保压力高：近期点名和票型压力偏多，发言要压缩成可验证结论。"
++        if self_seen or self._seer_memory.self_risk_mode == "high":
++            return "自保压力高：已被公开点名或竞争激烈，发言只保留事实、矛盾、票向。"
++        if pressure_count >= 3 or self._seer_memory.self_risk_mode == "medium":
++            return "自保压力中等：用短模板输出，先事实后矛盾再票向。"
+         if "elect" in phase or "sheriff" in phase or "警长" in phase or "竞选" in phase:
+             return "身份暴露风险中等：竞选期要先立可信事实，再给投票方向。"
+         if other_claims >= 3:
+@@ -1230,7 +1387,9 @@
+     def _recent_pressure_signals(self) -> list[str]:
+         signals: list[str] = []
+         if self._seer_memory.challenged_players:
+-            signals.append("被质疑/对跳")
++            signals.append("未解决对跳链")
++        if self._seer_memory.pressure_targets:
++            signals.append("压力目标已形成")
+         if self._seer_memory.recent_vote_summary:
+             signals.append("票型已更新")
+         if len(self._seer_memory.declared_claims) >= 2:
+@@ -1239,17 +1398,21 @@
+             signals.append("同一发言者多次自述")
+         if any(self._recent_mention_count(target_id) >= 3 for target_id in self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT]):
+             signals.append("点名反复")
++        if self._seer_memory.self_risk_mode != "normal":
++            signals.append(f"自保模式:{self._seer_memory.self_risk_mode}")
+         return self._unique_stable(signals)
+ 
+     def _decide_mode(self, turn_packet: Mapping[str, Any]) -> str:
+         request = turn_packet.get("request") or {}
+         allowed_actions = request.get("allowed_actions") if isinstance(request, Mapping) else None
+-        allowed_kinds = [str(item.get("kind") or "").lower() for item in allowed_actions if isinstance(item, Mapping)]
++        allowed_kinds = [str(item.get("kind") or "").lower() for item in allowed_actions if isinstance(item, Mapping)] if isinstance(allowed_actions, Sequence) and not isinstance(allowed_actions, (str, bytes, bytearray)) else []
+         phase = (self._extract_phase(turn_packet) or "").lower()
+         channel = str(request.get("channel") or "").lower() if isinstance(request, Mapping) else ""
+         if any(self._kind_looks_like_inspect(kind) for kind in allowed_kinds):
+             return "night_inspect"
+         if any(kind in _SPEECH_ACTION_KINDS for kind in allowed_kinds):
++            if self._seer_memory.self_risk_mode == "high" or self.player_id in self._seer_memory.challenged_players:
++                return "self_risk"
+             if any(token in phase for token in ("sheriff", "election", "竞选", "警长")) or any(
+                 token in channel for token in ("sheriff", "election", "竞选", "警长")
+             ):
+@@ -1287,43 +1450,51 @@
+         alive = self._seer_memory.alive or self._extract_player_ids(
+             self._first_present(turn_packet, (("public_state", "alive"), ("public_state", "alive_players")))
+         )
++        seen_targets = self._seen_inspection_targets()
+         candidates = [
+             target_id
+             for target_id in self._unique_stable(candidate_ids)
+-            if target_id and target_id != self.player_id and target_id not in self._seen_inspection_targets()
++            if target_id and target_id != self.player_id and target_id not in seen_targets
+         ]
+         if not candidates:
+             candidates = [
+                 target_id
+                 for target_id in alive
+-                if target_id and target_id != self.player_id and target_id not in self._seen_inspection_targets()
++                if target_id and target_id != self.player_id and target_id not in seen_targets
+             ]
+         scores: dict[str, int] = {target_id: 0 for target_id in candidates}
+         reasons: dict[str, list[str]] = {target_id: [] for target_id in candidates}
+ 
+-        sheriff_like = self._unique_stable(
+-            [self._seer_memory.sheriff_id] + self._seer_memory.sheriff_candidates
+-        )
++        sheriff_like = self._unique_stable([self._seer_memory.sheriff_id] + self._seer_memory.sheriff_candidates)
++        pressure_targets = {self._normalize_reference(item.get("target")) for item in self._seer_memory.pressure_targets}
++        unresolved_claims = {self._normalize_reference(item.get("speaker")) for item in self._seer_memory.declared_claims if isinstance(item, Mapping)}
++        vote_hotspots = {self._normalize_reference(item.get("target")) for item in self._seer_memory.vote_timeline[-_SUMMARY_LIST_LIMIT:] if isinstance(item, Mapping)}
+         for target_id in candidates:
+             if target_id in sheriff_like:
+-                scores[target_id] += 50
+-                reasons[target_id].append("警长/候选")
++                scores[target_id] += 45
++                reasons[target_id].append("警长链关键位")
+             if target_id in self._seer_memory.challenged_players:
+-                scores[target_id] += 28
+-                reasons[target_id].append("对跳/质疑焦点")
+-            if self._has_declared_claim(target_id):
+-                scores[target_id] += 20
+-                reasons[target_id].append("公开身份声明")
+-            if self._appears_in_recent_vote(target_id):
++                scores[target_id] += 34
++                reasons[target_id].append("未解决对跳")
++            if target_id in pressure_targets:
++                scores[target_id] += 22
++                reasons[target_id].append("公共压力位")
++            if target_id in vote_hotspots:
++                scores[target_id] += 18
++                reasons[target_id].append("票型关键位")
++            if target_id in unresolved_claims or self._has_declared_claim(target_id):
+                 scores[target_id] += 16
+-                reasons[target_id].append("近期票型关键位")
++                reasons[target_id].append("公开表态")
++            if self._claim_conflicts_with_known_inspection(target_id):
++                scores[target_id] += 24
++                reasons[target_id].append("与查验矛盾")
+             if self._speaks_a_lot(target_id):
+                 scores[target_id] += 8
+                 reasons[target_id].append("发言密集")
+ 
+             pressure_reasons = self._target_pressure_signals(target_id)
+             if pressure_reasons:
+-                scores[target_id] += min(18, 3 * len(pressure_reasons))
++                scores[target_id] += min(20, 4 * len(pressure_reasons))
+                 reasons[target_id].extend(pressure_reasons)
+ 
+         ranked = sorted(candidates, key=lambda item: (-scores[item], candidates.index(item)))
+@@ -1410,12 +1581,13 @@
+         return self._unique_stable(signals)
+ 
+     def _claim_conflicts_with_known_inspection(self, target_id: str) -> bool:
+-        target_result = ""
+-        for item in self._seer_memory.inspected:
+-            if not isinstance(item, Mapping):
+-                continue
+-            if self._normalize_reference(item.get("target")) == target_id:
+-                target_result = self._stringify(item.get("result")).lower()
++        target_result = self._normalize_inspection_result(self._seer_memory.inspection_map.get(target_id, ""))
++        if not target_result:
++            for item in self._seer_memory.inspected:
++                if not isinstance(item, Mapping):
++                    continue
++                if self._normalize_reference(item.get("target")) == target_id:
++                    target_result = self._normalize_inspection_result(item.get("result"))
+         if not target_result:
+             return False
+         claim_texts = []
+@@ -1426,12 +1598,12 @@
+                 claim_texts.append(self._normalize_alias_text(self._stringify(claim.get("claim"))).lower())
+         if not claim_texts:
+             return False
+-        wolf_like = any(token in target_result for token in ("wolf", "狼", "bad", "evil"))
+-        villager_like = any(token in target_result for token in ("villager", "好人", "human", "村民", "平民"))
++        wolf_like = target_result == "wolf"
++        villager_like = target_result == "villager"
+         if wolf_like:
+-            return any(token in text for text in claim_texts for token in ("好人", "金水", "查杀", "验好", "村民", "平民"))
++            return any(token in text for text in claim_texts for token in ("好人", "金水", "查杀", "验好", "村民", "平民", "villager"))
+         if villager_like:
+-            return any(token in text for text in claim_texts for token in ("狼人", "狼", "查杀", "黑", "坏人"))
++            return any(token in text for text in claim_texts for token in ("狼人", "狼", "查杀", "黑", "坏人", "wolf"))
+         return False
+ 
+     def _speaks_a_lot(self, target_id: str) -> bool:
+@@ -1484,7 +1656,12 @@
+             "seat_to_player_id": dict(list(self._seer_memory.seat_to_player_id.items())[:_SUMMARY_LIST_LIMIT]),
+             "player_to_seat": dict(list(self._seer_memory.player_to_seat.items())[:_SUMMARY_LIST_LIMIT]),
+             "inspected": self._seer_memory.inspected[-_SUMMARY_LIST_LIMIT:],
++            "inspection_map": dict(list(self._seer_memory.inspection_map.items())[:_SUMMARY_LIST_LIMIT]),
+             "declared_claims": self._seer_memory.declared_claims[-_SUMMARY_LIST_LIMIT:],
++            "claim_timeline": self._seer_memory.claim_timeline[-_SUMMARY_LIST_LIMIT:],
++            "vote_timeline": self._seer_memory.vote_timeline[-_SUMMARY_LIST_LIMIT:],
++            "pressure_targets": self._seer_memory.pressure_targets[-_SUMMARY_LIST_LIMIT:],
++            "self_risk_mode": self._seer_memory.self_risk_mode,
+             "challenged_players": self._seer_memory.challenged_players[:_SUMMARY_LIST_LIMIT],
+             "recent_vote_summary": self._seer_memory.recent_vote_summary,
+             "dialogue_digest": self._seer_memory.dialogue_digest[-_SUMMARY_LIST_LIMIT:],
+--- seer-n00027/task.md
++++ seer-n00052/task.md
+@@ -5,14 +5,14 @@
+ ## 执行优先级
+ 
+ 1. **夜间先验高信息目标**
+-   - 优先考虑警长竞选者、强对跳者、发言强但立场模糊者、票型关键位。
++   - 优先考虑未解决对跳链、公共压力位、票型关键位、警长链关键位。
+    - 严格避开自己和已查验过的目标。
+-   - 没有明显高收益目标时，再使用退化规则。
++   - 选目标时尽量能服务第二天的公共压力和归票。
+ 
+ 2. **白天先说事实，再说推断**
+    - 发言必须先给出已知查验结果，再给出可验证推断。
+    - 不要把“感觉”“像狼”放在事实前面。
+-   - 同一局里不要反复使用同一套模板。
++   - 同一局里不要反复使用同一套模板；高压时直接用短模板。
+ 
+ 3. **遇到对跳要直接比对**
+    - 重点比较查验结果、时间线、竞选顺序、公开动机和票型。
+@@ -23,7 +23,7 @@
+    - 如果自己正被集火，先保证自保，再争取把票投到最有事实支撑的目标。
+ 
+ 5. **持续记录公开信息**
+-   - 记录已查验目标、公开身份声明、被质疑对象和最近票型。
++   - 记录已查验目标、公开身份声明、时间线、压力位和最近票型。
+    - 每轮都用这些记忆更新判断，不要当成新的一局。
+    - 必须把中文席位称呼归一化成玩家 ID：例如“1号 / 1位 / 第1号 / 第1位”都要按同一玩家处理，不要把席位数字、回合数和票数混淆。
+ 

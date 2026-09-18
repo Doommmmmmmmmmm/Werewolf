@@ -1,0 +1,1915 @@
+{
+  "node_id": "guard-n00098",
+  "role": "guard",
+  "attempt": 1,
+  "required_resources": [
+    "task",
+    "boundaries",
+    "current_agent",
+    "random_game_replay"
+  ],
+  "required_replay_game_index": 10,
+  "tool_trace": [
+    {
+      "tool": "list_resources",
+      "arguments": {},
+      "result": {
+        "required_resources": [
+          "task",
+          "boundaries",
+          "current_agent",
+          "random_game_replay"
+        ],
+        "external_knowledge": {
+          "description": "进化前冻结的狼人杀 Skill 卡片；通过 list_skills/read_skill 按需读取，不直接注入 Task-Agent",
+          "tool": "list_skills/read_skill"
+        },
+        "tools": [
+          {
+            "name": "list_resources",
+            "description": "列出本次诊断可用的只读资料及参数。"
+          },
+          {
+            "name": "read_current_agent",
+            "description": "读取当前节点的 task_agent.py 或 task.md。"
+          },
+          {
+            "name": "read_evolution_path",
+            "description": "读取 base 到当前节点的节点信息和祖先 patch。"
+          },
+          {
+            "name": "read_evolution_tree",
+            "description": "读取当前角色完整进化树索引。"
+          },
+          {
+            "name": "read_evolution_contract",
+            "description": "按需读取本次实验的进化状态机、预算和节点筛选规则。"
+          },
+          {
+            "name": "read_evaluation_summary",
+            "description": "读取当前节点最近一次评测汇总。"
+          },
+          {
+            "name": "read_game_replay",
+            "description": "分页读取当前节点评测中的一局完整审计回放。"
+          },
+          {
+            "name": "read_other_branch",
+            "description": "读取同角色另一节点的 patch、状态和胜负摘要。"
+          },
+          {
+            "name": "read_previous_diagnosis",
+            "description": "读取同角色某节点关联的历史诊断。"
+          },
+          {
+            "name": "list_skills",
+            "description": "列出所有可用 Skill 的名称和短描述，不返回完整攻略。"
+          },
+          {
+            "name": "read_skill",
+            "description": "读取指定 Skill 的完整内容，包括短描述和长描述。"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evaluation_summary",
+      "arguments": {},
+      "result": {
+        "node_id": "guard-n00098",
+        "role": "guard",
+        "team": "village",
+        "game_count": 20,
+        "complete_game_count": 20,
+        "failed_game_count": 0,
+        "win_count": 4,
+        "loss_count": 16,
+        "win_rate": 0.2,
+        "decision_count": 314,
+        "fallback_count": 0,
+        "fallback_rate": 0.0,
+        "invalid_decision_count": 0,
+        "quality_scope": "focus_role_only",
+        "total_decision_count": 3379,
+        "total_fallback_count": 2,
+        "total_invalid_decision_count": 2,
+        "recommended_status": "retained",
+        "status_reasons": [
+          "passed_broad_filter"
+        ],
+        "results": [
+          {
+            "game_index": 0,
+            "game_id": "s2-guard-n00098-game0",
+            "seed": "season2-evolution:16367fbfcc9229a6:game0",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00063",
+              "villager": "villager-n00011",
+              "seer": "seer-n00014",
+              "witch": "witch-n00079",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00076"
+            },
+            "evaluation_signature": "b819481c9b72cb20d5f11ea24e36f9cbe88726b5b04650a2cd87f2b156603c9d",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 151,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 15,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 154,
+              "api_attempt_count": 209,
+              "reported_usage_response_count": 154,
+              "input_tokens": 687321,
+              "output_tokens": 7537,
+              "total_tokens": 694858,
+              "prompt_request_count": 154,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1330523,
+              "prompt_chars_max": 93848,
+              "prompt_chars_min": 59319,
+              "prompt_remaining_chars_min": 50152,
+              "prompt_tool_calls": 55,
+              "prompt_turns": 209,
+              "unreported_api_attempt_count": 55
+            }
+          },
+          {
+            "game_index": 1,
+            "game_id": "s2-guard-n00098-game1",
+            "seed": "season2-evolution:6de68b3b1dd52fda:game1",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00030",
+              "seer": "seer-n00015",
+              "witch": "witch-n00001",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "66bf1d4dd15b21b8e6702ee33114235f5951c95109cb9ae2fb6ce22c099e91a7",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 169,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 12,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 170,
+              "api_attempt_count": 299,
+              "reported_usage_response_count": 170,
+              "input_tokens": 804552,
+              "output_tokens": 8655,
+              "total_tokens": 813207,
+              "prompt_request_count": 170,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1633212,
+              "prompt_chars_max": 86870,
+              "prompt_chars_min": 58663,
+              "prompt_remaining_chars_min": 57130,
+              "prompt_tool_calls": 129,
+              "prompt_turns": 299,
+              "unreported_api_attempt_count": 129
+            }
+          },
+          {
+            "game_index": 2,
+            "game_id": "s2-guard-n00098-game2",
+            "seed": "season2-evolution:1e385f97bfa92ba9:game2",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00063",
+              "villager": "villager-n00093",
+              "seer": "seer-n00086",
+              "witch": "witch-n00023",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00042"
+            },
+            "evaluation_signature": "33ce2672a7a0d115283d63df6fc194af82d95693b9d2b543f8519d7136f24463",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 184,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p1"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 185,
+              "api_attempt_count": 278,
+              "reported_usage_response_count": 185,
+              "input_tokens": 927600,
+              "output_tokens": 9462,
+              "total_tokens": 937062,
+              "prompt_request_count": 186,
+              "prompt_over_limit_count": 1,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1826574,
+              "prompt_chars_max": 107558,
+              "prompt_chars_min": 62057,
+              "prompt_remaining_chars_min": 42371,
+              "prompt_tool_calls": 93,
+              "prompt_turns": 279,
+              "unreported_api_attempt_count": 93
+            }
+          },
+          {
+            "game_index": 3,
+            "game_id": "s2-guard-n00098-game3",
+            "seed": "season2-evolution:0804f9ccc42a0aa8:game3",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00028",
+              "seer": "seer-n00025",
+              "witch": "witch-n00001",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "0f3fdccbf3eb67a8cf9c412a5971cd2135ad18d31e26b6fcbd538839c92cd5d5",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 135,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 135,
+              "api_attempt_count": 205,
+              "reported_usage_response_count": 135,
+              "input_tokens": 608190,
+              "output_tokens": 6352,
+              "total_tokens": 614542,
+              "prompt_request_count": 135,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1180267,
+              "prompt_chars_max": 93642,
+              "prompt_chars_min": 57488,
+              "prompt_remaining_chars_min": 50358,
+              "prompt_tool_calls": 70,
+              "prompt_turns": 205,
+              "unreported_api_attempt_count": 70
+            }
+          },
+          {
+            "game_index": 4,
+            "game_id": "s2-guard-n00098-game4",
+            "seed": "season2-evolution:bf2fa3fc7d9dd62d:game4",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00044",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-n00079",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "ab83008b39f39733e762cbd90a92426aa8f74e0c1821fe36daf67f72cff3695c",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 166,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 168,
+              "api_attempt_count": 234,
+              "reported_usage_response_count": 168,
+              "input_tokens": 707118,
+              "output_tokens": 8005,
+              "total_tokens": 715123,
+              "prompt_request_count": 168,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1433205,
+              "prompt_chars_max": 87990,
+              "prompt_chars_min": 60813,
+              "prompt_remaining_chars_min": 56010,
+              "prompt_tool_calls": 66,
+              "prompt_turns": 234,
+              "unreported_api_attempt_count": 66
+            }
+          },
+          {
+            "game_index": 5,
+            "game_id": "s2-guard-n00098-game5",
+            "seed": "season2-evolution:8bf3b91e84403444:game5",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00021",
+              "villager": "villager-n00054",
+              "seer": "seer-n00013",
+              "witch": "witch-n00079",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "a6ffaa31284ea01ba83bbfeef9a22f513703607865e1367937ee21d38e27d3d3",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 180,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 20,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 181,
+              "api_attempt_count": 291,
+              "reported_usage_response_count": 181,
+              "input_tokens": 839879,
+              "output_tokens": 9927,
+              "total_tokens": 849806,
+              "prompt_request_count": 182,
+              "prompt_over_limit_count": 1,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1646874,
+              "prompt_chars_max": 92629,
+              "prompt_chars_min": 57996,
+              "prompt_remaining_chars_min": 57360,
+              "prompt_tool_calls": 110,
+              "prompt_turns": 292,
+              "unreported_api_attempt_count": 110
+            }
+          },
+          {
+            "game_index": 6,
+            "game_id": "s2-guard-n00098-game6",
+            "seed": "season2-evolution:05927cd59460de7e:game6",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00064",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-n00003",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "a78cb96cb6b2d5ef91660e80c5bea418a0f6869fbb9cbb7029ada5e3aae12b48",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 145,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p1"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 146,
+              "api_attempt_count": 225,
+              "reported_usage_response_count": 146,
+              "input_tokens": 564748,
+              "output_tokens": 6882,
+              "total_tokens": 571630,
+              "prompt_request_count": 146,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1107976,
+              "prompt_chars_max": 73166,
+              "prompt_chars_min": 50125,
+              "prompt_remaining_chars_min": 70834,
+              "prompt_tool_calls": 79,
+              "prompt_turns": 225,
+              "unreported_api_attempt_count": 79
+            }
+          },
+          {
+            "game_index": 7,
+            "game_id": "s2-guard-n00098-game7",
+            "seed": "season2-evolution:33cb2e1b30548338:game7",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00063",
+              "villager": "villager-n00054",
+              "seer": "seer-n00027",
+              "witch": "witch-n00095",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00076"
+            },
+            "evaluation_signature": "9a3cde97b632a1f6f51250743445ab113f5f91bde70986fc8de9d76ac255146d",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 173,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 18,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 174,
+              "api_attempt_count": 279,
+              "reported_usage_response_count": 174,
+              "input_tokens": 911048,
+              "output_tokens": 8684,
+              "total_tokens": 919732,
+              "prompt_request_count": 174,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1784184,
+              "prompt_chars_max": 102508,
+              "prompt_chars_min": 58806,
+              "prompt_remaining_chars_min": 41492,
+              "prompt_tool_calls": 105,
+              "prompt_turns": 279,
+              "unreported_api_attempt_count": 105
+            }
+          },
+          {
+            "game_index": 8,
+            "game_id": "s2-guard-n00098-game8",
+            "seed": "season2-evolution:6c24a061690ca473:game8",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00029",
+              "seer": "seer-n00014",
+              "witch": "witch-n00003",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00076"
+            },
+            "evaluation_signature": "88cd669ea32577246aed07e0cffb8554f5113a992ea096f315b2cfa2b587837b",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 176,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 20,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 177,
+              "api_attempt_count": 270,
+              "reported_usage_response_count": 177,
+              "input_tokens": 820294,
+              "output_tokens": 9664,
+              "total_tokens": 829958,
+              "prompt_request_count": 177,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1580421,
+              "prompt_chars_max": 98265,
+              "prompt_chars_min": 55619,
+              "prompt_remaining_chars_min": 45735,
+              "prompt_tool_calls": 93,
+              "prompt_turns": 270,
+              "unreported_api_attempt_count": 93
+            }
+          },
+          {
+            "game_index": 9,
+            "game_id": "s2-guard-n00098-game9",
+            "seed": "season2-evolution:8703dc151c2b1dd4:game9",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00043",
+              "villager": "villager-n00046",
+              "seer": "seer-n00067",
+              "witch": "witch-n00023",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00032"
+            },
+            "evaluation_signature": "9b46ec101f64a465f110785f2389033c4cd14716d92d730c029df933d8a70710",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 189,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p4"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round0/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 190,
+              "api_attempt_count": 265,
+              "reported_usage_response_count": 190,
+              "input_tokens": 817145,
+              "output_tokens": 9016,
+              "total_tokens": 826161,
+              "prompt_request_count": 192,
+              "prompt_over_limit_count": 2,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1667228,
+              "prompt_chars_max": 101593,
+              "prompt_chars_min": 63124,
+              "prompt_remaining_chars_min": 47081,
+              "prompt_tool_calls": 75,
+              "prompt_turns": 267,
+              "unreported_api_attempt_count": 75
+            }
+          },
+          {
+            "game_index": 10,
+            "game_id": "s2-guard-n00098-game10",
+            "seed": "season2-evolution:58f4773ff8cddc12:game10",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00021",
+              "villager": "villager-n00046",
+              "seer": "seer-n00014",
+              "witch": "witch-n00095",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "1a03f5e6cb8814471db9845d9cdf0c6864d6eb218c4a6bfb2296f03f400c291b",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 171,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p4"
+            ],
+            "focus_decision_count": 18,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 175,
+              "api_attempt_count": 268,
+              "reported_usage_response_count": 175,
+              "input_tokens": 900380,
+              "output_tokens": 9187,
+              "total_tokens": 909567,
+              "prompt_request_count": 176,
+              "prompt_over_limit_count": 1,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1873435,
+              "prompt_chars_max": 104340,
+              "prompt_chars_min": 68473,
+              "prompt_remaining_chars_min": 40582,
+              "prompt_tool_calls": 93,
+              "prompt_turns": 269,
+              "unreported_api_attempt_count": 93
+            }
+          },
+          {
+            "game_index": 11,
+            "game_id": "s2-guard-n00098-game11",
+            "seed": "season2-evolution:7ea9c70b78b76bb4:game11",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00046",
+              "seer": "seer-n00015",
+              "witch": "witch-n00022",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "db87eb21e27a3deb3b1d32ef1408551badd537aab60322f3f9d4116cd702212a",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 169,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 175,
+              "api_attempt_count": 275,
+              "reported_usage_response_count": 175,
+              "input_tokens": 875500,
+              "output_tokens": 9808,
+              "total_tokens": 885308,
+              "prompt_request_count": 178,
+              "prompt_over_limit_count": 3,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1853520,
+              "prompt_chars_max": 101697,
+              "prompt_chars_min": 68553,
+              "prompt_remaining_chars_min": 45649,
+              "prompt_tool_calls": 100,
+              "prompt_turns": 278,
+              "unreported_api_attempt_count": 100
+            }
+          },
+          {
+            "game_index": 12,
+            "game_id": "s2-guard-n00098-game12",
+            "seed": "season2-evolution:27f8f01d4e693ea7:game12",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00044",
+              "villager": "villager-n00083",
+              "seer": "seer-n00013",
+              "witch": "witch-n00022",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00007"
+            },
+            "evaluation_signature": "ee4abc665b221f726c58b9dc1dd63bca703e9d94fb416062fc958f1f4a29750a",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 163,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 18,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 166,
+              "api_attempt_count": 266,
+              "reported_usage_response_count": 166,
+              "input_tokens": 850031,
+              "output_tokens": 8176,
+              "total_tokens": 858207,
+              "prompt_request_count": 166,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1665020,
+              "prompt_chars_max": 94980,
+              "prompt_chars_min": 62966,
+              "prompt_remaining_chars_min": 49020,
+              "prompt_tool_calls": 99,
+              "prompt_turns": 265,
+              "unreported_api_attempt_count": 100
+            }
+          },
+          {
+            "game_index": 13,
+            "game_id": "s2-guard-n00098-game13",
+            "seed": "season2-evolution:0aeda21594ce3dd8:game13",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00043",
+              "villager": "villager-n00030",
+              "seer": "seer-n00027",
+              "witch": "witch-n00060",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00058"
+            },
+            "evaluation_signature": "e22049cd4db7b8e9cb5fbbad6b1eaeaa41bb155b9cb6c51f87d5f52e7af0a039",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 170,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p2"
+            ],
+            "focus_decision_count": 17,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 172,
+              "api_attempt_count": 262,
+              "reported_usage_response_count": 172,
+              "input_tokens": 815327,
+              "output_tokens": 8800,
+              "total_tokens": 824127,
+              "prompt_request_count": 172,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1552171,
+              "prompt_chars_max": 96495,
+              "prompt_chars_min": 53967,
+              "prompt_remaining_chars_min": 47505,
+              "prompt_tool_calls": 90,
+              "prompt_turns": 262,
+              "unreported_api_attempt_count": 90
+            }
+          },
+          {
+            "game_index": 14,
+            "game_id": "s2-guard-n00098-game14",
+            "seed": "season2-evolution:eebd4f7606ab461b:game14",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00093",
+              "seer": "seer-n00013",
+              "witch": "witch-n00003",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00058"
+            },
+            "evaluation_signature": "17a46ffba0a45fc488ff68717abf455a5ca18f8427c31a3642dc9a3f65dc5d73",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 205,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 12,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 206,
+              "api_attempt_count": 347,
+              "reported_usage_response_count": 206,
+              "input_tokens": 1003246,
+              "output_tokens": 11649,
+              "total_tokens": 1014895,
+              "prompt_request_count": 207,
+              "prompt_over_limit_count": 1,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 2024422,
+              "prompt_chars_max": 98054,
+              "prompt_chars_min": 62024,
+              "prompt_remaining_chars_min": 50885,
+              "prompt_tool_calls": 141,
+              "prompt_turns": 348,
+              "unreported_api_attempt_count": 141
+            }
+          },
+          {
+            "game_index": 15,
+            "game_id": "s2-guard-n00098-game15",
+            "seed": "season2-evolution:905dbb439ed40b40:game15",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-n00067",
+              "witch": "witch-n00022",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "7dca922a6deca989faf179e56073023b7ca4a554ed5bac75d116bca2704f7f21",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 159,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 15,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 161,
+              "api_attempt_count": 261,
+              "reported_usage_response_count": 161,
+              "input_tokens": 747246,
+              "output_tokens": 7758,
+              "total_tokens": 755004,
+              "prompt_request_count": 161,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1505615,
+              "prompt_chars_max": 89902,
+              "prompt_chars_min": 60989,
+              "prompt_remaining_chars_min": 54098,
+              "prompt_tool_calls": 100,
+              "prompt_turns": 261,
+              "unreported_api_attempt_count": 100
+            }
+          },
+          {
+            "game_index": 16,
+            "game_id": "s2-guard-n00098-game16",
+            "seed": "season2-evolution:53481bdfd2a54391:game16",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-n00086",
+              "witch": "witch-n00060",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "13169485cb54ceb36e535f2a3f5431fc1dba6383cabcec2fbd8c3479ad2dd7a7",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 156,
+            "fallback_count": 1,
+            "fallback_rate": 0.00641025641025641,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p9",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "day_vote",
+                  "target_id": "p3"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 17,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 158,
+              "api_attempt_count": 226,
+              "reported_usage_response_count": 158,
+              "input_tokens": 652881,
+              "output_tokens": 7909,
+              "total_tokens": 660790,
+              "prompt_request_count": 158,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1299975,
+              "prompt_chars_max": 83901,
+              "prompt_chars_min": 56078,
+              "prompt_remaining_chars_min": 60099,
+              "prompt_tool_calls": 68,
+              "prompt_turns": 226,
+              "unreported_api_attempt_count": 68
+            }
+          },
+          {
+            "game_index": 17,
+            "game_id": "s2-guard-n00098-game17",
+            "seed": "season2-evolution:95e045761eba2696:game17",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00064",
+              "villager": "villager-base",
+              "seer": "seer-n00014",
+              "witch": "witch-n00079",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "20d0ae03cccd7f19e08fd4abfcf06418587a4c65a409810239fba436abf8b9ed",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 165,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p6"
+            ],
+            "focus_decision_count": 17,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 167,
+              "api_attempt_count": 246,
+              "reported_usage_response_count": 167,
+              "input_tokens": 645109,
+              "output_tokens": 8263,
+              "total_tokens": 653372,
+              "prompt_request_count": 167,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1241667,
+              "prompt_chars_max": 86413,
+              "prompt_chars_min": 50117,
+              "prompt_remaining_chars_min": 57587,
+              "prompt_tool_calls": 78,
+              "prompt_turns": 245,
+              "unreported_api_attempt_count": 79
+            }
+          },
+          {
+            "game_index": 18,
+            "game_id": "s2-guard-n00098-game18",
+            "seed": "season2-evolution:c48ed82da452de86:game18",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00028",
+              "seer": "seer-n00027",
+              "witch": "witch-n00080",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00076"
+            },
+            "evaluation_signature": "ce025f1511f4b09177c0e060fd780f74bbbe712dacdda3ee12a732bd2df9c4f1",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 193,
+            "fallback_count": 1,
+            "fallback_rate": 0.0051813471502590676,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p10",
+                "type": "participant_error",
+                "message": "Task-Agent prompt 超过外部上限：12002>12000 字符",
+                "exception_type": "ValueError"
+              }
+            ],
+            "focus_player_ids": [
+              "p11"
+            ],
+            "focus_decision_count": 21,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 193,
+              "api_attempt_count": 291,
+              "reported_usage_response_count": 193,
+              "input_tokens": 894732,
+              "output_tokens": 9301,
+              "total_tokens": 904033,
+              "prompt_request_count": 194,
+              "prompt_over_limit_count": 1,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1728944,
+              "prompt_chars_max": 92331,
+              "prompt_chars_min": 58346,
+              "prompt_remaining_chars_min": 52353,
+              "prompt_tool_calls": 98,
+              "prompt_turns": 292,
+              "unreported_api_attempt_count": 98
+            }
+          },
+          {
+            "game_index": 19,
+            "game_id": "s2-guard-n00098-game19",
+            "seed": "season2-evolution:cba7a92bcb062f9f:game19",
+            "focus_node": "guard-n00098",
+            "role_nodes": {
+              "wolf": "wolf-n00043",
+              "villager": "villager-n00054",
+              "seer": "seer-n00066",
+              "witch": "witch-n00024",
+              "guard": "guard-n00098",
+              "hunter": "hunter-n00040"
+            },
+            "evaluation_signature": "f6e8a8d86123bd463ec0166aedc87c6b469fca1c629e190bfe0b5df27387841a",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 160,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 12,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/games/round1/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 161,
+              "api_attempt_count": 243,
+              "reported_usage_response_count": 161,
+              "input_tokens": 691570,
+              "output_tokens": 7808,
+              "total_tokens": 699378,
+              "prompt_request_count": 161,
+              "prompt_over_limit_count": 0,
+              "prompt_measurement_count": 0,
+              "prompt_chars_total": 1346628,
+              "prompt_chars_max": 79834,
+              "prompt_chars_min": 52897,
+              "prompt_remaining_chars_min": 64166,
+              "prompt_tool_calls": 82,
+              "prompt_turns": 243,
+              "unreported_api_attempt_count": 82
+            }
+          }
+        ],
+        "model": {
+          "available": true,
+          "model": "qwen3.8-flash",
+          "protocol": "responses",
+          "reasoning_effort": "none",
+          "enable_thinking": false,
+          "max_output_tokens": 900
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_path",
+      "arguments": {},
+      "result": {
+        "lineage": [
+          {
+            "node": {
+              "node_id": "guard-base",
+              "role": "guard",
+              "status": "retained",
+              "parent_id": null,
+              "depth": 0,
+              "children": [
+                "guard-n00016",
+                "guard-n00017",
+                "guard-n00018"
+              ],
+              "created_at": "2026-09-04T05:02:49.879230+00:00",
+              "code_hash": "2e9abbfc71be91a298173edb54e6c476af96d7156b4cdd8c4c76a6f797aba01c",
+              "patch_path": null,
+              "diagnosis_path": null,
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/summary.json",
+              "status_reason": "base"
+            },
+            "patch": ""
+          },
+          {
+            "node": {
+              "node_id": "guard-n00016",
+              "role": "guard",
+              "status": "retained",
+              "parent_id": "guard-base",
+              "depth": 1,
+              "children": [
+                "guard-n00034",
+                "guard-n00035",
+                "guard-n00036"
+              ],
+              "created_at": "2026-09-04T21:39:45.942457+00:00",
+              "code_hash": "d98dc1c3e142a6f3b1f2c76437273f21ce699c805be37d828578d35318dd76b1",
+              "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00016/ancestor.patch",
+              "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T204739-591c5161/branch0/diagnosis.json",
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00016/summary.json",
+              "status_reason": "passed_broad_filter"
+            },
+            "patch": "--- guard-base/task_agent.py\n+++ guard-n00016/task_agent.py\n@@ -8,6 +8,7 @@\n \n import asyncio\n from collections.abc import Mapping\n+from collections import deque\n import hashlib\n import inspect\n import json\n@@ -29,6 +30,24 @@\n # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。\n DEFAULT_MAX_DECISION_RETRIES = 2\n _SPEECH_ACTION_KINDS = frozenset({\"speak\", \"last_words\"})\n+_GUARD_ACTION_KIND = \"guard_protect\"\n+_PLAYER_ID_PATTERN = re.compile(r\"\\bp\\d+\\b\")\n+_GUARD_CONTEXT_KEYWORDS = (\n+    \"sheriff\",\n+    \"警长\",\n+    \"focus\",\n+    \"vote\",\n+    \"suspect\",\n+    \"怀疑\",\n+    \"公开\",\n+    \"public\",\n+    \"claim\",\n+    \"claimed\",\n+    \"target\",\n+    \"dialogue\",\n+    \"刀口\",\n+    \"站边\",\n+)\n \n \n CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {\n@@ -187,12 +206,16 @@\n             \"output_tokens\": 0,\n             \"total_tokens\": 0,\n         }\n+        self.last_protected_id: str | None = None\n+        self.last_protected_round: int | None = None\n+        self.alive_player_cache: set[str] = set()\n+        self.recent_public_focus_ids: deque[str] = deque(maxlen=8)\n+        self._last_observed_round: int | None = None\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n-        \"\"\"接收公开同步；最小基线不把它跨行动保存为模型记忆。\"\"\"\n-\n-        # 保留 Participant 接口，但刻意不维护跨行动状态。\n-        del sync_packet\n+        \"\"\"接收公开同步，并提取最小守卫记忆。\"\"\"\n+\n+        self._update_guard_memory(sync_packet)\n \n     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:\n         if turn_packet[\"self\"][\"player_id\"] != self.player_id:\n@@ -201,6 +224,7 @@\n         if str(private.get(\"role\")) != self.profile.role:\n             raise ValueError(\"Task-Agent 的角色档案与行动包身份不一致\")\n \n+        self._update_guard_memory(turn_packet.get(\"public_state\") or {})\n         system = self._system_prompt(private)\n         prompt = {\n             \"game\": turn_packet[\"game\"],\n@@ -219,6 +243,8 @@\n \n         tool_context = turn_packet.get(\"tool_context\") or {}\n         current_dialogue = tool_context.get(\"current_round_dialogue\") or []\n+        if current_dialogue:\n+            self._update_guard_memory({\"current_round_dialogue\": current_dialogue})\n \n         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:\n             del arguments\n@@ -263,8 +289,10 @@\n                 continue\n             self._record_token_usage(raw)\n             action = normalize_decision(raw, turn_packet[\"request\"])\n+            action = self._repair_guard_decision(action, turn_packet[\"request\"])\n             error = decision_error(action, turn_packet[\"request\"])\n             if error is None:\n+                self._record_successful_guard_action(action, turn_packet)\n                 return action\n             if _attempt >= self.max_decision_retries:\n                 # 只保留规范化后的行动字段；完整原始响应和推理文本不会进入记录。\n@@ -297,6 +325,12 @@\n         return dict(self._model_token_usage)\n \n     def _system_prompt(self, private: Mapping[str, Any]) -> str:\n+        role_task = self.profile.task\n+        if self.profile.role == \"guard\":\n+            role_task = role_task + (\n+                \"\\n\\n守卫约束：只从当前 target_ids 里选；默认不要重复上一夜目标；\"\n+                \"优先保护公开信息位/关键发言位。\"\n+            )\n         return render_prompt(\n             \"player_system.txt\",\n             player_id=self.player_id,\n@@ -304,19 +338,25 @@\n             team=private[\"team\"],\n             persona=self.persona,\n             role_base=self.profile.base,\n-            role_task=self.profile.task,\n+            role_task=role_task,\n             tool_name=CURRENT_ROUND_DIALOGUE_TOOL_NAME,\n             max_tool_calls=self.max_tool_calls_per_decision,\n             max_tool_result_tokens=self.max_tool_result_tokens,\n             max_prompt_chars=self.max_prompt_chars,\n         )\n \n-    @staticmethod\n-    def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:\n+    def _turn_instruction(self, request: Mapping[str, Any], feedback: str) -> str:\n+        validation_feedback = f\"上一次输出未通过校验：{feedback}\" if feedback else \"\"\n+        if self.profile.role == \"guard\":\n+            guard_note = (\n+                \"守卫执行要点：只选当前 target_ids；尽量不要重复上一夜守护对象；\"\n+                \"优先公开信息位和当前最可能被刀的好人。\"\n+            )\n+            validation_feedback = guard_note + (\"\\n\" + validation_feedback if validation_feedback else \"\")\n         return render_prompt(\n             \"player_turn_instruction.txt\",\n             action_contract=render_action_contract(request),\n-            validation_feedback=(f\"上一次输出未通过校验：{feedback}\" if feedback else \"\"),\n+            validation_feedback=validation_feedback,\n         )\n \n     async def _complete_json(self, **kwargs: Any) -> dict[str, Any]:\n@@ -347,6 +387,171 @@\n             if value is not None:\n                 self._model_token_usage[key] += value\n \n+    def _record_successful_guard_action(self, action: Mapping[str, Any], packet: Mapping[str, Any]) -> None:\n+        if self.profile.role != \"guard\" or action.get(\"kind\") != _GUARD_ACTION_KIND:\n+            return\n+        target_id = action.get(\"target_id\")\n+        if not target_id:\n+            return\n+        self.last_protected_id = str(target_id)\n+        round_no = self._extract_round_number(packet)\n+        if round_no is None and isinstance(packet.get(\"game\"), Mapping):\n+            round_no = self._extract_round_number(packet[\"game\"])\n+        if round_no is not None:\n+            self.last_protected_round = round_no\n+\n+    def _repair_guard_decision(self, action: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:\n+        if self.profile.role != \"guard\" or action.get(\"kind\") != _GUARD_ACTION_KIND:\n+            return action\n+        allowed = next(\n+            (\n+                item\n+                for item in request.get(\"allowed_actions\", [])\n+                if isinstance(item, Mapping) and item.get(\"kind\") == _GUARD_ACTION_KIND\n+            ),\n+            None,\n+        )\n+        if not isinstance(allowed, Mapping):\n+            return action\n+        candidates = self._guard_candidate_targets(allowed, request)\n+        if not candidates:\n+            return action\n+        if action.get(\"target_id\") not in candidates:\n+            repaired = dict(action)\n+            repaired[\"target_id\"] = candidates[0]\n+            return repaired\n+        return action\n+\n+    def _guard_candidate_targets(self, allowed: Mapping[str, Any], request: Mapping[str, Any]) -> list[str]:\n+        target_ids = allowed.get(\"target_ids\")\n+        if not isinstance(target_ids, list):\n+            return []\n+        candidates: list[str] = []\n+        for target_id in target_ids:\n+            candidate = str(target_id)\n+            if candidate and candidate not in candidates:\n+                candidates.append(candidate)\n+        if not candidates:\n+            return []\n+        round_no = self._extract_round_number(request) or self._last_observed_round\n+        repeat_forbidden = self._guard_repeat_forbidden(allowed)\n+        scored: list[tuple[int, int, str]] = []\n+        for index, candidate in enumerate(candidates):\n+            score = 0\n+            if candidate == self.player_id:\n+                score -= 10_000\n+            if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:\n+                score -= 5_000\n+            if candidate in self.recent_public_focus_ids:\n+                score += 400\n+            if candidate in self.alive_player_cache:\n+                score += 40\n+            if self._looks_publicly_salient(candidate, request):\n+                score += 120\n+            if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:\n+                score -= max(0, 200 - max(0, round_no - self.last_protected_round))\n+            scored.append((-score, index, candidate))\n+        scored.sort()\n+        ordered = [candidate for _, _, candidate in scored]\n+        if repeat_forbidden and self.last_protected_id:\n+            filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]\n+            if filtered:\n+                return filtered\n+        return ordered\n+\n+    def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:\n+        if allowed.get(\"guard_can_repeat_protect\") is True:\n+            return False\n+        if allowed.get(\"guard_can_repeat_protect\") is False:\n+            return True\n+        return True\n+\n+    def _looks_publicly_salient(self, candidate: str, request: Mapping[str, Any]) -> bool:\n+        return candidate in self._extract_focus_ids(request.get(\"public_state\"))\n+\n+    def _update_guard_memory(self, packet: Mapping[str, Any] | Any) -> None:\n+        if not isinstance(packet, Mapping):\n+            return\n+        round_no = self._extract_round_number(packet)\n+        if round_no is not None:\n+            self._last_observed_round = round_no\n+        alive_ids = self._extract_ids_by_keys(\n+            packet,\n+            (\"alive\", \"alive_player\", \"alive_players\", \"alive_player_ids\", \"player_ids\", \"players\"),\n+        )\n+        if alive_ids:\n+            self.alive_player_cache.update(alive_ids)\n+        focus_ids = self._extract_focus_ids(packet)\n+        for focus_id in focus_ids:\n+            if focus_id not in self.recent_public_focus_ids:\n+                self.recent_public_focus_ids.append(focus_id)\n+\n+    def _extract_round_number(self, packet: Mapping[str, Any] | Any) -> int | None:\n+        if not isinstance(packet, Mapping):\n+            return None\n+        for key in (\"round\", \"round_no\", \"round_number\"):\n+            value = packet.get(key)\n+            if isinstance(value, int) and value >= 0:\n+                return value\n+            if isinstance(value, str) and value.isdigit():\n+                return int(value)\n+        game = packet.get(\"game\")\n+        if isinstance(game, Mapping):\n+            for key in (\"round\", \"round_no\", \"round_number\"):\n+                value = game.get(key)\n+                if isinstance(value, int) and value >= 0:\n+                    return value\n+                if isinstance(value, str) and value.isdigit():\n+                    return int(value)\n+        return None\n+\n+    def _extract_focus_ids(self, packet: Mapping[str, Any] | Any) -> set[str]:\n+        focus_ids: set[str] = set()\n+        if not isinstance(packet, Mapping):\n+            return focus_ids\n+        for key, value in packet.items():\n+            key_text = str(key).lower()\n+            if any(keyword in key_text for keyword in _GUARD_CONTEXT_KEYWORDS):\n+                focus_ids.update(self._extract_player_ids(value))\n+            if isinstance(value, Mapping):\n+                focus_ids.update(self._extract_focus_ids(value))\n+            elif isinstance(value, list):\n+                for item in value:\n+                    focus_ids.update(self._extract_player_ids(item))\n+                    if isinstance(item, Mapping):\n+                        focus_ids.update(self._extract_focus_ids(item))\n+        return focus_ids\n+\n+    def _extract_ids_by_keys(self, packet: Mapping[str, Any], keys: tuple[str, ...]) -> set[str]:\n+        values: set[str] = set()\n+        for key, value in packet.items():\n+            key_text = str(key).lower()\n+            if any(token in key_text for token in keys):\n+                values.update(self._extract_player_ids(value))\n+            if isinstance(value, Mapping):\n+                values.update(self._extract_ids_by_keys(value, keys))\n+            elif isinstance(value, list):\n+                for item in value:\n+                    values.update(self._extract_player_ids(item))\n+                    if isinstance(item, Mapping):\n+                        values.update(self._extract_ids_by_keys(item, keys))\n+        return values\n+\n+    def _extract_player_ids(self, value: Any) -> set[str]:\n+        player_ids: set[str] = set()\n+        if isinstance(value, str):\n+            player_ids.update(_PLAYER_ID_PATTERN.findall(value))\n+            return player_ids\n+        if isinstance(value, Mapping):\n+            for inner in value.values():\n+                player_ids.update(self._extract_player_ids(inner))\n+            return player_ids\n+        if isinstance(value, list):\n+            for item in value:\n+                player_ids.update(self._extract_player_ids(item))\n+            return player_ids\n+        return player_ids\n+\n     @staticmethod\n     def _nonnegative_int(value: object, *, fallback: int | None) -> int | None:\n         if isinstance(value, bool):\n--- guard-base/task.md\n+++ guard-n00016/task.md\n@@ -1,8 +1,7 @@\n-# 守卫最小任务\n+# 守卫操作规程\n \n-你的任务是用守护行动延长好人关键角色的生存时间，并自然参与白天讨论。\n-\n-- 依据公开信息猜测狼人可能的刀口，选择当前行动包允许的守护目标。\n-- 遵守不能连续守同一人的规则；没有可靠目标时也要做出合理而非随机的选择。\n-- 不要把“守护成功”当作系统已确认事实，因为引擎不会直接告诉你结果。\n-- 发言可以隐藏身份，重点回应具体矛盾和票型，不要机械宣称自己在保护谁。\n+- 先看当前 `target_ids`，只能从里面选。\n+- 记住上一夜守护对象；若规则不允许连守，默认不要重复同一人。\n+- 优先保护公开信息位、关键发言位、以及当前最可能被刀的好人。\n+- 没有强信息时，也要稳定地做出合法选择，不要猜出列表外目标。\n+- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。\n"
+          },
+          {
+            "node": {
+              "node_id": "guard-n00034",
+              "role": "guard",
+              "status": "retained",
+              "parent_id": "guard-n00016",
+              "depth": 2,
+              "children": [
+                "guard-n00037",
+                "guard-n00038",
+                "guard-n00039"
+              ],
+              "created_at": "2026-09-05T15:26:34.788332+00:00",
+              "code_hash": "893a7eda95dff2797ab52d224c38cb1748bad7df5aca2e9b2c5e354687e7095d",
+              "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00034/ancestor.patch",
+              "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T152634-f7b8f374/branch0/diagnosis.json",
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00034/summary.json",
+              "status_reason": "passed_broad_filter"
+            },
+            "patch": "--- guard-n00016/task_agent.py\n+++ guard-n00034/task_agent.py\n@@ -210,6 +210,7 @@\n         self.last_protected_round: int | None = None\n         self.alive_player_cache: set[str] = set()\n         self.recent_public_focus_ids: deque[str] = deque(maxlen=8)\n+        self.player_risk_profile: dict[str, dict[str, int]] = {}\n         self._last_observed_round: int | None = None\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n@@ -328,8 +329,8 @@\n         role_task = self.profile.task\n         if self.profile.role == \"guard\":\n             role_task = role_task + (\n-                \"\\n\\n守卫约束：只从当前 target_ids 里选；默认不要重复上一夜目标；\"\n-                \"优先保护公开信息位/关键发言位。\"\n+                \"\\n\\n守卫约束：只从当前 target_ids 里选；先判定今晚最可能被狼刀的好人；\"\n+                \"默认不要重复上一夜目标；优先保护高风险好人而不是单纯热度位。\"\n             )\n         return render_prompt(\n             \"player_system.txt\",\n@@ -349,8 +350,8 @@\n         validation_feedback = f\"上一次输出未通过校验：{feedback}\" if feedback else \"\"\n         if self.profile.role == \"guard\":\n             guard_note = (\n-                \"守卫执行要点：只选当前 target_ids；尽量不要重复上一夜守护对象；\"\n-                \"优先公开信息位和当前最可能被刀的好人。\"\n+                \"守卫执行要点：只在当前 target_ids 内选；先找今晚最可能被刀的好人；\"\n+                \"优先公开神职、被多人点名/压票的关键发言位；没有更好目标时再自守。\"\n             )\n             validation_feedback = guard_note + (\"\\n\" + validation_feedback if validation_feedback else \"\")\n         return render_prompt(\n@@ -435,24 +436,19 @@\n             return []\n         round_no = self._extract_round_number(request) or self._last_observed_round\n         repeat_forbidden = self._guard_repeat_forbidden(allowed)\n-        scored: list[tuple[int, int, str]] = []\n+        scored: list[tuple[int, int, int, str]] = []\n         for index, candidate in enumerate(candidates):\n-            score = 0\n+            risk_score = self._player_risk_score(candidate, request, round_no)\n+            heat_score = self._public_heat_score(candidate, request)\n             if candidate == self.player_id:\n-                score -= 10_000\n+                risk_score -= 10_000\n             if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:\n-                score -= 5_000\n-            if candidate in self.recent_public_focus_ids:\n-                score += 400\n-            if candidate in self.alive_player_cache:\n-                score += 40\n-            if self._looks_publicly_salient(candidate, request):\n-                score += 120\n+                risk_score -= 5_000\n             if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:\n-                score -= max(0, 200 - max(0, round_no - self.last_protected_round))\n-            scored.append((-score, index, candidate))\n+                risk_score -= max(0, 200 - max(0, round_no - self.last_protected_round))\n+            scored.append((-risk_score, -heat_score, index, candidate))\n         scored.sort()\n-        ordered = [candidate for _, _, candidate in scored]\n+        ordered = [candidate for _, _, _, candidate in scored]\n         if repeat_forbidden and self.last_protected_id:\n             filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]\n             if filtered:\n@@ -485,6 +481,180 @@\n         for focus_id in focus_ids:\n             if focus_id not in self.recent_public_focus_ids:\n                 self.recent_public_focus_ids.append(focus_id)\n+        self._update_guard_risk_memory(packet, round_no)\n+\n+    def _update_guard_risk_memory(self, packet: Mapping[str, Any], round_no: int | None) -> None:\n+        self._scan_guard_signal_tree(packet, round_no)\n+\n+    def _scan_guard_signal_tree(self, node: Mapping[str, Any] | list[Any] | Any, round_no: int | None) -> None:\n+        if isinstance(node, Mapping):\n+            for key, value in node.items():\n+                key_text = str(key).lower()\n+                if key_text in {\"current_round_dialogue\", \"dialogue\", \"dialogues\", \"chat\", \"speech\", \"speeches\", \"transcript\"}:\n+                    self._ingest_dialogue_entries(value, round_no)\n+                    continue\n+                signal = self._signal_for_key(key_text)\n+                if signal is not None:\n+                    signal_name, signal_weight = signal\n+                    for player_id in self._extract_player_ids(value):\n+                        self._bump_player_risk(player_id, signal_name, signal_weight, round_no)\n+                if isinstance(value, Mapping):\n+                    self._scan_guard_signal_tree(value, round_no)\n+                elif isinstance(value, list):\n+                    for item in value:\n+                        if isinstance(item, (Mapping, list)):\n+                            self._scan_guard_signal_tree(item, round_no)\n+            return\n+        if isinstance(node, list):\n+            for item in node:\n+                if isinstance(item, (Mapping, list)):\n+                    self._scan_guard_signal_tree(item, round_no)\n+\n+    def _signal_for_key(self, key_text: str) -> tuple[str, int] | None:\n+        vote_keys = (\"vote\", \"voted\", \"投票\", \"票型\", \"归票\", \"票数\")\n+        claim_keys = (\"claim\", \"claimed\", \"身份\", \"报身份\", \"自报\", \"跳预\", \"跳女巫\", \"跳守卫\", \"跳猎人\", \"跳神\", \"神职\")\n+        threat_keys = (\"target\", \"kill\", \"attack\", \"夜刀\", \"刀口\", \"击杀\", \"夜里要刀\")\n+        pressure_keys = (\"suspect\", \"suspected\", \"怀疑\", \"pressure\", \"point\", \"点名\", \"push\", \"压票\", \"站边\", \"focus\", \"关注\", \"指认\")\n+        exposure_keys = (\"public\", \"公开\", \"center\", \"核心\", \"关键\", \"hot\", \"热度\")\n+        if any(token in key_text for token in vote_keys):\n+            return (\"vote\", 4)\n+        if any(token in key_text for token in claim_keys):\n+            return (\"claim\", 5)\n+        if any(token in key_text for token in threat_keys):\n+            return (\"threat\", 4)\n+        if any(token in key_text for token in pressure_keys):\n+            return (\"pressure\", 3)\n+        if any(token in key_text for token in exposure_keys):\n+            return (\"exposure\", 2)\n+        return None\n+\n+    def _ingest_dialogue_entries(self, dialogue: Any, round_no: int | None) -> None:\n+        entries = dialogue if isinstance(dialogue, list) else [dialogue]\n+        for entry in entries:\n+            speaker_id = self._dialogue_entry_speaker_id(entry)\n+            text = self._dialogue_entry_text(entry)\n+            mentioned_ids = set(self._extract_player_ids(entry))\n+            if text:\n+                mentioned_ids.update(self._extract_player_ids(text))\n+            if speaker_id:\n+                mentioned_ids.discard(speaker_id)\n+            explicit_targets = self._dialogue_entry_targets(entry)\n+            if explicit_targets:\n+                mentioned_ids.update(explicit_targets)\n+            signals = self._dialogue_text_signals(text)\n+            if not signals and mentioned_ids:\n+                signals = {\"pressure\": 1}\n+            if speaker_id and signals.get(\"claim\"):\n+                self._bump_player_risk(speaker_id, \"claim\", signals[\"claim\"], round_no)\n+            if speaker_id and signals.get(\"threat\"):\n+                self._bump_player_risk(speaker_id, \"pressure\", max(1, signals[\"threat\"] // 2), round_no)\n+            for player_id in mentioned_ids:\n+                for signal_name, signal_weight in signals.items():\n+                    self._bump_player_risk(player_id, signal_name, signal_weight, round_no)\n+\n+    def _dialogue_entry_text(self, entry: Any) -> str:\n+        if isinstance(entry, str):\n+            return entry\n+        if isinstance(entry, Mapping):\n+            for key in (\"text\", \"content\", \"message\", \"speech\", \"utterance\", \"dialogue\"):\n+                value = entry.get(key)\n+                if isinstance(value, str) and value.strip():\n+                    return value\n+        return \"\"\n+\n+    def _dialogue_entry_speaker_id(self, entry: Any) -> str | None:\n+        if not isinstance(entry, Mapping):\n+            return None\n+        for key in (\"speaker_id\", \"speaker\", \"player_id\", \"from\", \"source\"):\n+            value = entry.get(key)\n+            if isinstance(value, str) and value:\n+                return value\n+            if isinstance(value, Mapping):\n+                ids = self._extract_player_ids(value)\n+                if ids:\n+                    return next(iter(ids))\n+        return None\n+\n+    def _dialogue_entry_targets(self, entry: Any) -> set[str]:\n+        if not isinstance(entry, Mapping):\n+            return set()\n+        targets: set[str] = set()\n+        for key in (\"target_id\", \"target_ids\", \"vote_target\", \"vote_targets\", \"suspect_id\", \"suspect_ids\", \"focus_id\", \"focus_ids\"):\n+            value = entry.get(key)\n+            if value is not None:\n+                targets.update(self._extract_player_ids(value))\n+        return targets\n+\n+    def _dialogue_text_signals(self, text: str) -> dict[str, int]:\n+        if not text:\n+            return {}\n+        lowered = text.lower()\n+        signals: dict[str, int] = {}\n+        if any(token in lowered for token in (\"claim\", \"报身份\", \"自报\", \"我是预言家\", \"我是女巫\", \"我是守卫\", \"我是猎人\", \"我是白痴\", \"跳预\", \"跳女巫\", \"跳守卫\", \"跳猎人\", \"跳神\", \"神职\", \"预言家\", \"女巫\", \"守卫\", \"猎人\", \"白痴\")):\n+            signals[\"claim\"] = 5\n+        if any(token in lowered for token in (\"投票\", \"归票\", \"vote\", \"票型\", \"点名\")):\n+            signals[\"vote\"] = 4\n+        if any(token in lowered for token in (\"夜刀\", \"刀口\", \"今晚刀\", \"击杀\", \"attack\", \"kill\")):\n+            signals[\"threat\"] = 4\n+        if any(token in lowered for token in (\"怀疑\", \"可疑\", \"狼\", \"站边\", \"压票\", \"focus\", \"关注\", \"push\", \"指认\")):\n+            signals[\"pressure\"] = max(signals.get(\"pressure\", 0), 3)\n+        if any(token in lowered for token in (\"公开\", \"关键\", \"核心\", \"热度\", \"中心\", \"public\")):\n+            signals[\"exposure\"] = max(signals.get(\"exposure\", 0), 2)\n+        return signals\n+\n+    def _player_risk_bucket(self, player_id: str) -> dict[str, int]:\n+        bucket = self.player_risk_profile.get(player_id)\n+        if bucket is None:\n+            bucket = {\n+                \"pressure\": 0,\n+                \"vote\": 0,\n+                \"claim\": 0,\n+                \"threat\": 0,\n+                \"exposure\": 0,\n+                \"last_round\": -1,\n+            }\n+            self.player_risk_profile[player_id] = bucket\n+        return bucket\n+\n+    def _bump_player_risk(self, player_id: str, signal_name: str, amount: int, round_no: int | None) -> None:\n+        if not player_id:\n+            return\n+        bucket = self._player_risk_bucket(player_id)\n+        bucket[signal_name] = bucket.get(signal_name, 0) + max(1, int(amount))\n+        if round_no is not None:\n+            bucket[\"last_round\"] = max(bucket.get(\"last_round\", -1), round_no)\n+\n+    def _player_risk_score(self, candidate: str, request: Mapping[str, Any], round_no: int | None) -> int:\n+        bucket = self.player_risk_profile.get(candidate) or {}\n+        score = 0\n+        score += int(bucket.get(\"threat\", 0)) * 8\n+        score += int(bucket.get(\"claim\", 0)) * 6\n+        score += int(bucket.get(\"vote\", 0)) * 5\n+        score += int(bucket.get(\"pressure\", 0)) * 4\n+        score += int(bucket.get(\"exposure\", 0)) * 2\n+        if candidate in self.recent_public_focus_ids:\n+            score += 3\n+        if self._looks_publicly_salient(candidate, request):\n+            score += 2\n+        if candidate in self.alive_player_cache:\n+            score += 1\n+        last_round = bucket.get(\"last_round\")\n+        if round_no is None:\n+            round_no = self._last_observed_round\n+        if isinstance(last_round, int) and last_round >= 0 and round_no is not None:\n+            score += max(0, 6 - max(0, round_no - last_round))\n+        return score\n+\n+    def _public_heat_score(self, candidate: str, request: Mapping[str, Any]) -> int:\n+        bucket = self.player_risk_profile.get(candidate) or {}\n+        score = 0\n+        if candidate in self.recent_public_focus_ids:\n+            score += 4\n+        if self._looks_publicly_salient(candidate, request):\n+            score += 3\n+        score += int(bucket.get(\"exposure\", 0))\n+        score += int(bucket.get(\"pressure\", 0))\n+        return score\n \n     def _extract_round_number(self, packet: Mapping[str, Any] | Any) -> int | None:\n         if not isinstance(packet, Mapping):\n--- guard-n00016/task.md\n+++ guard-n00034/task.md\n@@ -1,7 +1,7 @@\n # 守卫操作规程\n \n - 先看当前 `target_ids`，只能从里面选。\n-- 记住上一夜守护对象；若规则不允许连守，默认不要重复同一人。\n-- 优先保护公开信息位、关键发言位、以及当前最可能被刀的好人。\n-- 没有强信息时，也要稳定地做出合法选择，不要猜出列表外目标。\n+- 先判断今晚最可能被狼刀的好人，再在合法目标里排序。\n+- 优先保护公开神职、被多人压票/点名的关键发言位、最近被集中讨论的高风险好人。\n+- 只有没有更好目标时才考虑自守；若规则不允许连守，默认不要重复同一人。\n - 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。\n"
+          },
+          {
+            "node": {
+              "node_id": "guard-n00037",
+              "role": "guard",
+              "status": "retained",
+              "parent_id": "guard-n00034",
+              "depth": 3,
+              "children": [
+                "guard-n00098",
+                "guard-n00099",
+                "guard-n00100"
+              ],
+              "created_at": "2026-09-05T17:10:19.828913+00:00",
+              "code_hash": "7aa6a449db1bf05d8ce5a0e04cff9f85533ed114e10e720653bd345543f2b618",
+              "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00037/ancestor.patch",
+              "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T171019-203c1d66/branch0/diagnosis.json",
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00037/summary.json",
+              "status_reason": "passed_broad_filter"
+            },
+            "patch": "--- guard-n00034/task_agent.py\n+++ guard-n00037/task_agent.py\n@@ -211,6 +211,7 @@\n         self.alive_player_cache: set[str] = set()\n         self.recent_public_focus_ids: deque[str] = deque(maxlen=8)\n         self.player_risk_profile: dict[str, dict[str, int]] = {}\n+        self._guard_signal_round_counts: dict[tuple[str, int], dict[str, int]] = {}\n         self._last_observed_round: int | None = None\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n@@ -290,7 +291,7 @@\n                 continue\n             self._record_token_usage(raw)\n             action = normalize_decision(raw, turn_packet[\"request\"])\n-            action = self._repair_guard_decision(action, turn_packet[\"request\"])\n+            action = self._repair_guard_decision(action, turn_packet[\"request\"], turn_packet)\n             error = decision_error(action, turn_packet[\"request\"])\n             if error is None:\n                 self._record_successful_guard_action(action, turn_packet)\n@@ -330,7 +331,8 @@\n         if self.profile.role == \"guard\":\n             role_task = role_task + (\n                 \"\\n\\n守卫约束：只从当前 target_ids 里选；先判定今晚最可能被狼刀的好人；\"\n-                \"默认不要重复上一夜目标；优先保护高风险好人而不是单纯热度位。\"\n+                \"再看公开神职、警徽链和被多人压票者；话多不等于高风险；\"\n+                \"默认不要重复上一夜目标；不要把守护成功当作已确认结果。\"\n             )\n         return render_prompt(\n             \"player_system.txt\",\n@@ -351,7 +353,8 @@\n         if self.profile.role == \"guard\":\n             guard_note = (\n                 \"守卫执行要点：只在当前 target_ids 内选；先找今晚最可能被刀的好人；\"\n-                \"优先公开神职、被多人点名/压票的关键发言位；没有更好目标时再自守。\"\n+                \"优先公开神职、警徽链和被多人压票的关键节点；话多不等于高风险；\"\n+                \"没有更好目标时再自守。\"\n             )\n             validation_feedback = guard_note + (\"\\n\" + validation_feedback if validation_feedback else \"\")\n         return render_prompt(\n@@ -401,7 +404,12 @@\n         if round_no is not None:\n             self.last_protected_round = round_no\n \n-    def _repair_guard_decision(self, action: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:\n+    def _repair_guard_decision(\n+        self,\n+        action: dict[str, Any],\n+        request: dict[str, Any],\n+        packet: Mapping[str, Any] | None = None,\n+    ) -> dict[str, Any]:\n         if self.profile.role != \"guard\" or action.get(\"kind\") != _GUARD_ACTION_KIND:\n             return action\n         allowed = next(\n@@ -414,16 +422,43 @@\n         )\n         if not isinstance(allowed, Mapping):\n             return action\n-        candidates = self._guard_candidate_targets(allowed, request)\n-        if not candidates:\n+        ranked = self._guard_candidate_ranking(allowed, request, packet)\n+        if not ranked:\n             return action\n-        if action.get(\"target_id\") not in candidates:\n+        chosen = action.get(\"target_id\")\n+        ranked_targets = {item[\"candidate\"] for item in ranked}\n+        if chosen not in ranked_targets:\n             repaired = dict(action)\n-            repaired[\"target_id\"] = candidates[0]\n+            repaired[\"target_id\"] = ranked[0][\"candidate\"]\n             return repaired\n-        return action\n-\n-    def _guard_candidate_targets(self, allowed: Mapping[str, Any], request: Mapping[str, Any]) -> list[str]:\n+        best = ranked[0]\n+        chosen_item = next(item for item in ranked if item[\"candidate\"] == chosen)\n+        score_gap = best[\"total_score\"] - chosen_item[\"total_score\"]\n+        if chosen_item[\"rank\"] <= 1 and score_gap <= 12:\n+            return action\n+        if score_gap <= 4:\n+            return action\n+        if chosen_item[\"rank\"] <= 2 and score_gap <= 8:\n+            return action\n+        repaired = dict(action)\n+        repaired[\"target_id\"] = best[\"candidate\"]\n+        return repaired\n+\n+    def _guard_candidate_targets(\n+        self,\n+        allowed: Mapping[str, Any],\n+        request: Mapping[str, Any],\n+        packet: Mapping[str, Any] | None = None,\n+    ) -> list[str]:\n+        ranked = self._guard_candidate_ranking(allowed, request, packet)\n+        return [item[\"candidate\"] for item in ranked]\n+\n+    def _guard_candidate_ranking(\n+        self,\n+        allowed: Mapping[str, Any],\n+        request: Mapping[str, Any],\n+        packet: Mapping[str, Any] | None = None,\n+    ) -> list[dict[str, Any]]:\n         target_ids = allowed.get(\"target_ids\")\n         if not isinstance(target_ids, list):\n             return []\n@@ -434,26 +469,48 @@\n                 candidates.append(candidate)\n         if not candidates:\n             return []\n-        round_no = self._extract_round_number(request) or self._last_observed_round\n+        round_no = self._extract_round_number(request)\n+        if round_no is None and packet is not None:\n+            round_no = self._extract_round_number(packet)\n+        if round_no is None:\n+            round_no = self._last_observed_round\n         repeat_forbidden = self._guard_repeat_forbidden(allowed)\n-        scored: list[tuple[int, int, int, str]] = []\n+        ranked: list[dict[str, Any]] = []\n         for index, candidate in enumerate(candidates):\n-            risk_score = self._player_risk_score(candidate, request, round_no)\n-            heat_score = self._public_heat_score(candidate, request)\n+            profile = self._guard_candidate_profile(candidate, request, packet, round_no)\n             if candidate == self.player_id:\n-                risk_score -= 10_000\n+                profile[\"wolf_attack_risk\"] -= 10_000\n+                profile[\"information_value\"] -= 10_000\n+                profile[\"public_pressure\"] -= 10_000\n             if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:\n-                risk_score -= 5_000\n-            if self.last_protected_round is not None and round_no is not None and candidate == self.last_protected_id:\n-                risk_score -= max(0, 200 - max(0, round_no - self.last_protected_round))\n-            scored.append((-risk_score, -heat_score, index, candidate))\n-        scored.sort()\n-        ordered = [candidate for _, _, _, candidate in scored]\n+                profile[\"wolf_attack_risk\"] -= 6_000\n+                profile[\"information_value\"] -= 3_000\n+                profile[\"public_pressure\"] -= 1_000\n+            profile[\"score_key\"] = (\n+                profile[\"wolf_attack_risk\"],\n+                profile[\"information_value\"],\n+                profile[\"public_pressure\"],\n+                profile[\"stage_bonus\"],\n+                profile[\"recency\"],\n+                -index,\n+            )\n+            profile[\"total_score\"] = (\n+                profile[\"wolf_attack_risk\"] * 100\n+                + profile[\"information_value\"] * 14\n+                + profile[\"public_pressure\"] * 5\n+                + profile[\"stage_bonus\"] * 8\n+                + profile[\"recency\"]\n+            )\n+            profile[\"candidate\"] = candidate\n+            ranked.append(profile)\n+        ranked.sort(key=lambda item: item[\"score_key\"], reverse=True)\n         if repeat_forbidden and self.last_protected_id:\n-            filtered = [candidate for candidate in ordered if candidate != self.last_protected_id]\n+            filtered = [item for item in ranked if item[\"candidate\"] != self.last_protected_id]\n             if filtered:\n-                return filtered\n-        return ordered\n+                ranked = filtered\n+        for rank, item in enumerate(ranked):\n+            item[\"rank\"] = rank\n+        return ranked\n \n     def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:\n         if allowed.get(\"guard_can_repeat_protect\") is True:\n@@ -462,8 +519,104 @@\n             return True\n         return True\n \n-    def _looks_publicly_salient(self, candidate: str, request: Mapping[str, Any]) -> bool:\n-        return candidate in self._extract_focus_ids(request.get(\"public_state\"))\n+    def _guard_candidate_profile(\n+        self,\n+        candidate: str,\n+        request: Mapping[str, Any],\n+        packet: Mapping[str, Any] | None,\n+        round_no: int | None,\n+    ) -> dict[str, int]:\n+        bucket = self.player_risk_profile.get(candidate) or {}\n+        alive_count = self._current_alive_count(request, packet)\n+        stage_bonus = self._guard_stage_bonus(alive_count)\n+        if round_no is None:\n+            round_no = self._last_observed_round\n+        last_round = bucket.get(\"last_round\")\n+        recency = 0\n+        if isinstance(last_round, int) and last_round >= 0 and round_no is not None:\n+            gap = max(0, round_no - last_round)\n+            recency = max(0, 10 - gap * 2)\n+        threat = int(bucket.get(\"threat\", 0))\n+        claim = int(bucket.get(\"claim\", 0))\n+        vote = int(bucket.get(\"vote\", 0))\n+        pressure = int(bucket.get(\"pressure\", 0))\n+        exposure = int(bucket.get(\"exposure\", 0))\n+        public_focus = 1 if candidate in self.recent_public_focus_ids else 0\n+        salient = 1 if self._looks_publicly_salient(candidate, request, packet) else 0\n+        wolf_attack_risk = threat * 12 + claim * 5 + vote * 4 + pressure * 2\n+        information_value = claim * 4 + vote * 5 + pressure * 3 + exposure + public_focus * 3 + salient * 3\n+        public_pressure = pressure * 5 + vote * 4 + exposure * 2 + public_focus * 2 + salient\n+        if threat and (claim or vote):\n+            wolf_attack_risk += 4\n+        if claim and vote:\n+            information_value += 3\n+        if alive_count is not None:\n+            if alive_count <= 5:\n+                wolf_attack_risk += 3\n+                information_value += 6\n+                public_pressure += 2\n+            elif alive_count <= 7:\n+                wolf_attack_risk += 1\n+                information_value += 3\n+        if candidate in self.alive_player_cache:\n+            information_value += 1\n+        if recency:\n+            wolf_attack_risk += recency // 3\n+            information_value += recency // 2\n+        return {\n+            \"wolf_attack_risk\": wolf_attack_risk,\n+            \"information_value\": information_value,\n+            \"public_pressure\": public_pressure,\n+            \"stage_bonus\": stage_bonus,\n+            \"recency\": recency,\n+            \"alive_count\": alive_count or 0,\n+        }\n+\n+    def _guard_stage_bonus(self, alive_count: int | None) -> int:\n+        if alive_count is None:\n+            return 0\n+        if alive_count <= 5:\n+            return 6\n+        if alive_count <= 7:\n+            return 3\n+        return 0\n+\n+    def _current_alive_count(self, request: Mapping[str, Any], packet: Mapping[str, Any] | None) -> int | None:\n+        alive_ids: set[str] = set()\n+        public_state = request.get(\"public_state\") if isinstance(request, Mapping) else None\n+        if isinstance(public_state, Mapping):\n+            alive_ids.update(\n+                self._extract_ids_by_keys(\n+                    public_state,\n+                    (\"alive\", \"alive_player\", \"alive_players\", \"alive_player_ids\", \"player_ids\", \"players\"),\n+                )\n+            )\n+        if not alive_ids and isinstance(packet, Mapping):\n+            public_state = packet.get(\"public_state\")\n+            if isinstance(public_state, Mapping):\n+                alive_ids.update(\n+                    self._extract_ids_by_keys(\n+                        public_state,\n+                        (\"alive\", \"alive_player\", \"alive_players\", \"alive_player_ids\", \"player_ids\", \"players\"),\n+                    )\n+                )\n+        if not alive_ids:\n+            alive_ids.update(self.alive_player_cache)\n+        return len(alive_ids) if alive_ids else None\n+\n+    def _looks_publicly_salient(\n+        self,\n+        candidate: str,\n+        request: Mapping[str, Any],\n+        packet: Mapping[str, Any] | None = None,\n+    ) -> bool:\n+        public_state = request.get(\"public_state\") if isinstance(request, Mapping) else None\n+        if candidate in self._extract_focus_ids(public_state):\n+            return True\n+        if isinstance(packet, Mapping):\n+            if candidate in self._extract_focus_ids(packet.get(\"public_state\")):\n+                return True\n+        return False\n \n     def _update_guard_memory(self, packet: Mapping[str, Any] | Any) -> None:\n         if not isinstance(packet, Mapping):\n@@ -482,6 +635,10 @@\n             if focus_id not in self.recent_public_focus_ids:\n                 self.recent_public_focus_ids.append(focus_id)\n         self._update_guard_risk_memory(packet, round_no)\n+        if round_no is not None:\n+            stale_keys = [key for key in self._guard_signal_round_counts if key[1] < round_no - 3]\n+            for key in stale_keys:\n+                self._guard_signal_round_counts.pop(key, None)\n \n     def _update_guard_risk_memory(self, packet: Mapping[str, Any], round_no: int | None) -> None:\n         self._scan_guard_signal_tree(packet, round_no)\n@@ -498,12 +655,9 @@\n                     signal_name, signal_weight = signal\n                     for player_id in self._extract_player_ids(value):\n                         self._bump_player_risk(player_id, signal_name, signal_weight, round_no)\n-                if isinstance(value, Mapping):\n+                    continue\n+                if self._is_guard_signal_container_key(key_text):\n                     self._scan_guard_signal_tree(value, round_no)\n-                elif isinstance(value, list):\n-                    for item in value:\n-                        if isinstance(item, (Mapping, list)):\n-                            self._scan_guard_signal_tree(item, round_no)\n             return\n         if isinstance(node, list):\n             for item in node:\n@@ -528,28 +682,53 @@\n             return (\"exposure\", 2)\n         return None\n \n+    def _is_guard_signal_container_key(self, key_text: str) -> bool:\n+        return key_text in {\n+            \"players\",\n+            \"player_list\",\n+            \"events\",\n+            \"history\",\n+            \"rounds\",\n+            \"records\",\n+            \"logs\",\n+            \"entries\",\n+            \"dialogue_list\",\n+            \"dialogue_entries\",\n+            \"dialogues\",\n+            \"chat\",\n+            \"speech\",\n+            \"speeches\",\n+            \"transcript\",\n+        }\n+\n     def _ingest_dialogue_entries(self, dialogue: Any, round_no: int | None) -> None:\n         entries = dialogue if isinstance(dialogue, list) else [dialogue]\n         for entry in entries:\n             speaker_id = self._dialogue_entry_speaker_id(entry)\n             text = self._dialogue_entry_text(entry)\n-            mentioned_ids = set(self._extract_player_ids(entry))\n+            explicit_targets = self._dialogue_entry_targets(entry)\n+            mentioned_ids = set(explicit_targets)\n             if text:\n                 mentioned_ids.update(self._extract_player_ids(text))\n             if speaker_id:\n                 mentioned_ids.discard(speaker_id)\n-            explicit_targets = self._dialogue_entry_targets(entry)\n-            if explicit_targets:\n-                mentioned_ids.update(explicit_targets)\n             signals = self._dialogue_text_signals(text)\n-            if not signals and mentioned_ids:\n-                signals = {\"pressure\": 1}\n+            if not signals:\n+                if explicit_targets:\n+                    signals = {\"pressure\": 1}\n+                else:\n+                    continue\n             if speaker_id and signals.get(\"claim\"):\n                 self._bump_player_risk(speaker_id, \"claim\", signals[\"claim\"], round_no)\n             if speaker_id and signals.get(\"threat\"):\n                 self._bump_player_risk(speaker_id, \"pressure\", max(1, signals[\"threat\"] // 2), round_no)\n+            if speaker_id and not mentioned_ids and signals.get(\"pressure\"):\n+                self._bump_player_risk(speaker_id, \"pressure\", signals[\"pressure\"], round_no)\n+                continue\n             for player_id in mentioned_ids:\n                 for signal_name, signal_weight in signals.items():\n+                    if signal_name == \"claim\" and player_id == speaker_id:\n+                        continue\n                     self._bump_player_risk(player_id, signal_name, signal_weight, round_no)\n \n     def _dialogue_entry_text(self, entry: Any) -> str:\n@@ -597,9 +776,9 @@\n         if any(token in lowered for token in (\"夜刀\", \"刀口\", \"今晚刀\", \"击杀\", \"attack\", \"kill\")):\n             signals[\"threat\"] = 4\n         if any(token in lowered for token in (\"怀疑\", \"可疑\", \"狼\", \"站边\", \"压票\", \"focus\", \"关注\", \"push\", \"指认\")):\n-            signals[\"pressure\"] = max(signals.get(\"pressure\", 0), 3)\n+            signals[\"pressure\"] = max(signals.get(\"pressure\", 0), 2)\n         if any(token in lowered for token in (\"公开\", \"关键\", \"核心\", \"热度\", \"中心\", \"public\")):\n-            signals[\"exposure\"] = max(signals.get(\"exposure\", 0), 2)\n+            signals[\"exposure\"] = max(signals.get(\"exposure\", 0), 1)\n         return signals\n \n     def _player_risk_bucket(self, player_id: str) -> dict[str, int]:\n@@ -619,42 +798,32 @@\n     def _bump_player_risk(self, player_id: str, signal_name: str, amount: int, round_no: int | None) -> None:\n         if not player_id:\n             return\n+        if round_no is not None:\n+            key = (player_id, round_no)\n+            seen = self._guard_signal_round_counts.setdefault(key, {})\n+            cap = self._guard_signal_round_cap(signal_name)\n+            if seen.get(signal_name, 0) >= cap:\n+                return\n+            seen[signal_name] = seen.get(signal_name, 0) + 1\n         bucket = self._player_risk_bucket(player_id)\n         bucket[signal_name] = bucket.get(signal_name, 0) + max(1, int(amount))\n         if round_no is not None:\n             bucket[\"last_round\"] = max(bucket.get(\"last_round\", -1), round_no)\n \n+    def _guard_signal_round_cap(self, signal_name: str) -> int:\n+        if signal_name == \"threat\":\n+            return 2\n+        if signal_name in {\"claim\", \"vote\"}:\n+            return 2\n+        return 1\n+\n     def _player_risk_score(self, candidate: str, request: Mapping[str, Any], round_no: int | None) -> int:\n-        bucket = self.player_risk_profile.get(candidate) or {}\n-        score = 0\n-        score += int(bucket.get(\"threat\", 0)) * 8\n-        score += int(bucket.get(\"claim\", 0)) * 6\n-        score += int(bucket.get(\"vote\", 0)) * 5\n-        score += int(bucket.get(\"pressure\", 0)) * 4\n-        score += int(bucket.get(\"exposure\", 0)) * 2\n-        if candidate in self.recent_public_focus_ids:\n-            score += 3\n-        if self._looks_publicly_salient(candidate, request):\n-            score += 2\n-        if candidate in self.alive_player_cache:\n-            score += 1\n-        last_round = bucket.get(\"last_round\")\n-        if round_no is None:\n-            round_no = self._last_observed_round\n-        if isinstance(last_round, int) and last_round >= 0 and round_no is not None:\n-            score += max(0, 6 - max(0, round_no - last_round))\n-        return score\n+        profile = self._guard_candidate_profile(candidate, request, None, round_no)\n+        return profile[\"wolf_attack_risk\"]\n \n     def _public_heat_score(self, candidate: str, request: Mapping[str, Any]) -> int:\n-        bucket = self.player_risk_profile.get(candidate) or {}\n-        score = 0\n-        if candidate in self.recent_public_focus_ids:\n-            score += 4\n-        if self._looks_publicly_salient(candidate, request):\n-            score += 3\n-        score += int(bucket.get(\"exposure\", 0))\n-        score += int(bucket.get(\"pressure\", 0))\n-        return score\n+        profile = self._guard_candidate_profile(candidate, request, None, self._last_observed_round)\n+        return profile[\"public_pressure\"]\n \n     def _extract_round_number(self, packet: Mapping[str, Any] | Any) -> int | None:\n         if not isinstance(packet, Mapping):\n@@ -679,17 +848,61 @@\n         focus_ids: set[str] = set()\n         if not isinstance(packet, Mapping):\n             return focus_ids\n+        focus_keys = {\n+            \"sheriff\",\n+            \"sheriff_id\",\n+            \"sheriff_chain\",\n+            \"警长\",\n+            \"警长id\",\n+            \"警徽\",\n+            \"警徽链\",\n+            \"vote\",\n+            \"voted\",\n+            \"vote_target\",\n+            \"vote_targets\",\n+            \"claim\",\n+            \"claimed\",\n+            \"target\",\n+            \"target_id\",\n+            \"target_ids\",\n+            \"suspect\",\n+            \"suspected\",\n+            \"pressure\",\n+            \"point\",\n+            \"focus\",\n+            \"threat\",\n+            \"公开\",\n+            \"public\",\n+        }\n+        container_keys = {\n+            \"players\",\n+            \"player_list\",\n+            \"events\",\n+            \"history\",\n+            \"rounds\",\n+            \"records\",\n+            \"logs\",\n+            \"entries\",\n+            \"dialogue\",\n+            \"dialogues\",\n+            \"chat\",\n+            \"speech\",\n+            \"speeches\",\n+            \"transcript\",\n+        }\n         for key, value in packet.items():\n             key_text = str(key).lower()\n-            if any(keyword in key_text for keyword in _GUARD_CONTEXT_KEYWORDS):\n+            if key_text in focus_keys or any(token in key_text for token in (\"sheriff\", \"警长\", \"警徽\", \"vote\", \"claim\", \"target\", \"suspect\", \"pressure\", \"focus\", \"threat\", \"公开\", \"public\")):\n                 focus_ids.update(self._extract_player_ids(value))\n-            if isinstance(value, Mapping):\n-                focus_ids.update(self._extract_focus_ids(value))\n-            elif isinstance(value, list):\n-                for item in value:\n-                    focus_ids.update(self._extract_player_ids(item))\n-                    if isinstance(item, Mapping):\n-                        focus_ids.update(self._extract_focus_ids(item))\n+                continue\n+            if key_text in container_keys:\n+                if isinstance(value, Mapping):\n+                    focus_ids.update(self._extract_focus_ids(value))\n+                elif isinstance(value, list):\n+                    for item in value:\n+                        focus_ids.update(self._extract_player_ids(item))\n+                        if isinstance(item, Mapping):\n+                            focus_ids.update(self._extract_focus_ids(item))\n         return focus_ids\n \n     def _extract_ids_by_keys(self, packet: Mapping[str, Any], keys: tuple[str, ...]) -> set[str]:\n--- guard-n00034/task.md\n+++ guard-n00037/task.md\n@@ -1,7 +1,8 @@\n # 守卫操作规程\n \n - 先看当前 `target_ids`，只能从里面选。\n-- 先判断今晚最可能被狼刀的好人，再在合法目标里排序。\n-- 优先保护公开神职、被多人压票/点名的关键发言位、最近被集中讨论的高风险好人。\n+- 先判断今晚最可能被狼刀的好人，再排序。\n+- 第二层再看公开神职、警徽链、被多人压票/点名者，以及最近两轮的关键信息节点。\n+- 话多不等于高风险；不要把公开热度当成刀口概率。\n - 只有没有更好目标时才考虑自守；若规则不允许连守，默认不要重复同一人。\n-- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾和票型展开。\n+- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾、票型压力和可见信息展开。\n"
+          },
+          {
+            "node": {
+              "node_id": "guard-n00098",
+              "role": "guard",
+              "status": "retained",
+              "parent_id": "guard-n00037",
+              "depth": 4,
+              "children": [
+                "guard-n00107",
+                "guard-n00108"
+              ],
+              "created_at": "2026-09-09T14:36:44.098394+00:00",
+              "code_hash": "f3294aac51f9bb2b0e2591ae064d533e43d1e816060a110c8bbf04a723f0d271",
+              "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00098/ancestor.patch",
+              "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T143644-2feeaa6c/expansion0/branch0/diagnosis.json",
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/summary.json",
+              "status_reason": "passed_broad_filter"
+            },
+            "patch": "--- guard-n00037/task_agent.py\n+++ guard-n00098/task_agent.py\n@@ -213,6 +213,7 @@\n         self.player_risk_profile: dict[str, dict[str, int]] = {}\n         self._guard_signal_round_counts: dict[tuple[str, int], dict[str, int]] = {}\n         self._last_observed_round: int | None = None\n+        self._last_decay_round: int | None = None\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n         \"\"\"接收公开同步，并提取最小守卫记忆。\"\"\"\n@@ -330,9 +331,10 @@\n         role_task = self.profile.task\n         if self.profile.role == \"guard\":\n             role_task = role_task + (\n-                \"\\n\\n守卫约束：只从当前 target_ids 里选；先判定今晚最可能被狼刀的好人；\"\n-                \"再看公开神职、警徽链和被多人压票者；话多不等于高风险；\"\n-                \"默认不要重复上一夜目标；不要把守护成功当作已确认结果。\"\n+                \"\\n\\n守卫约束：只从当前 target_ids 里选；禁止连守时先排除上一夜目标；\"\n+                \"只把明确夜刀/狼刀/击杀/今晚刀视为刀口；普通target、投票、查验和话多只是同分参考；\"\n+                \"身份声称不等于可信好人；已公开暴露或残局且无更高可信外部目标时可以自守；\"\n+                \"不要把守护成功或平安夜当作已确认结果。\"\n             )\n         return render_prompt(\n             \"player_system.txt\",\n@@ -352,9 +354,10 @@\n         validation_feedback = f\"上一次输出未通过校验：{feedback}\" if feedback else \"\"\n         if self.profile.role == \"guard\":\n             guard_note = (\n-                \"守卫执行要点：只在当前 target_ids 内选；先找今晚最可能被刀的好人；\"\n-                \"优先公开神职、警徽链和被多人压票的关键节点；话多不等于高风险；\"\n-                \"没有更好目标时再自守。\"\n+                \"守卫执行要点：只在当前 target_ids 内选，禁止连守时排除上一夜目标；\"\n+                \"优先明确可信好人神职/警徽链和近期明确夜刀信号；\"\n+                \"普通target、投票、查验、被提及或话多不等于刀口，身份声称本身不等于可信；\"\n+                \"本人已公开暴露或5人及以下残局且无更高可信外部目标时可以自守。\"\n             )\n             validation_feedback = guard_note + (\"\\n\" + validation_feedback if validation_feedback else \"\")\n         return render_prompt(\n@@ -427,22 +430,13 @@\n             return action\n         chosen = action.get(\"target_id\")\n         ranked_targets = {item[\"candidate\"] for item in ranked}\n+        # repair 只作为协议安全层：修正非法目标、缺失目标或连守禁忌目标。\n+        # 合法且非重复的模型选择默认保留，避免用轻量启发式覆盖模型判断。\n         if chosen not in ranked_targets:\n             repaired = dict(action)\n             repaired[\"target_id\"] = ranked[0][\"candidate\"]\n             return repaired\n-        best = ranked[0]\n-        chosen_item = next(item for item in ranked if item[\"candidate\"] == chosen)\n-        score_gap = best[\"total_score\"] - chosen_item[\"total_score\"]\n-        if chosen_item[\"rank\"] <= 1 and score_gap <= 12:\n-            return action\n-        if score_gap <= 4:\n-            return action\n-        if chosen_item[\"rank\"] <= 2 and score_gap <= 8:\n-            return action\n-        repaired = dict(action)\n-        repaired[\"target_id\"] = best[\"candidate\"]\n-        return repaired\n+        return action\n \n     def _guard_candidate_targets(\n         self,\n@@ -478,27 +472,25 @@\n         ranked: list[dict[str, Any]] = []\n         for index, candidate in enumerate(candidates):\n             profile = self._guard_candidate_profile(candidate, request, packet, round_no)\n-            if candidate == self.player_id:\n-                profile[\"wolf_attack_risk\"] -= 10_000\n-                profile[\"information_value\"] -= 10_000\n-                profile[\"public_pressure\"] -= 10_000\n             if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:\n                 profile[\"wolf_attack_risk\"] -= 6_000\n                 profile[\"information_value\"] -= 3_000\n                 profile[\"public_pressure\"] -= 1_000\n             profile[\"score_key\"] = (\n                 profile[\"wolf_attack_risk\"],\n+                -profile[\"suspicion_penalty\"],\n                 profile[\"information_value\"],\n+                profile[\"stage_bonus\"],\n                 profile[\"public_pressure\"],\n-                profile[\"stage_bonus\"],\n                 profile[\"recency\"],\n                 -index,\n             )\n             profile[\"total_score\"] = (\n                 profile[\"wolf_attack_risk\"] * 100\n-                + profile[\"information_value\"] * 14\n-                + profile[\"public_pressure\"] * 5\n+                - profile[\"suspicion_penalty\"] * 35\n+                + profile[\"information_value\"] * 12\n                 + profile[\"stage_bonus\"] * 8\n+                + profile[\"public_pressure\"] * 3\n                 + profile[\"recency\"]\n             )\n             profile[\"candidate\"] = candidate\n@@ -543,30 +535,46 @@\n         exposure = int(bucket.get(\"exposure\", 0))\n         public_focus = 1 if candidate in self.recent_public_focus_ids else 0\n         salient = 1 if self._looks_publicly_salient(candidate, request, packet) else 0\n-        wolf_attack_risk = threat * 12 + claim * 5 + vote * 4 + pressure * 2\n-        information_value = claim * 4 + vote * 5 + pressure * 3 + exposure + public_focus * 3 + salient * 3\n-        public_pressure = pressure * 5 + vote * 4 + exposure * 2 + public_focus * 2 + salient\n-        if threat and (claim or vote):\n-            wolf_attack_risk += 4\n-        if claim and vote:\n-            information_value += 3\n+        # 夜刀风险只吃明确狼刀/夜刀信号和少量近期暴露/直接压迫；身份声称和普通热度\n+        # 不再在多个维度重复加分。\n+        wolf_attack_risk = threat * 14 + min(pressure, 3) * 2 + min(exposure, 3)\n+        information_value = min(claim, 4) * 2 + min(exposure, 4) * 2 + public_focus + salient\n+        public_pressure = min(pressure, 5) * 3 + min(vote, 5) * 2 + public_focus + salient\n+        suspicion_penalty = 0\n+        if claim and (vote or pressure):\n+            # 抢身份又被集中质疑/投票时，不能把 claim 当作可信好人价值。\n+            suspicion_penalty += min(claim, 5) + min(vote + pressure, 6)\n+        if pressure >= 6 and not threat:\n+            suspicion_penalty += 2\n+        if threat:\n+            information_value += min(threat, 4)\n         if alive_count is not None:\n             if alive_count <= 5:\n-                wolf_attack_risk += 3\n-                information_value += 6\n-                public_pressure += 2\n+                information_value += 3\n+                public_pressure += 1\n             elif alive_count <= 7:\n-                wolf_attack_risk += 1\n-                information_value += 3\n+                information_value += 1\n+        if candidate == self.player_id:\n+            self_exposure_bonus = 0\n+            if claim or exposure:\n+                self_exposure_bonus += min(claim + exposure, 8)\n+            if vote or pressure:\n+                self_exposure_bonus += min(vote + pressure, 6)\n+            if alive_count is not None and alive_count <= 5:\n+                self_exposure_bonus += 5\n+            elif alive_count is not None and alive_count <= 7 and (claim or exposure or vote or pressure):\n+                self_exposure_bonus += 2\n+            wolf_attack_risk += self_exposure_bonus\n+            information_value += min(self_exposure_bonus, 4)\n         if candidate in self.alive_player_cache:\n             information_value += 1\n         if recency:\n-            wolf_attack_risk += recency // 3\n-            information_value += recency // 2\n+            information_value += recency // 3\n         return {\n             \"wolf_attack_risk\": wolf_attack_risk,\n             \"information_value\": information_value,\n             \"public_pressure\": public_pressure,\n+            \"suspicion_penalty\": suspicion_penalty,\n             \"stage_bonus\": stage_bonus,\n             \"recency\": recency,\n             \"alive_count\": alive_count or 0,\n@@ -585,21 +593,13 @@\n         alive_ids: set[str] = set()\n         public_state = request.get(\"public_state\") if isinstance(request, Mapping) else None\n         if isinstance(public_state, Mapping):\n-            alive_ids.update(\n-                self._extract_ids_by_keys(\n-                    public_state,\n-                    (\"alive\", \"alive_player\", \"alive_players\", \"alive_player_ids\", \"player_ids\", \"players\"),\n-                )\n-            )\n+            alive_ids.update(self._extract_alive_ids(public_state))\n         if not alive_ids and isinstance(packet, Mapping):\n             public_state = packet.get(\"public_state\")\n             if isinstance(public_state, Mapping):\n-                alive_ids.update(\n-                    self._extract_ids_by_keys(\n-                        public_state,\n-                        (\"alive\", \"alive_player\", \"alive_players\", \"alive_player_ids\", \"player_ids\", \"players\"),\n-                    )\n-                )\n+                alive_ids.update(self._extract_alive_ids(public_state))\n+            if not alive_ids:\n+                alive_ids.update(self._extract_alive_ids(packet))\n         if not alive_ids:\n             alive_ids.update(self.alive_player_cache)\n         return len(alive_ids) if alive_ids else None\n@@ -624,12 +624,12 @@\n         round_no = self._extract_round_number(packet)\n         if round_no is not None:\n             self._last_observed_round = round_no\n-        alive_ids = self._extract_ids_by_keys(\n-            packet,\n-            (\"alive\", \"alive_player\", \"alive_players\", \"alive_player_ids\", \"player_ids\", \"players\"),\n-        )\n+        if round_no is not None:\n+            self._decay_guard_risk_memory(round_no)\n+        alive_ids = self._extract_alive_ids(packet)\n         if alive_ids:\n-            self.alive_player_cache.update(alive_ids)\n+            # 明确 alive 字段代表当前存活集合，应替换缓存而非只增不减。\n+            self.alive_player_cache = set(alive_ids)\n         focus_ids = self._extract_focus_ids(packet)\n         for focus_id in focus_ids:\n             if focus_id not in self.recent_public_focus_ids:\n@@ -666,18 +666,40 @@\n \n     def _signal_for_key(self, key_text: str) -> tuple[str, int] | None:\n         vote_keys = (\"vote\", \"voted\", \"投票\", \"票型\", \"归票\", \"票数\")\n+        inspection_keys = (\"inspect\", \"inspection\", \"check\", \"查验\", \"验人\", \"验出\")\n         claim_keys = (\"claim\", \"claimed\", \"身份\", \"报身份\", \"自报\", \"跳预\", \"跳女巫\", \"跳守卫\", \"跳猎人\", \"跳神\", \"神职\")\n-        threat_keys = (\"target\", \"kill\", \"attack\", \"夜刀\", \"刀口\", \"击杀\", \"夜里要刀\")\n+        # 只接受明确狼刀/夜刀语义；普通 target/target_id 不等于刀口。\n+        threat_keys = (\n+            \"wolf_target\",\n+            \"wolf_targets\",\n+            \"wolf_kill\",\n+            \"kill_target\",\n+            \"kill_targets\",\n+            \"night_kill\",\n+            \"nightkill\",\n+            \"attack_target\",\n+            \"attack_targets\",\n+            \"wolf_attack\",\n+            \"werewolf_attack\",\n+            \"夜刀\",\n+            \"刀口\",\n+            \"狼刀\",\n+            \"击杀\",\n+            \"今晚刀\",\n+            \"夜里要刀\",\n+        )\n         pressure_keys = (\"suspect\", \"suspected\", \"怀疑\", \"pressure\", \"point\", \"点名\", \"push\", \"压票\", \"站边\", \"focus\", \"关注\", \"指认\")\n         exposure_keys = (\"public\", \"公开\", \"center\", \"核心\", \"关键\", \"hot\", \"热度\")\n         if any(token in key_text for token in vote_keys):\n-            return (\"vote\", 4)\n+            return (\"vote\", 3)\n+        if any(token in key_text for token in inspection_keys):\n+            return (\"exposure\", 1)\n         if any(token in key_text for token in claim_keys):\n-            return (\"claim\", 5)\n+            return (\"claim\", 3)\n         if any(token in key_text for token in threat_keys):\n             return (\"threat\", 4)\n         if any(token in key_text for token in pressure_keys):\n-            return (\"pressure\", 3)\n+            return (\"pressure\", 2)\n         if any(token in key_text for token in exposure_keys):\n             return (\"exposure\", 2)\n         return None\n@@ -862,9 +884,6 @@\n             \"vote_targets\",\n             \"claim\",\n             \"claimed\",\n-            \"target\",\n-            \"target_id\",\n-            \"target_ids\",\n             \"suspect\",\n             \"suspected\",\n             \"pressure\",\n@@ -892,7 +911,7 @@\n         }\n         for key, value in packet.items():\n             key_text = str(key).lower()\n-            if key_text in focus_keys or any(token in key_text for token in (\"sheriff\", \"警长\", \"警徽\", \"vote\", \"claim\", \"target\", \"suspect\", \"pressure\", \"focus\", \"threat\", \"公开\", \"public\")):\n+            if key_text in focus_keys or any(token in key_text for token in (\"sheriff\", \"警长\", \"警徽\", \"vote\", \"claim\", \"suspect\", \"pressure\", \"focus\", \"threat\", \"夜刀\", \"刀口\", \"公开\", \"public\")):\n                 focus_ids.update(self._extract_player_ids(value))\n                 continue\n             if key_text in container_keys:\n@@ -900,10 +919,59 @@\n                     focus_ids.update(self._extract_focus_ids(value))\n                 elif isinstance(value, list):\n                     for item in value:\n-                        focus_ids.update(self._extract_player_ids(item))\n                         if isinstance(item, Mapping):\n                             focus_ids.update(self._extract_focus_ids(item))\n         return focus_ids\n+\n+    def _extract_alive_ids(self, packet: Mapping[str, Any] | Any) -> set[str]:\n+        alive_ids: set[str] = set()\n+        if not isinstance(packet, Mapping):\n+            return alive_ids\n+        explicit_alive_keys = {\"alive\", \"alive_players\", \"alive_player_ids\", \"alive_ids\", \"存活\", \"存活玩家\"}\n+        for key, value in packet.items():\n+            key_text = str(key).lower()\n+            if key_text in explicit_alive_keys or key_text.endswith(\"_alive_players\"):\n+                alive_ids.update(self._extract_player_ids(value))\n+                continue\n+            if key_text in {\"players\", \"player_list\"}:\n+                if isinstance(value, list):\n+                    for item in value:\n+                        if isinstance(item, Mapping) and item.get(\"alive\") is True:\n+                            alive_ids.update(self._extract_player_ids(item.get(\"player_id\") or item.get(\"id\") or item))\n+                elif isinstance(value, Mapping):\n+                    for player_id, state in value.items():\n+                        if isinstance(state, Mapping) and state.get(\"alive\") is True:\n+                            ids = self._extract_player_ids(player_id)\n+                            alive_ids.update(ids or self._extract_player_ids(state))\n+            if isinstance(value, Mapping):\n+                alive_ids.update(self._extract_alive_ids(value))\n+            elif isinstance(value, list):\n+                for item in value:\n+                    if isinstance(item, Mapping):\n+                        alive_ids.update(self._extract_alive_ids(item))\n+        return alive_ids\n+\n+    def _decay_guard_risk_memory(self, round_no: int) -> None:\n+        if self._last_decay_round is None:\n+            self._last_decay_round = round_no\n+            return\n+        gap = round_no - self._last_decay_round\n+        if gap <= 0:\n+            return\n+        factor_numerator = 7 ** min(gap, 6)\n+        factor_denominator = 10 ** min(gap, 6)\n+        empty_players: list[str] = []\n+        for player_id, bucket in self.player_risk_profile.items():\n+            for signal_name in (\"pressure\", \"vote\", \"claim\", \"threat\", \"exposure\"):\n+                value = int(bucket.get(signal_name, 0))\n+                bucket[signal_name] = (value * factor_numerator) // factor_denominator\n+            last_round = bucket.get(\"last_round\")\n+            if all(int(bucket.get(name, 0)) <= 0 for name in (\"pressure\", \"vote\", \"claim\", \"threat\", \"exposure\")):\n+                if not isinstance(last_round, int) or last_round < round_no - 3:\n+                    empty_players.append(player_id)\n+        for player_id in empty_players:\n+            self.player_risk_profile.pop(player_id, None)\n+        self._last_decay_round = round_no\n \n     def _extract_ids_by_keys(self, packet: Mapping[str, Any], keys: tuple[str, ...]) -> set[str]:\n         values: set[str] = set()\n@@ -944,3 +1012,42 @@\n         except (TypeError, ValueError):\n             return fallback\n         return normalized if normalized >= 0 else fallback\n+\n+    @classmethod\n+    def _guard_smoke_checks(cls) -> dict[str, bool]:\n+        \"\"\"纯函数级守卫排序 smoke；供候选评测/单测直接调用，不触碰外部状态。\"\"\"\n+\n+        agent = object.__new__(cls)\n+        agent.player_id = \"p6\"\n+        agent.last_protected_id = \"p1\"\n+        agent.last_protected_round = 1\n+        agent.alive_player_cache = {\"p1\", \"p2\", \"p3\", \"p6\"}\n+        agent.recent_public_focus_ids = deque(maxlen=8)\n+        agent.player_risk_profile = {}\n+        agent._guard_signal_round_counts = {}\n+        agent._last_observed_round = 3\n+        agent._last_decay_round = None\n+\n+        vote_signal = agent._signal_for_key(\"vote_target\")\n+        threat_signal = agent._signal_for_key(\"attack_target\")\n+        agent._update_guard_memory({\"round\": 3, \"vote_target\": \"p2\", \"alive_players\": [\"p1\", \"p2\", \"p3\", \"p6\"]})\n+        no_vote_threat = int(agent.player_risk_profile.get(\"p2\", {}).get(\"threat\", 0)) == 0\n+        agent._update_guard_memory({\"round\": 4, \"alive_players\": [\"p2\", \"p3\", \"p6\"]})\n+        alive_count_ok = agent._current_alive_count({}, None) == 3\n+\n+        agent.player_risk_profile[\"p6\"] = {\"pressure\": 3, \"vote\": 2, \"claim\": 3, \"threat\": 0, \"exposure\": 3, \"last_round\": 4}\n+        agent.player_risk_profile[\"p2\"] = {\"pressure\": 0, \"vote\": 0, \"claim\": 3, \"threat\": 0, \"exposure\": 0, \"last_round\": 4}\n+        allowed = {\"kind\": _GUARD_ACTION_KIND, \"target_ids\": [\"p1\", \"p2\", \"p6\"], \"guard_can_repeat_protect\": False}\n+        ranked = agent._guard_candidate_ranking(allowed, {\"round\": 4}, None)\n+        ranked_ids = [item[\"candidate\"] for item in ranked]\n+        self_top_two = \"p6\" in ranked_ids[:2]\n+        repeat_excluded = \"p1\" not in ranked_ids\n+        claim_not_tripled = agent._guard_candidate_profile(\"p2\", {\"round\": 4}, None, 4)[\"wolf_attack_risk\"] == 0\n+        return {\n+            \"vote_target_not_threat\": vote_signal != (\"threat\", 4) and no_vote_threat,\n+            \"explicit_attack_target_is_threat\": threat_signal == (\"threat\", 4),\n+            \"self_can_rank_top_two_in_endgame\": self_top_two,\n+            \"repeat_target_excluded\": repeat_excluded,\n+            \"claim_not_repeated_as_attack_risk\": claim_not_tripled,\n+            \"dead_players_not_counted_alive\": alive_count_ok,\n+        }\n--- guard-n00037/task.md\n+++ guard-n00098/task.md\n@@ -1,8 +1,9 @@\n # 守卫操作规程\n \n-- 先看当前 `target_ids`，只能从里面选。\n-- 先判断今晚最可能被狼刀的好人，再排序。\n-- 第二层再看公开神职、警徽链、被多人压票/点名者，以及最近两轮的关键信息节点。\n-- 话多不等于高风险；不要把公开热度当成刀口概率。\n-- 只有没有更好目标时才考虑自守；若规则不允许连守，默认不要重复同一人。\n-- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾、票型压力和可见信息展开。\n+- 先看当前 `target_ids`，只能从里面选；若规则禁止连守，先排除上一夜守护目标。\n+- 决策优先级：合法/非重复目标 > 明确可信的公开好人神职或警徽链关键节点 > 近期明确夜刀/狼刀/击杀/今晚刀信号 > 其他信息价值目标。\n+- 普通 `target`、投票目标、警长投票目标、查验目标、被提及、话多或公开热度，都不等于狼刀刀口；这些只能作同分参考。\n+- 身份声称本身不等于可信好人：抢身份、被多人质疑或与公开信息冲突时要降低保护优先级。\n+- 守卫本人若已公开自报、公开报过守护对象、被多人直接施压/投票，或进入 5 人及以下残局，且没有更高可信外部刀口，允许自守。\n+- 不要把“平安夜”“守护成功”“普通 target 字段”当成确认守护有效或确认阵营的证据。\n+- 发言只围绕公开矛盾、票型压力和可见信息展开；需要本轮发言时主动调用受限工具，不要要求完整历史。\n"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evolution_contract",
+      "arguments": {},
+      "result": {
+        "purpose": "Meta-Agent 为当前角色设计下一代 Task-Agent；外部状态机负责评测、建树和预算执行。",
+        "current_node": {
+          "node_id": "guard-n00098",
+          "role": "guard",
+          "status": "retained",
+          "depth": 4,
+          "parent_id": "guard-n00037",
+          "children": [
+            "guard-n00107",
+            "guard-n00108"
+          ],
+          "generated_candidate_count": 22,
+          "successful_evolution_count": 9,
+          "pending_candidate_count": 8
+        },
+        "node_states": {
+          "pending": "待评估；先运行配置数量的对局，再决定 retained 或 discarded",
+          "retained": "保留在候选池中；在预算允许时可以生成子节点",
+          "discarded": "舍弃；不进入候选池，也不再生成子节点"
+        },
+        "evaluation": {
+          "games_per_pending_node": 20,
+          "player_count": 12,
+          "game_concurrency": 8,
+          "model_max_in_flight": 10,
+          "max_failed_games": 18,
+          "max_fallback_rate": 0.2,
+          "max_invalid_decisions": 10,
+          "discard_all_losses": true,
+          "focus_role_uses_current_node": true,
+          "other_roles_use_random_retained_candidates": true,
+          "quality_error_metrics_scope": "focus_role_only; aggregate game metrics are retained for diagnostics",
+          "parent_child_comparison_required": false
+        },
+        "evolution_budget": {
+          "children_per_expansion": 3,
+          "max_children_per_node": 3,
+          "max_tree_depth": 6,
+          "max_generated_candidates_per_role": 60,
+          "max_successful_evolutions_per_role": 20,
+          "role_scheduler": "least_evolved_random",
+          "candidate_pool_extra_limit": null
+        },
+        "process": [
+          "一个 step 以产生新的 retained 子节点为成功终止条件；不是生成 pending 就结束。",
+          "一个 step 可以连续处理多个节点，直到产生 retained 子节点或所有机会耗尽。",
+          "pending 节点只做评测并决定保留或舍弃。",
+          "retained 节点扩展时固定创建 children_per_expansion 个子节点。",
+          "每个子节点单独调用一次 Meta-Agent 和 Pi；一次扩展抽取不同的游戏回放。",
+          "子节点从父节点快照继承全部祖先修改；其他分支需要通过工具主动读取。",
+          "不要求子节点胜过父节点，也不保证每次修改都是真实改进。"
+        ],
+        "not_evolvable": [
+          "Game Engine",
+          "游戏规则与胜负裁决",
+          "信息可见性与行动 JSON schema",
+          "工具实现、模型网关、审计记录和所有外部预算"
+        ]
+      }
+    },
+    {
+      "tool": "read_evolution_tree",
+      "arguments": {},
+      "result": {
+        "roles": {
+          "guard": {
+            "base_node_id": "guard-base",
+            "node_ids": [
+              "guard-base",
+              "guard-n00016",
+              "guard-n00017",
+              "guard-n00018",
+              "guard-n00034",
+              "guard-n00035",
+              "guard-n00036",
+              "guard-n00037",
+              "guard-n00038",
+              "guard-n00039",
+              "guard-n00049",
+              "guard-n00050",
+              "guard-n00069",
+              "guard-n00070",
+              "guard-n00071",
+              "guard-n00089",
+              "guard-n00090",
+              "guard-n00091",
+              "guard-n00098",
+              "guard-n00099",
+              "guard-n00100",
+              "guard-n00107",
+              "guard-n00108"
+            ],
+            "generated_candidate_count": 22,
+            "successful_evolution_count": 9
+          }
+        },
+        "nodes": {
+          "guard-base": {
+            "node_id": "guard-base",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": null,
+            "depth": 0,
+            "children": [
+              "guard-n00016",
+              "guard-n00017",
+              "guard-n00018"
+            ],
+            "created_at": "2026-09-04T05:02:49.879230+00:00",
+            "code_hash": "2e9abbfc71be91a298173edb54e6c476af96d7156b4cdd8c4c76a6f797aba01c",
+            "patch_path": null,
+            "diagnosis_path": null,
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-base/summary.json",
+            "status_reason": "base"
+          },
+          "guard-n00016": {
+            "node_id": "guard-n00016",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-base",
+            "depth": 1,
+            "children": [
+              "guard-n00034",
+              "guard-n00035",
+              "guard-n00036"
+            ],
+            "created_at": "2026-09-04T21:39:45.942457+00:00",
+            "code_hash": "d98dc1c3e142a6f3b1f2c76437273f21ce699c805be37d828578d35318dd76b1",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00016/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T204739-591c5161/branch0/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00016/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00017": {
+            "node_id": "guard-n00017",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-base",
+            "depth": 1,
+            "children": [
+              "guard-n00049",
+              "guard-n00050"
+            ],
+            "created_at": "2026-09-04T21:48:27.646807+00:00",
+            "code_hash": "9969f0b73e29d9faa67b752005e7949065221d8cdda7b5171b614f19dfa902f6",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00017/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T204739-591c5161/branch1/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00017/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00018": {
+            "node_id": "guard-n00018",
+            "role": "guard",
+            "status": "discarded",
+            "parent_id": "guard-base",
+            "depth": 1,
+            "children": [],
+            "created_at": "2026-09-04T21:58:43.500893+00:00",
+            "code_hash": "fc869b0a78db522bde0077480d9cc0a8b2dccf887d3d3b9a26952018446e397e",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00018/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T204739-591c5161/branch2/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": "code_agent_failure:ValueError:候选 smoke 出现 fallback=4 errors=4"
+          },
+          "guard-n00034": {
+            "node_id": "guard-n00034",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-n00016",
+            "depth": 2,
+            "children": [
+              "guard-n00037",
+              "guard-n00038",
+              "guard-n00039"
+            ],
+            "created_at": "2026-09-05T15:26:34.788332+00:00",
+            "code_hash": "893a7eda95dff2797ab52d224c38cb1748bad7df5aca2e9b2c5e354687e7095d",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00034/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T152634-f7b8f374/branch0/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00034/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00035": {
+            "node_id": "guard-n00035",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-n00016",
+            "depth": 2,
+            "children": [
+              "guard-n00069",
+              "guard-n00070",
+              "guard-n00071"
+            ],
+            "created_at": "2026-09-05T15:36:23.530295+00:00",
+            "code_hash": "93291e188a609e606435111ab295cc9c23f34fb9f20a274f752e9a3641cb0ee0",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00035/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T152634-f7b8f374/branch1/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00035/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00036": {
+            "node_id": "guard-n00036",
+            "role": "guard",
+            "status": "discarded",
+            "parent_id": "guard-n00016",
+            "depth": 2,
+            "children": [],
+            "created_at": "2026-09-05T15:42:20.017334+00:00",
+            "code_hash": "5a11f20fb086aa8da56348bd967b8e4007c142e5686317ccffd079e12f7b1133",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00036/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T152634-f7b8f374/branch2/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": "code_agent_failure:ValueError:候选 smoke 出现 fallback=2 errors=2"
+          },
+          "guard-n00037": {
+            "node_id": "guard-n00037",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-n00034",
+            "depth": 3,
+            "children": [
+              "guard-n00098",
+              "guard-n00099",
+              "guard-n00100"
+            ],
+            "created_at": "2026-09-05T17:10:19.828913+00:00",
+            "code_hash": "7aa6a449db1bf05d8ce5a0e04cff9f85533ed114e10e720653bd345543f2b618",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00037/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T171019-203c1d66/branch0/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00037/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00038": {
+            "node_id": "guard-n00038",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00034",
+            "depth": 3,
+            "children": [],
+            "created_at": "2026-09-05T17:24:27.770511+00:00",
+            "code_hash": "821ef2fdc2a65ea8dbe4ba644e31109197975211529e4f01c737148d122799d1",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00038/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T171019-203c1d66/branch1/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          },
+          "guard-n00039": {
+            "node_id": "guard-n00039",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00034",
+            "depth": 3,
+            "children": [],
+            "created_at": "2026-09-05T17:34:04.276886+00:00",
+            "code_hash": "59da4903e37627ac9b35302304992c760f24873765ceab2bef9b2380c24ebe68",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00039/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260905T171019-203c1d66/branch2/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          },
+          "guard-n00049": {
+            "node_id": "guard-n00049",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00017",
+            "depth": 2,
+            "children": [],
+            "created_at": "2026-09-07T03:10:45.796812+00:00",
+            "code_hash": "1a37df83a62a9e0f634f8a5f5cf2b448c685475cf9cb74b574a9bcaa6514c834",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00049/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260907T031045-906b6125/branch0/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          },
+          "guard-n00050": {
+            "node_id": "guard-n00050",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00017",
+            "depth": 2,
+            "children": [],
+            "created_at": "2026-09-07T03:33:56.342455+00:00",
+            "code_hash": "41eec0a2a6e0b3d5c584179c8674f48255d912c63e88e0ba5c962dab4d12851a",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00050/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260907T031045-906b6125/branch1/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          },
+          "guard-n00069": {
+            "node_id": "guard-n00069",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-n00035",
+            "depth": 3,
+            "children": [],
+            "created_at": "2026-09-07T23:47:05.548693+00:00",
+            "code_hash": "cfa666402322af789809d8b05934c23ffbdca3e173edfe45147105ca613b75dc",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00069/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260907T234705-215dd54e/branch0/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00069/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00070": {
+            "node_id": "guard-n00070",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-n00035",
+            "depth": 3,
+            "children": [
+              "guard-n00089",
+              "guard-n00090",
+              "guard-n00091"
+            ],
+            "created_at": "2026-09-07T23:57:09.582149+00:00",
+            "code_hash": "a4b33fc08b9018924276592737ebf7e18aa5f146b1b86bb747c2fdc89d9c2184",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00070/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260907T234705-215dd54e/branch1/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00070/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00071": {
+            "node_id": "guard-n00071",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00035",
+            "depth": 3,
+            "children": [],
+            "created_at": "2026-09-08T00:11:35.933670+00:00",
+            "code_hash": "27191b7b7f0bb33cd1f0db57c982692276d0524136de2601dda87b0bf4c37982",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00071/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260907T234705-215dd54e/branch2/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          },
+          "guard-n00089": {
+            "node_id": "guard-n00089",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-n00070",
+            "depth": 4,
+            "children": [],
+            "created_at": "2026-09-09T10:53:21.185562+00:00",
+            "code_hash": "66f7f04d86ca51e7e62f9bb1d23d150e617c2729c8660f766ec62d60aaf45901",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00089/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T105321-88d3c5df/expansion0/branch0/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00089/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00090": {
+            "node_id": "guard-n00090",
+            "role": "guard",
+            "status": "discarded",
+            "parent_id": "guard-n00070",
+            "depth": 4,
+            "children": [],
+            "created_at": "2026-09-09T11:10:19.602166+00:00",
+            "code_hash": "a4b33fc08b9018924276592737ebf7e18aa5f146b1b86bb747c2fdc89d9c2184",
+            "patch_path": null,
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T105321-88d3c5df/expansion0/branch1/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": "code_agent_failure:TimeoutError:The read operation timed out"
+          },
+          "guard-n00091": {
+            "node_id": "guard-n00091",
+            "role": "guard",
+            "status": "discarded",
+            "parent_id": "guard-n00070",
+            "depth": 4,
+            "children": [],
+            "created_at": "2026-09-09T11:19:41.826574+00:00",
+            "code_hash": "a4b33fc08b9018924276592737ebf7e18aa5f146b1b86bb747c2fdc89d9c2184",
+            "patch_path": null,
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T105321-88d3c5df/expansion0/branch2/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": "code_agent_failure:TimeoutError:The read operation timed out"
+          },
+          "guard-n00098": {
+            "node_id": "guard-n00098",
+            "role": "guard",
+            "status": "retained",
+            "parent_id": "guard-n00037",
+            "depth": 4,
+            "children": [
+              "guard-n00107",
+              "guard-n00108"
+            ],
+            "created_at": "2026-09-09T14:36:44.098394+00:00",
+            "code_hash": "f3294aac51f9bb2b0e2591ae064d533e43d1e816060a110c8bbf04a723f0d271",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00098/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T143644-2feeaa6c/expansion0/branch0/diagnosis.json",
+            "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/guard/guard-n00098/summary.json",
+            "status_reason": "passed_broad_filter"
+          },
+          "guard-n00099": {
+            "node_id": "guard-n00099",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00037",
+            "depth": 4,
+            "children": [],
+            "created_at": "2026-09-09T14:47:00.146666+00:00",
+            "code_hash": "700bf5bdd4b08accf54089f0192c8a29a77104a52b48f0d75aa8815dc53967e2",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00099/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T143644-2feeaa6c/expansion0/branch1/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          },
+          "guard-n00100": {
+            "node_id": "guard-n00100",
+            "role": "guard",
+            "status": "discarded",
+            "parent_id": "guard-n00037",
+            "depth": 4,
+            "children": [],
+            "created_at": "2026-09-09T15:09:29.757851+00:00",
+            "code_hash": "7aa6a449db1bf05d8ce5a0e04cff9f85533ed114e10e720653bd345543f2b618",
+            "patch_path": null,
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T143644-2feeaa6c/expansion0/branch2/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": "code_agent_failure:TimeoutError:The read operation timed out"
+          },
+          "guard-n00107": {
+            "node_id": "guard-n00107",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00098",
+            "depth": 5,
+            "children": [],
+            "created_at": "2026-09-09T18:37:49.642706+00:00",
+            "code_hash": "a2e1b512df8d848a04ea771ea2330cfa3830e6ca4e0d6cdc2e1d4e9995dc0b4d",
+            "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/guard-n00107/ancestor.patch",
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T183749-3537b39f/expansion0/branch0/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          },
+          "guard-n00108": {
+            "node_id": "guard-n00108",
+            "role": "guard",
+            "status": "pending",
+            "parent_id": "guard-n00098",
+            "depth": 5,
+            "children": [],
+            "created_at": "2026-09-09T18:51:30.124270+00:00",
+            "code_hash": "f3294aac51f9bb2b0e2591ae064d533e43d1e816060a110c8bbf04a723f0d271",
+            "patch_path": null,
+            "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260909T183749-3537b39f/expansion0/branch1/diagnosis.json",
+            "evaluation_summary_path": null,
+            "status_reason": ""
+          }
+        }
+      }
+    }
+  ],
+  "diagnosis": {
+    "summary": "guard-n00098 的主要问题不是 schema 合法性，而是守卫行动层面的可执行性与记忆使用不足：评测 20 局仅 4 胜 16 负、无非法行动，说明输出稳定但策略收益低。随机回放中最致命的是第 2 夜守卫在真预言家/警长 p5 公开后选择 pass，导致 p5 被狼刀杀死；随后白天又公开声称“我昨晚守的是5号”，与审计行动矛盾并暴露守卫身份。后续它能在第 3 夜守中 p3、第 5 夜守中 p11，但第 6 夜又保护了可疑且实际为狼的警长 p9，暴露出当前代码把“警长/公开焦点/身份声称”过度等同于保护价值，缺少对可疑度和真实可信链的区分。下一代应做最小改动：强制夜间有可用 guard_protect 时不 pass；把守卫自身私有行动记忆注入模型上下文；在发言提示中禁止虚假报守护对象和无谓跳守卫；重构候选评分，降低可疑警长、悍跳、被查杀、冲票位的保护优先级。",
+    "evidence": [
+      {
+        "source": "read_evaluation_summary",
+        "detail": "guard-n00098 最近评测 20 局，win_count=4，loss_count=16，win_rate=0.2；focus_fallback_count=0，focus_invalid_decision_count=0。说明问题不是非法行动或 fallback，而是合法行动质量。"
+      },
+      {
+        "source": "random_game_replay seq19-21",
+        "detail": "第 1 夜守卫 p4 选择 guard_protect p4，自守合法；当夜实际狼刀 p3，女巫救 p3，守卫未产生收益。首夜信息少，自守不一定错误，但没有与公开信息无关。"
+      },
+      {
+        "source": "random_game_replay seq63-68, seq96, seq109-117",
+        "detail": "第 1 天公开信息显示 p5 自称预言家并当选警长，持续报 p3 金水；p6、p8、p9 多人对跳，其中 p6 被全场归票出局。对守卫可见信息而言，p5 至少是最高价值公开信息位/警徽链节点。"
+      },
+      {
+        "source": "random_game_replay seq150-154",
+        "detail": "第 2 夜守卫行动为 pass，guarded_targets 为空。当前代码的 _repair_guard_decision 只修复 kind=guard_protect 的非法/重复目标，不会把 pass 修复为保护目标。"
+      },
+      {
+        "source": "random_game_replay seq156-173",
+        "detail": "第 2 夜狼人一致刀 p5，p5 死亡；审计显示 p5 当夜查验 p8 为 wolf，但死亡后该信息无法有效公开。若守卫当夜保护 p5，可阻断一次关键狼刀。"
+      },
+      {
+        "source": "random_game_replay seq196",
+        "detail": "第 2 天 p4 发言称“我昨晚守的是5号”，但审计 seq153-154 显示昨晚实际 pass。这是守卫私有记忆未注入模型导致的虚假自述，同时公开暴露守卫身份。"
+      },
+      {
+        "source": "random_game_replay seq227-245",
+        "detail": "第 3 夜守卫保护 p3，狼人也刀 p3，成功形成平安夜。这说明候选排序有时能保护警徽链，但不稳定。"
+      },
+      {
+        "source": "random_game_replay seq291-308",
+        "detail": "第 4 夜因不能连守 p3，守卫改自守 p4，狼人再次刀 p3，p3 死亡。该夜不能连守导致无法救 p3，可接受；但也体现出守卫已公开后自守被采用。"
+      },
+      {
+        "source": "random_game_replay seq353-370",
+        "detail": "第 5 夜守卫保护 p11，狼人刀 p11，成功守出平安夜。"
+      },
+      {
+        "source": "random_game_replay seq383-408, seq412-424",
+        "detail": "第 5 天 p11 被放逐后将警徽转给 p9；第 6 夜守卫保护 p9，但狼人实际刀 p2。终局 reveal 显示 p9 是 wolf。当前策略显然可能把警长/焦点位当成保护对象，即使该玩家在残局中高度可疑。"
+      },
+      {
+        "source": "current_agent code",
+        "detail": "_guard_candidate_profile 中 claim、exposure、public_focus、salient、stage_bonus 会提高 information_value/public_pressure，自身或焦点也会加分；suspicion_penalty 只在 claim 且 vote/pressure 时较弱触发，缺少独立的“疑似狼/悍跳/查杀/冲票”负权重。"
+      },
+      {
+        "source": "current_agent code",
+        "detail": "decide 构造的 prompt 只有当前状态、规则、request、history_policy，不包含 last_protected_id、last_protected_round、上一夜是否 pass、当前候选排序等私有守卫记忆；新会话模式下模型无法可靠记住自己上一夜实际动作。"
+      }
+    ],
+    "root_causes": [
+      {
+        "cause": "夜间 pass 未被策略层禁止",
+        "detail": "规则可能允许 pass，但守卫有可用 guard_protect 时，pass 几乎总是浪费能力。当前 _repair_guard_decision 只处理 guard_protect 的 target_id，不处理 kind=pass，因此模型一次保守输出就会直接导致空守。"
+      },
+      {
+        "cause": "守卫私有行动记忆没有进入模型上下文",
+        "detail": "Task-Agent 每次决策是新模型会话；代码虽然维护 last_protected_id，但只用于本地修复，不告诉模型。结果模型在白天发言时会编造上一夜守护对象，且夜间也不能用真实上一夜行动解释自己的选择。"
+      },
+      {
+        "cause": "发言约束没有防止守卫暴露和虚假报守",
+        "detail": "当前 prompt 主要强调发言围绕公开矛盾，但没有明确要求：不要主动跳守卫、不要公开守护对象、不要声称守护成功、只有在私有记忆确认时才能提及上一夜动作。随机回放中 p4 直接说“我昨晚守的是5号”，既虚假又暴露。"
+      },
+      {
+        "cause": "保护价值与公开可疑度混淆",
+        "detail": "当前风险画像把 claim、focus、sheriff、public、pressure 等都当作保护相关信号，虽然有 suspicion_penalty，但不足以处理悍跳预言家、被多人怀疑、冲票位、残局警长狼等情形。第 6 夜保护实际为狼的 p9 是这种混淆的典型表现。"
+      },
+      {
+        "cause": "缺少针对警徽链的可信度判断",
+        "detail": "警长/警徽链确实可能是刀口，但不是天然可信好人。随机回放里 p9 接警徽时已处残局，且之前推动 p11 出局；保护它不如保护 p2、p7 或自守。当前代码没有区分“由可信预言家/金水链传递的警徽”与“可疑玩家获得警徽”。"
+      },
+      {
+        "cause": "当前排序只作为非法行动修复，不主动纠正明显低质合法选择",
+        "detail": "即使 _guard_candidate_ranking 算出较好候选，只要模型选择的是合法非重复目标或 pass，当前 repair 层大多保留。对守卫这种低频高价值行动，应至少对 pass、明显高疑似狼目标、无信息自守做有限覆盖。"
+      }
+    ],
+    "modification_plan": [
+      {
+        "file": "task_agent.py",
+        "change": "在 decide 构造 prompt 时，如果 self.profile.role == 'guard'，加入一个只含合法私有信息和公开派生信息的 private_guard_context，例如：last_protected_id、last_protected_round、last_guard_action_kind、alive_count、current_sheriff_id、self_publicly_exposed、guard_candidate_ranking 前 5 名及每名的 reason_codes。不要注入审计不可见狼刀或完整历史。",
+        "rationale": "新会话模型无法记住自己上一夜是否守人、守了谁；注入精简私有记忆可防止虚假发言，也让模型理解不能连守和为什么某些目标排名更高。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "扩展 _record_successful_guard_action：当守卫在夜间提交 pass 时，也记录 last_guard_action_kind='pass'、last_guard_action_round=round_no；当提交 guard_protect 时记录 kind='guard_protect'、target_id 和 round。新增字段 self.last_guard_action_kind、self.last_guard_action_round。",
+        "rationale": "目前只记录成功保护目标，不记录 pass；这会让后续发言无法知道上一夜实际上空守，从而出现“昨晚守的是5号”这类幻觉。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "修改 _repair_guard_decision：如果 request.allowed_actions 中存在 kind='guard_protect' 且有 target_ids，并且模型输出 kind='pass'，则将行动改为 {'kind':'guard_protect','target_id':ranked[0]['candidate']}；仅当没有合法保护目标时才保留 pass。该逻辑应在 decision_error 前执行。",
+        "rationale": "守卫夜间空守通常是严重低质合法行动。随机回放第 2 夜 pass 直接导致真预言家/警长死亡。此改动小、确定性强，不改变规则，只在候选 agent 内避免浪费能力。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "重构 _guard_candidate_profile 的评分维度，新增 wolf_suspicion 或 distrust 字段；从公开发言文本中识别“查杀、狼人、悍跳、假预言家、冲票、带节奏、出他/票他”等指向候选的负面信号。保护排序中加入强负权重：score_key 在 wolf_attack_risk 后比较 -wolf_suspicion；total_score 扣除 wolf_suspicion * 40 左右。残局 alive_count<=7 时加倍惩罚。",
+        "rationale": "当前把被讨论/被投票/自称神职过多转化为保护价值，导致可疑悍跳或狼警长也可能被守。独立可疑度能避免第 6 夜保护 p9 这类错误。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "调整 claim 与 sheriff 加分：身份声称只有在没有被同轮多人对跳、查杀、悍跳指控时才给 information_value；current_sheriff_id 只给小额保护 bonus，并在 wolf_suspicion 高、刚被可疑传警徽、或其发言承认平民无信息时取消该 bonus。不要把 sheriff/focus 直接当 wolf_attack_risk。",
+        "rationale": "警长常是刀口，但不是确认好人。p9 作为实际狼在残局拿到警徽后被守，说明当前逻辑过度迷信警徽/公开焦点。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "新增 _render_guard_private_context 或 _guard_candidate_reason_codes：为排名结果生成短 reason_codes，如 ['current_sheriff_low_suspicion','claimed_seer_uncontested','self_exposed_endgame','high_wolf_suspicion_penalty','repeat_forbidden_excluded']，并限制整体长度在几百字符内。",
+        "rationale": "模型需要知道本地排序依据，但不能塞完整历史。短理由能提高夜间选择和白天发言一致性，同时不突破 prompt 预算。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 _turn_instruction 中为 guard 的 speak/last_words 阶段加入单独安全提示：不要主动公开自己是守卫；不要公开昨夜/历史守护对象；不要声称守护成功或失败；若必须回应，只说“我只能基于公开信息判断，不能确认刀口原因”；只有 private_guard_context 明确 last_guard_action_kind='guard_protect' 且策略允许时才可提及，但默认仍不提。",
+        "rationale": "随机回放中 p4 白天虚假声称守 p5，并实际暴露守卫身份。守卫发言应保护身份和私有信息，除非残局或被迫跳身份。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 _dialogue_text_signals / _ingest_dialogue_entries 中区分“保护信号”和“攻击/怀疑信号”：例如“我是预言家/女巫/猎人”给 speaker 的 claim；“pX 查杀/狼人/悍跳/出pX/票pX”给 pX 的 wolf_suspicion 和 pressure，而不是 claim 价值。避免把包含“预言家”的句子错误加到被指控对象上。",
+        "rationale": "当前文本扫描较粗，容易把同一句对跳/查杀文本中的身份词和玩家编号都混成 claim/focus，从而提高错误对象的保护优先级。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "在 _guard_smoke_checks 中增加测试：1）当 allowed_actions 同时有 pass 和 guard_protect 时，pass 会被修复为最高 ranked target；2）被“查杀/悍跳/狼人”标记的候选不应因 claim/sheriff 排到低疑似候选之前；3）last_guard_action_kind='pass' 时 private_guard_context 不得声称有 last_protected_id。",
+        "rationale": "历史上多个 guard 分支因 smoke 失败被丢弃；新增纯函数级 smoke 可防止这次修改破坏合法性，也确保关键行为可验证。"
+      },
+      {
+        "file": "task.md",
+        "change": "补充守卫专用操作规程：夜间只要 guard_protect 可用就不要 pass；白天默认不跳守卫、不报守护对象、不编造守护成功/失败；警长/警徽链只有在低可疑且来源可信时才是高保护目标；残局优先保护低疑似关键好人或已暴露的自己，避免保护被多人查杀/悍跳指控的警长。",
+        "rationale": "代码层修复 pass 和评分，task.md 层约束模型语言和高层选择，二者互补且不涉及引擎或规则修改。"
+      }
+    ],
+    "risks": [
+      {
+        "risk": "强制 pass 转 protect 可能在极少数战术场景下降低灵活性",
+        "mitigation": "只在存在合法 guard_protect target_ids 时触发；守卫通常没有理由空守，收益大于风险。"
+      },
+      {
+        "risk": "新增 wolf_suspicion 可能误伤真神职，因为真预言家也常被狼人悍跳指控",
+        "mitigation": "不要单凭一次指控完全排除；使用多信号累计、残局加重、与 claim/sheriff 加分抵消。只对高疑似目标降低保护，不硬禁。"
+      },
+      {
+        "risk": "私有 guard_context 若措辞不当，可能诱导模型白天泄露守护信息",
+        "mitigation": "上下文应标注为“仅供你内部决策，公开发言默认不得透露”；发言阶段再重复禁止报守护对象。"
+      },
+      {
+        "risk": "文本正则解析中文发言容易不完美",
+        "mitigation": "采用保守关键词和 reason_codes，不把解析结果当确认身份；只用于排序倾向。"
+      },
+      {
+        "risk": "过度改造候选评分会引入复杂 bug",
+        "mitigation": "优先做最小补丁：pass 修复、私有记忆注入、发言禁止虚假报守、轻量 wolf_suspicion；避免大规模重写整个 agent。"
+      },
+      {
+        "risk": "保护警长权重下降可能错过真预言家警长刀口",
+        "mitigation": "保留低疑似 current_sheriff 的小额 bonus；只在高疑似、被查杀/悍跳、残局冲票等情况下取消或反向惩罚。"
+      }
+    ],
+    "code_agent_brief": "请只修改候选工作区的 task_agent.py 和 task.md，不要改 Game Engine、规则、schema、工具或评测。目标是在 guard-n00098 基础上做最小可执行改进：\n1. 在 TaskAgent.__init__ 增加 self.last_guard_action_kind 和 self.last_guard_action_round。\n2. 修改 _record_successful_guard_action，使 guard_protect 记录 kind/target/round，夜间 pass 也记录 kind='pass' 和 round。确保 decide 在任何合法行动返回前都调用该记录逻辑，或对 guard pass 单独记录。\n3. 在 decide 构造 prompt 时，guard 角色增加 private_guard_context，内容包括 last_protected_id、last_protected_round、last_guard_action_kind、last_guard_action_round、alive_count、current_sheriff_id、self_publicly_exposed，以及 guard_protect 阶段的前 5 个候选排名和简短 reason_codes。该上下文只能来自自身行动记忆和公开状态/当前轮可见发言，不能读审计狼刀。\n4. 修改 _repair_guard_decision：若 allowed_actions 里有 guard_protect 且存在 target_ids，而模型输出 pass，则改成 guard_protect ranked[0]['candidate']；如果 guard_protect 目标非法/重复，仍按现有 ranked 修复。不要在无合法目标时臆造。\n5. 给候选画像新增 wolf_suspicion/distrust：从公开发言和结构化字段中识别“查杀、狼人、悍跳、假预言家、冲票、带节奏、出/票/归票某人”等对 candidate 的负面指向。排序中对 wolf_suspicion 施加强负权重，残局 alive_count<=7 时更强。claim、sheriff、focus 不应直接等同于刀口；高疑似 claim/sheriff 不能因身份或警徽大幅加分。\n6. 调整 _dialogue_text_signals/_ingest_dialogue_entries，尽量区分 speaker 自称身份与对他人的查杀/怀疑，避免把“pX 是狼人/悍跳预言家”解析成 pX 的可信 claim。\n7. 在 _turn_instruction 或 system prompt 的 guard 发言提示中明确：默认不跳守卫，不公开守护对象，不声称守护成功/失败，不编造上一夜守护；如被问到也用公开信息表述。\n8. 在 task.md 同步补充：夜间有 guard_protect 时不要 pass；警长/警徽链必须低疑似才优先保护；发言不要泄露或虚构守卫行动。\n9. 更新 _guard_smoke_checks，至少覆盖 pass->protect、可疑悍跳不应优先于低疑似关键位、pass 记忆不会生成虚假 last_protected_id。保持所有输出 schema 合法。"
+  },
+  "model": {
+    "available": true,
+    "model": "gpt-5.5",
+    "protocol": "responses",
+    "reasoning_effort": null,
+    "enable_thinking": true,
+    "max_output_tokens": 900
+  },
+  "token_usage": {
+    "input_tokens": 143093,
+    "output_tokens": 5887,
+    "total_tokens": 148980
+  }
+}

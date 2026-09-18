@@ -1,0 +1,594 @@
+--- wolf-n00102/task_agent.py
++++ wolf-n00141/task_agent.py
+@@ -224,6 +224,15 @@
+             "known_wolf_ids_cache": [],
+             "alive_wolf_ids_cache": [],
+             "no_death_rounds": [],
++            # 仅记录已由公开同步确认的夜间结算；键为 round/target，保证 observe 幂等。
++            "night_failure_ledger": [],
++            "public_ledger": {
++                "claims": [],
++                "votes": [],
++                "deaths": [],
++                "sheriff_changes": [],
++            },
++            "claim_state": {},
+         }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+@@ -235,25 +244,23 @@
+ 
+         old_dead = {str(item) for item in (self._game_memory.get("dead_players") or [])}
+         new_dead = {str(item) for item in (summary.get("dead_players") or [])}
+-        if summary.get("no_death"):
+-            round_value = summary.get("round")
+-            if round_value is not None and round_value not in self._wolf_memory["no_death_rounds"]:
+-                self._wolf_memory["no_death_rounds"].append(round_value)
++        # 失败刀只在公开夜间结算边界记账。白天新增的普通死亡不能说明上一夜目标
++        # 未死；round+target 是幂等键，重复同步不会重复累计。
++        resolution_round = summary.get("night_resolution_round")
++        last_target = self._wolf_memory.get("last_wolf_target")
++        recent_kill = self._kill_matches_resolution(resolution_round)
++        if summary.get("no_death") and resolution_round is not None:
++            if resolution_round not in self._wolf_memory["no_death_rounds"]:
++                self._wolf_memory["no_death_rounds"].append(resolution_round)
+                 self._wolf_memory["no_death_rounds"] = self._wolf_memory["no_death_rounds"][-4:]
+-            last_target = self._wolf_memory.get("last_wolf_target")
+-            if last_target:
+-                failed = self._wolf_memory["failed_kill_targets"]
+-                if str(last_target) not in {str(item) for item in failed}:
+-                    failed.append(str(last_target))
+-                    self._wolf_memory["failed_kill_targets"] = failed[-4:]
+-        elif new_dead and new_dead != old_dead:
+-            last_target = self._wolf_memory.get("last_wolf_target")
+-            if last_target and str(last_target) not in new_dead:
+-                failed = self._wolf_memory["failed_kill_targets"]
+-                if str(last_target) not in {str(item) for item in failed}:
+-                    failed.append(str(last_target))
+-                    self._wolf_memory["failed_kill_targets"] = failed[-4:]
++            if recent_kill:
++                self._record_night_failure(resolution_round, last_target)
++        elif resolution_round is not None and new_dead:
+             self._wolf_memory["last_night_deaths"] = list(new_dead)[-4:]
++            if recent_kill and last_target and str(last_target) not in new_dead:
++                self._record_night_failure(resolution_round, last_target)
++
++        self._update_public_ledger(summary)
+ 
+         for key in ("round", "phase", "sheriff_id"):
+             value = summary.get(key)
+@@ -273,6 +280,105 @@
+ 
+         self._public_history.append(summary)
+         self._public_history = self._public_history[-_MAX_HISTORY_ITEMS:]
++
++    def _kill_matches_resolution(self, resolution_round: Any) -> bool:
++        last_round = self._wolf_memory.get("last_kill_round")
++        if resolution_round is None or last_round is None:
++            return bool(self._wolf_memory.get("last_wolf_target"))
++        if str(resolution_round) == str(last_round):
++            return True
++        try:
++            return int(resolution_round) == int(last_round) + 1
++        except (TypeError, ValueError):
++            return False
++
++    def _record_night_failure(self, round_value: Any, target_id: Any) -> None:
++        """按公开结算记录一次未命中的夜刀，不把它变成永久禁刀。"""
++        if round_value is None or target_id is None:
++            return
++        target = str(target_id)
++        if target in {
++            str(item) for item in (self._game_memory.get("dead_players") or [])
++        }:
++            return
++        ledger = self._wolf_memory.setdefault("night_failure_ledger", [])
++        existing = next(
++            (item for item in ledger
++             if isinstance(item, Mapping)
++             and str(item.get("round")) == str(round_value)
++             and str(item.get("target_id")) == target),
++            None,
++        )
++        if existing is not None:
++            return
++        same_target = [
++            item for item in ledger
++            if isinstance(item, Mapping) and str(item.get("target_id")) == target
++        ]
++        ledger.append({
++            "round": round_value,
++            "target_id": target,
++            "failure_count": len(same_target) + 1,
++            "last_failed_round": round_value,
++        })
++        self._wolf_memory["night_failure_ledger"] = ledger[-8:]
++        failed = self._wolf_memory.setdefault("failed_kill_targets", [])
++        if target not in {str(item) for item in failed}:
++            failed.append(target)
++            self._wolf_memory["failed_kill_targets"] = failed[-4:]
++
++    def _update_public_ledger(self, summary: Mapping[str, Any]) -> None:
++        ledger = self._wolf_memory.setdefault("public_ledger", {})
++        events = list(summary.get("public_events") or [])
++        # 没有结构化事件时，只从已公开的摘要字段补轻量记录；这些不是私有推断。
++        for vote in summary.get("recent_votes") or []:
++            if isinstance(vote, str) and "->" in vote:
++                voter, target = vote.split("->", 1)
++                events.append({"kind": "vote", "voter": voter, "target": target})
++        for target in summary.get("dead_players") or []:
++            events.append({"kind": "death", "target": str(target)})
++        if summary.get("sheriff_id") is not None:
++            events.append({"kind": "sheriff_change", "target": str(summary["sheriff_id"])})
++        if not isinstance(events, list):
++            return
++        for event in events:
++            if not isinstance(event, Mapping):
++                continue
++            kind = str(event.get("kind") or "")
++            if kind == "claim":
++                speaker = str(event.get("speaker") or "")
++                if not speaker:
++                    continue
++                record = dict(event)
++                record["round"] = summary.get("round")
++                # 同一玩家同一轮只保留最新声明，避免“提及”堆成假证据。
++                claims = ledger.setdefault("claims", [])
++                claims[:] = [
++                    item for item in claims
++                    if not (isinstance(item, Mapping)
++                            and str(item.get("speaker")) == speaker
++                            and str(item.get("round")) == str(record["round"]))
++                ]
++                claims.append(record)
++                self._wolf_memory.setdefault("claim_state", {})[speaker] = record
++            elif kind in {"vote", "death", "sheriff_change"}:
++                key = {"vote": "votes", "death": "deaths", "sheriff_change": "sheriff_changes"}[kind]
++                record = dict(event)
++                record["round"] = summary.get("round")
++                values = ledger.setdefault(key, [])
++                duplicate = record in values
++                if kind in {"death", "sheriff_change"}:
++                    duplicate = any(
++                        isinstance(item, Mapping)
++                        and str(item.get("target")) == str(record.get("target"))
++                        for item in values
++                    )
++                if not duplicate:
++                    values.append(record)
++                values[:] = values[-8:]
++        for key in ("claims", "votes", "deaths", "sheriff_changes"):
++            ledger.setdefault(key, [])
++            ledger[key] = ledger[key][-8:]
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -477,6 +583,11 @@
+                 "known_wolf_ids": self._wolf_memory.get("known_wolf_ids_cache", []),
+                 "alive_wolf_ids": self._wolf_memory.get("alive_wolf_ids_cache", []),
+                 "no_death_rounds": self._wolf_memory.get("no_death_rounds", [])[-3:],
++                "night_failure_ledger": self._wolf_memory.get("night_failure_ledger", [])[-6:],
++                "public_ledger": {
++                    key: list((self._wolf_memory.get("public_ledger") or {}).get(key, []))[-6:]
++                    for key in ("claims", "votes", "deaths", "sheriff_changes")
++                },
+             },
+         }
+ 
+@@ -513,6 +624,13 @@
+             ),
+         )
+         public_state = self._compact_public_state(turn_packet.get("public_state"))
++        player_index = self._build_public_player_index(
++            turn_packet.get("public_state"), turn_packet.get("game"), memory_snapshot
++        )
++        if isinstance(public_state, dict):
++            # 详细 players 原文既会被截断又会和索引重复；索引是唯一的轻量玩家表。
++            public_state.pop("players", None)
++            public_state["player_index"] = player_index
+         request = self._compact_snapshot(
+             turn_packet.get("request"),
+             preferred_keys=(
+@@ -542,7 +660,7 @@
+             preferred_keys=("role", "team", "identity", "faction", "ability"),
+         )
+         wolf_strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
+-        return {
++        packet = {
+             "game": game,
+             "public_rules": public_rules,
+             "self": self_state,
+@@ -551,8 +669,39 @@
+             "request": request,
+             "memory": memory_snapshot,
+             "wolf_strategy": wolf_strategy,
+-            "current_round_dialogue": current_dialogue,
++            "current_round_dialogue": current_dialogue[-4:],
+         }
++        return self._fit_compact_prompt(packet)
++
++    def _fit_compact_prompt(self, packet: dict[str, Any]) -> dict[str, Any]:
++        """压掉重复原文，保留行动候选、完整玩家索引和结构化账本。"""
++        # system、turn instruction 和 JSON 包还要共享总预算，给它们留出余量。
++        budget = max(2400, min(8200, self.max_prompt_chars - 3200))
++        def size() -> int:
++            return len(json.dumps(packet, ensure_ascii=False, separators=(",", ":")))
++        memory = packet.get("memory") if isinstance(packet.get("memory"), dict) else {}
++        if size() > budget and isinstance(memory, dict):
++            memory.pop("recent_public_history", None)
++        if size() > budget:
++            packet["current_round_dialogue"] = packet.get("current_round_dialogue", [])[-2:]
++        if size() > budget and isinstance(memory, dict):
++            memory.pop("recent_self_history", None)
++            memory.pop("recent_vote_summary", None)
++        public_state = packet.get("public_state")
++        if size() > budget and isinstance(public_state, dict):
++            public_state.pop("dialogue", None)
++            public_state.pop("public_dialogue", None)
++        if size() > budget:
++            strategy = packet.get("wolf_strategy")
++            if isinstance(strategy, dict):
++                strategy.pop("current_round_dialogue", None)
++                strategy.pop("recent_dialogue", None)
++                strategy.pop("claims_internal", None)
++        if size() > budget:
++            packet["public_rules"] = self._compact_snapshot(
++                packet.get("public_rules"), preferred_keys=("phase_rules", "action_limits")
++            )
++        return packet
+ 
+     def _build_wolf_strategy(
+         self,
+@@ -573,6 +722,15 @@
+         )
+         recent_vote_summary = memory_snapshot.get("recent_vote_summary") or []
+         dialogue_slice = current_dialogue[-3:]
++        sheriff_actions = [
++            item for item in allowed_actions
++            if isinstance(item, Mapping)
++            and self._is_sheriff_action(str(item.get("kind") or ""))
++        ]
++        if sheriff_actions:
++            return self._build_sheriff_strategy(
++                turn_packet, memory_snapshot, current_dialogue, sheriff_actions
++            )
+         if is_night and target_actions:
+             ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions)
+             primary = ranked_targets[0] if ranked_targets else None
+@@ -623,6 +781,73 @@
+             "avoid_templates": self._anti_template_notes(),
+         }
+ 
++    @staticmethod
++    def _is_sheriff_action(kind: str) -> bool:
++        value = kind.lower()
++        return any(token in value for token in (
++            "sheriff", "警长", "警徽", "candidacy", "election", "speech_order"
++        ))
++
++    def _build_sheriff_strategy(
++        self,
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++        actions: list[Mapping[str, Any]],
++    ) -> dict[str, Any]:
++        kinds = [str(item.get("kind") or "") for item in actions]
++        candidates = [
++            str(target) for item in actions for target in (item.get("target_ids") or [])
++        ]
++        ledger = (memory_snapshot.get("wolf_memory") or {}).get("public_ledger") or {}
++        claims = ledger.get("claims") or []
++        known_wolves = {
++            str(item) for item in (memory_snapshot.get("wolf_memory") or {}).get("known_wolf_ids") or []
++        }
++        alive_wolves = {
++            str(item) for item in (memory_snapshot.get("wolf_memory") or {}).get("alive_wolf_ids") or []
++        }
++        wolf_candidates = [pid for pid in candidates if pid in alive_wolves]
++        natural_claimants = [
++            str(item.get("speaker")) for item in claims
++            if isinstance(item, Mapping) and item.get("speaker")
++            and any(word in str(item.get("claim_type") or "") for word in ("预言家", "女巫", "猎人"))
++        ]
++        is_candidacy = any("candid" in kind.lower() or "竞选" in kind for kind in kinds)
++        is_vote = any("vote" in kind.lower() or "投" in kind for kind in kinds)
++        if is_candidacy:
++            preferred = wolf_candidates[0] if len(wolf_candidates) == 1 else None
++            recommendation = "pass_or_natural_claim" if len(wolf_candidates) != 1 else "consider_one_wolf_candidate"
++            reason = (
++                "只有一名狼队候选且能形成可信身份叙事时才竞选；多狼无叙事不重复上警"
++                if preferred is None else "单狼候选可竞选以换取警徽票权，但保持软偏好"
++            )
++        elif is_vote:
++            preferred = next((pid for pid in natural_claimants if pid in candidates), None)
++            if preferred is None:
++                preferred = next((pid for pid in candidates if pid not in known_wolves), None)
++            recommendation = "vote_for_best_public_chain_or_split"
++            reason = "按公开查验链、发言质量和狼队生存收益分配，不盲目全狼同票"
++        else:
++            preferred = None
++            recommendation = "follow_public_order_without_exposing_team"
++            reason = "发言顺序只服务于可信叙事和存活狼，不把私有身份当公开事实"
++        return {
++            "stage": "sheriff",
++            "action_kinds": kinds,
++            "preferred_action": recommendation,
++            "preferred_target": preferred,
++            "candidate_priority": candidates[:8],
++            "natural_public_claimants": natural_claimants[:4],
++            "reason": reason,
++            "constraints": [
++                "竞选是软偏好：有自然叙事、候选稀缺或残局票权决定性时允许悍跳/抢徽",
++                "警长投票优先系统公开结果，其次玩家声明，再看票型推断，不把声明当真身份",
++                "队友不要无理由重复同票；分配票型必须服从当轮合法候选",
++            ],
++            "recent_dialogue": current_dialogue[-3:],
++        }
++
+     def _build_day_vote_strategy(
+         self,
+         turn_packet: Mapping[str, Any],
+@@ -638,13 +863,25 @@
+         if alive:
+             alive_wolves = [pid for pid in alive_wolves if pid in alive]
+         dead_wolves = sorted(known_wolves - set(alive_wolves))
+-        dialogue_text = " ".join(
+-            str(item.get("text") or item.get("content") or "") for item in current_dialogue
+-        )
+-        pressured = [
+-            pid for pid in alive_wolves
+-            if pid in dialogue_text and any(word in dialogue_text for word in ("查杀", "出局", "狼", "投"))
+-        ]
++        public_ledger = (memory_snapshot.get("wolf_memory") or {}).get("public_ledger") or {}
++        claim_records = public_ledger.get("claims") or []
++        pressured = []
++        for record in claim_records:
++            if not isinstance(record, Mapping):
++                continue
++            target = str(record.get("target") or record.get("accused") or "")
++            claim_type = str(record.get("claim_type") or record.get("text") or "")
++            if target in alive_wolves and any(word in claim_type for word in ("查杀", "狼", "出局")):
++                if target not in pressured:
++                    pressured.append(target)
++        # 只有结构化声明不足时，才用当前发言中的明确“pX查杀”模式补充，
++        # 不再用“玩家名+狼/投”这种会被普通讨论触发的宽松条件。
++        for item in current_dialogue:
++            text = str(item.get("text") or item.get("content") or "")
++            for pid in alive_wolves:
++                if pid in text and re.search(rf"{re.escape(pid)}[^。！？\n]{0,12}(查杀|是狼|出局)", text):
++                    if pid not in pressured:
++                        pressured.append(pid)
+         hunter_claimants = [pid for pid, roles in claims.items() if "猎人" in roles]
+         dangerous_claims = {
+             pid: roles for pid, roles in claims.items()
+@@ -745,6 +982,17 @@
+         memory_snapshot: Mapping[str, Any],
+     ) -> dict[str, list[str]]:
+         claims: dict[str, list[str]] = {}
++        ledger_claims = ((memory_snapshot.get("wolf_memory") or {}).get("public_ledger") or {}).get("claims") or []
++        for record in ledger_claims:
++            if not isinstance(record, Mapping) or not record.get("speaker"):
++                continue
++            speaker = str(record["speaker"])
++            claim_type = str(record.get("claim_type") or "")
++            if claim_type:
++                claims.setdefault(speaker, [])
++                for role in ("预言家", "女巫", "守卫", "猎人", "平民", "查杀", "金水"):
++                    if role in claim_type and role not in claims[speaker]:
++                        claims[speaker].append(role)
+         items: list[Any] = []
+         if isinstance(dialogue, list):
+             items.extend(dialogue)
+@@ -765,13 +1013,12 @@
+             if speaker is None:
+                 continue
+             text = str(text)
+-            roles = [role for role in ("预言家", "女巫", "守卫", "猎人", "平民") if role in text]
+-            if "查杀" in text:
+-                roles.append("查杀")
+-            if "金水" in text:
+-                roles.append("金水")
+-            if "对跳" in text:
+-                roles.append("对跳")
++            explicit_claim = self._parse_self_claim(speaker, text)
++            if explicit_claim is not None:
++                roles = [role for role in ("预言家", "女巫", "守卫", "猎人", "平民", "查杀", "金水")
++                         if role in str(explicit_claim.get("claim_type") or "")]
++            else:
++                roles = []
+             if roles:
+                 claims.setdefault(str(speaker), [])
+                 for role in roles:
+@@ -873,10 +1120,15 @@
+             layer = max(layer, 2)
+         wolf_memory = memory_snapshot.get("wolf_memory") or {}
+         failed_targets = {str(item) for item in (wolf_memory.get("failed_kill_targets") or [])}
+-        if target_id == str(wolf_memory.get("last_wolf_target")) and target_id in failed_targets:
+-            # 只惩罚最近一次失败刀口，避免把一次平安夜变成永久禁刀。
+-            score -= 6 if stage == "end" else 12
+-            reasons.append("上一刀失败，疑似被救/被守")
++        failure_records = [
++            item for item in (wolf_memory.get("night_failure_ledger") or [])
++            if isinstance(item, Mapping) and str(item.get("target_id")) == target_id
++        ]
++        if target_id == str(wolf_memory.get("last_wolf_target")) and (target_id in failed_targets or failure_records):
++            # 失败只产生下一夜的软惩罚；残局仍可因收口收益覆盖。
++            count = max([int(item.get("failure_count", 1)) for item in failure_records] or [1])
++            score -= min(18, (6 if stage == "end" else 12) + count - 1)
++            reasons.append(f"上一刀失败{count}次，疑似被救/被守")
+         if not reasons:
+             reasons.append("默认公共威胁")
+         return {"score": score, "layer": layer, "reason": ",".join(reasons[:4])}
+@@ -1170,8 +1422,18 @@
+         if votes:
+             summary["recent_votes"] = votes
+         events = combined.get("events") or combined.get("history") or []
++        public_events = self._parse_public_events(events, round_value)
++        if public_events:
++            summary["public_events"] = public_events
++        night_round = self._night_resolution_round(
++            combined, events, round_value, bool(dead_players)
++        )
++        if night_round is not None:
++            summary["night_resolution_round"] = night_round
+         if combined.get("no_death") is True or self._contains_no_death_signal(events):
+             summary["no_death"] = True
++            if summary.get("night_resolution_round") is None:
++                summary["night_resolution_round"] = round_value
+         texts = self._extract_text_snippets(sync_packet)
+         if texts:
+             summary["public_texts"] = texts
+@@ -1179,6 +1441,75 @@
+             summary["round"] = self._safe_get(game, "round") or self._safe_get(public_state, "round")
+             summary["phase"] = self._safe_get(game, "phase") or self._safe_get(public_state, "phase")
+         return summary
++
++    def _night_resolution_round(
++        self, combined: Mapping[str, Any], events: Any, round_value: Any, has_deaths: bool
++    ) -> Any:
++        phase = str(combined.get("phase") or combined.get("public_phase") or "").lower()
++        items = events if isinstance(events, list) else [events]
++        for item in items:
++            if not isinstance(item, Mapping):
++                continue
++            kind = str(item.get("type") or item.get("event") or item.get("kind") or "").upper()
++            if any(token in kind for token in ("DAWN", "NIGHT_RESULT", "NIGHT_RESOLUTION", "NO_DEATH")):
++                return item.get("round", round_value)
++        if has_deaths and any(token in phase for token in ("dawn", "黎明", "夜结算")):
++            return round_value
++        return None
++
++    def _parse_public_events(self, events: Any, round_value: Any) -> list[dict[str, Any]]:
++        result: list[dict[str, Any]] = []
++        items = events if isinstance(events, list) else [events]
++        for item in items:
++            if not isinstance(item, Mapping):
++                continue
++            kind = str(item.get("type") or item.get("event") or item.get("kind") or "").upper()
++            event_round = item.get("round", round_value)
++            if any(token in kind for token in ("SPOKE", "SPEECH", "DIALOGUE")):
++                speaker = self._first_value(item, ("speaker", "speaker_id", "player_id", "from"))
++                text = self._first_value(item, ("text", "content", "message", "utterance"))
++                claim = self._parse_self_claim(speaker, text)
++                if claim:
++                    claim["round"] = event_round
++                    result.append(claim)
++            elif "VOTE" in kind:
++                voter = self._first_value(item, ("voter", "player_id", "from"))
++                target = self._first_value(item, ("target", "target_id", "to"))
++                if voter is not None or target is not None:
++                    result.append({"kind": "vote", "round": event_round,
++                                   "voter": str(voter) if voter is not None else None,
++                                   "target": str(target) if target is not None else None})
++            elif any(token in kind for token in ("ELIMINATED", "PLAYER_DIED", "PLAYER_DEAD", "DEATH")):
++                target = self._first_value(item, ("player_id", "target_id", "victim", "dead_player", "id"))
++                if target is not None:
++                    result.append({"kind": "death", "round": event_round, "target": str(target)})
++            elif "SHERIFF" in kind and any(token in kind for token in ("ELECT", "CHANGE", "TRANSFER")):
++                target = self._first_value(item, ("player_id", "target_id", "sheriff_id", "to"))
++                if target is not None:
++                    result.append({"kind": "sheriff_change", "round": event_round, "target": str(target)})
++        return result[-_MAX_HISTORY_ITEMS:]
++
++    def _parse_self_claim(self, speaker: Any, text: Any) -> dict[str, Any] | None:
++        if speaker is None or not isinstance(text, str):
++            return None
++        value = text.strip()
++        if not value:
++            return None
++        role = next((role for role in ("预言家", "女巫", "守卫", "猎人", "平民") if role in value), None)
++        if role is None:
++            return None
++        # “我认为 pX 是预言家”是对他人的判断，不是 speaker 的身份声明。
++        self_claim = re.search(r"(?:我|本人|这里)\s*(?:是|跳|认)\s*" + role, value)
++        if not self_claim and not re.search(r"(?:自称|起跳)" + role, value):
++            return None
++        claim_type = role
++        target = None
++        match = re.search(r"(p\d+)[^。！？\n]{0,12}(查杀|金水|是狼|是好人)", value)
++        if match:
++            target = match.group(1)
++            claim_type += ":" + match.group(2)
++        return {"kind": "claim", "speaker": str(speaker), "claim_type": claim_type,
++                "target": target, "text": self._clip_text(value, _MAX_SNIPPET_LENGTH)}
+ 
+     def _flatten_sync_fields(self, value: Any) -> dict[str, Any]:
+         if not isinstance(value, Mapping):
+@@ -1276,7 +1607,7 @@
+             return any(self._contains_no_death_signal(item) for item in value.values())
+         if isinstance(value, list):
+             return any(self._contains_no_death_signal(item) for item in value[-_MAX_HISTORY_ITEMS:])
+-        return "无人死亡" in str(value) or "平安夜" in str(value)
++        return str(value).strip() in {"无人死亡", "平安夜", "NO_DEATH", "NO_ONE_DIED"}
+ 
+     def _summarize_votes(self, value: Mapping[str, Any]) -> list[str]:
+         votes = value.get("votes") or value.get("vote_history")
+@@ -1315,7 +1646,7 @@
+                 for pid, info in players.items():
+                     record = ensure_record(pid)
+                     if isinstance(info, Mapping):
+-                        record.update(self._compact_snapshot(info, preferred_keys=("seat", "seat_id", "alive", "status", "role", "claim", "claimed_role", "public_role", "vote_count", "votes", "speak_count", "speech_count")))
++                        record.update(self._compact_snapshot(info, preferred_keys=("player_id", "seat", "seat_id", "alive", "status", "revealed_role", "claim", "claimed_role", "public_role", "vote_target", "vote_count", "votes", "speak_count", "speech_count")))
+                     if alive is not None and "alive" not in record:
+                         record["alive"] = alive
+             elif isinstance(players, list):
+@@ -1325,7 +1656,7 @@
+                         if pid is None:
+                             continue
+                         record = ensure_record(pid)
+-                        record.update(self._compact_snapshot(item, preferred_keys=("player_id", "id", "seat", "seat_id", "alive", "status", "role", "claim", "claimed_role", "public_role", "vote_count", "votes", "speak_count", "speech_count")))
++                        record.update(self._compact_snapshot(item, preferred_keys=("player_id", "id", "seat", "seat_id", "alive", "status", "revealed_role", "claim", "claimed_role", "public_role", "vote_target", "vote_count", "votes", "speak_count", "speech_count")))
+                         if alive is not None and "alive" not in record:
+                             record["alive"] = alive
+                     else:
+@@ -1374,6 +1705,21 @@
+         if memory_snapshot.get("game", {}).get("sheriff_id") is not None:
+             ensure_record(memory_snapshot["game"]["sheriff_id"])["is_sheriff"] = True
+         return records
++
++    def _build_public_player_index(
++        self, public_state: Any, game: Any, memory_snapshot: Mapping[str, Any]
++    ) -> list[dict[str, Any]]:
++        records = self._extract_player_records(public_state, game, memory_snapshot)
++        allowed = (
++            "player_id", "seat", "seat_id", "alive", "status", "revealed_role",
++            "claim", "claimed_role", "public_role", "vote_target", "vote_count",
++        )
++        result: list[dict[str, Any]] = []
++        for pid, record in sorted(records.items(), key=lambda item: self._seat_sort_value(item[1], item[0])):
++            compact = {key: record[key] for key in allowed if key in record}
++            compact["player_id"] = pid
++            result.append(compact)
++        return result
+ 
+     def _compact_public_state(self, value: Any) -> Any:
+         if not isinstance(value, Mapping):
+--- wolf-n00102/task.md
++++ wolf-n00141/task.md
+@@ -1,12 +1,25 @@
+ # 狼人最小任务
+ 
+ 你的任务是帮助狼人阵营获胜，同时让公开发言像一个真实、会根据局势持续修正判断的玩家。
++
++## 证据优先级与可见性
++- 证据优先级固定为：**系统公开确认结果 > 玩家角色声明 > 公开票型推断 > 座位或泛化印象**。
++- 公开声明只是 claim，不等于真实身份；“某人声称自己是预言家”不能直接写成预言家已确认。
++- 只使用行动包、公开同步、当前依法可见发言和自己的狼人身份信息；不要猜测或要求未公开的技能结果。
++- 优先引用结构化的 claims、votes、deaths、sheriff_changes，再用当前发言补充上下文；不要把普通提及误当成角色声明。
++
++## 警长竞选、投票与发言顺序
++- 警长竞选是软偏好，不是硬性禁止：已有自然身份叙事、狼队候选稀缺，或警徽票权对残局决定性时，可以由一名狼竞选并保持可信叙事。
++- 没有可信叙事时不要多狼同时上警；竞选前先判断警徽对发言顺序、归票和票权的实际收益。
++- 警长投票按公开查验链、发言质量和狼队生存收益分配，不盲目全狼同票；必要时分票或倒钩，但必须符合当前合法候选。
++- 警长发言顺序只服务于自然叙事和活狼存活，不把私有身份或狼队计划泄露为公开事实。
+ 
+ ## 夜间
+ - 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标。
+ - 先按阶段分层：首夜更重公开跳身份、对跳和验人链；中后期更重警徽位与票型核心；残局更重票型锁位与收口。
+ - 如果有人已经明显暴露身份、对跳、被查杀、串起验人链或成为票型焦点，优先把这些信息纳入刀口判断。
+ - 队友意见不一致时，按“真神职暴露/对跳/验人链 > 警长与票型核心 > 难解释的公共威胁 > 固定座位/最后一致目标”收敛。
++- 平安夜或公开确认上一夜目标未死，只对**下一夜**换刀产生软惩罚；失败账本按轮次和目标幂等记录，不会永久禁止目标。上一刀目标若已在该夜死亡，不记为失败。
+ 
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序再表态，不要只讲泛泛原则。

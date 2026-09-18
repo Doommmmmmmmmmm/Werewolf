@@ -1,0 +1,99 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-base 目前是一个“能跑但不够会玩”的女巫 Task-Agent：它遵守了基本 JSON 契约，但缺少跨回合记忆、缺少女巫专属的用药阈值、也缺少对公开发言中私密信息的明确约束，因此容易把短期直觉当成证据，过早或低置信度地消耗唯一资源。评测上它只有 20% 胜率，整体被判定应 discard；在抽样回放里，女巫第 3 夜对 p10 的毒杀没有形成足够强的硬证据，最终也没有扭转局势。",
+  "evidence": [
+    {
+      "source": "read_evaluation_summary",
+      "fact": "witch-base 的总评测为 20 局，win_count=4，loss_count=16，win_rate=0.2，recommended_status=discarded，status_reasons 包含 invalid_decisions=21 > 10。"
+    },
+    {
+      "source": "random_game_replay / game15",
+      "fact": "第 3 夜女巫执行了 witch_poison，目标是 p10；回放最终显示 p10 的真实身份是 villager，且当时没有形成特别强的硬查验或公开对跳支撑。"
+    },
+    {
+      "source": "current_agent",
+      "fact": "observe(sync_packet) 直接丢弃输入，不保留任何跨回合状态；decide() 只在当前轮新会话里工作。"
+    },
+    {
+      "source": "current_agent",
+      "fact": "TaskAgent 只有一个当前回合发言工具 CURRENT_ROUND_DIALOGUE_TOOL，且注释明确写了 new_session_per_decision，没有内建长期记忆或历史摘要。"
+    },
+    {
+      "source": "task.md",
+      "fact": "任务要求女巫结合前几天票型和死亡信息，并且隐藏不应公开的药水和夜间信息；但当前实现没有把这些要求落成结构化决策规则。"
+    },
+    {
+      "source": "skills / official-witch-save, official-witch-poison, information-reliability, strategy-switching",
+      "fact": "可用技能本来就强调：解药/毒药要看目标价值、信息可信度和策略切换触发点，而不是见刀就救、见可疑就毒。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "没有跨回合记忆，无法稳定复盘票型和死亡链。",
+      "why_it_matters": "女巫任务明确要求结合前几天的票型和死亡信息；但 observe() 不保存任何历史，模型只能依赖当前状态和当前回合对话，天然会丢失多日关联。"
+    },
+    {
+      "cause": "女巫用药没有被显式改写成“高置信度阈值 + 优先级”决策。",
+      "why_it_matters": "当前 task.md 只有原则性描述，没有把“何时救、何时毒、何时 pass”落成可执行的规则，容易导致低证据毒人或过早消耗药水。"
+    },
+    {
+      "cause": "公开发言安全约束不够操作化。",
+      "why_it_matters": "虽然任务说不要泄露药水和夜间信息，但代码里没有专门的发言检查/提示模板来阻止模型把私密信息说成事实。"
+    },
+    {
+      "cause": "现有提示词与代码更像通用最小代理，而不是女巫专用代理。",
+      "why_it_matters": "witch-base 共享了非常通用的决策框架，没有女巫特有的“救药价值评估、毒口门槛、保药条件、身份隐蔽”分层，因此策略质量上限偏低。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 observe() 中保存压缩后的跨回合状态，例如：最近几轮死亡、投票分布、警长变化、已公开身份/遗言、重要对跳链、以及本角色自己已用过的药水状态；在 decide() 里把这份 compact memory 注入 system 或 user prompt。",
+      "rationale": "恢复对前几天票型和死亡信息的可用性，避免每次决策都只看当前轮导致的短视。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加一个女巫专用的决策摘要生成器：对 night_witch 阶段输出结构化建议，例如 heal_candidate / poison_candidate / pass_candidate，并带上简单置信度字段和触发理由；当置信度不足时默认倾向 pass。",
+      "rationale": "把“合理用药”变成可执行策略，而不是只靠模型自由发挥。"
+    },
+    {
+      "file": "task.md",
+      "change": "把女巫任务改写成带优先级的操作规约：先确认刀口与药水余量；救药只救高价值目标或能明显改变轮次者；毒药只打高置信狼或悍跳核心；证据不足时保留资源；白天发言不得提及自己私密夜间信息作为既成事实。",
+      "rationale": "让提示从原则型描述升级为可遵循的行为准则，减少模型在低证据场景下乱用药。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为公开发言增加一个轻量的安全提示段：显式要求只能基于公开事实发言，禁止提及药水余量、当夜狼刀目标、自己的具体用药结果或未公开身份链。",
+      "rationale": "降低女巫在白天泄露私密信息的概率，同时保持发言自然。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 prompt 侧加入一个简短的“历史复盘模板”，固定要求模型先列：上一轮关键票型、最新死亡、当前自己药水状态、再给行动结论。",
+      "rationale": "把多源信息整合的顺序固定下来，减少模型跳步和遗漏。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "过强的保守阈值会导致女巫过度 pass，错失毒杀关键狼的窗口。",
+      "impact": "可能降低上限，尤其在需要主动翻盘的局面。"
+    },
+    {
+      "risk": "跨回合记忆压缩不当会把噪声也写入状态。",
+      "impact": "若摘要错误，会把后续决策带偏，比完全无记忆更糟。"
+    },
+    {
+      "risk": "增加历史摘要和规则模板会抬高 prompt 长度。",
+      "impact": "可能挤压模型可用上下文，需要控制摘要长度与字段数量。"
+    },
+    {
+      "risk": "把女巫规则写得太死，可能在特殊局势下缺乏灵活性。",
+      "impact": "例如平安夜、假神职混战或后期屠边临界时，过于模板化会错过关键操作。"
+    }
+  ],
+  "code_agent_brief": "请只改 task_agent.py 和/或 task.md，不要碰引擎、schema 或评测框架。目标是把 witch-base 从通用最小代理升级成有跨回合记忆、女巫专属用药阈值、和发言保密约束的 Task-Agent。具体要求：1) observe() 必须保存一个极简历史摘要，至少包含最近几轮的死亡、票型、公开对跳、警长变化和本角色的药水状态；2) decide() 在 night_witch 阶段要能看到这份摘要，并输出 heal / poison / pass 的明确优先级；3) 当证据不足时默认保留资源而不是强行毒人；4) 白天发言不得把药水余量、夜刀目标、未公开用药结果说成既成事实；5) task.md 里把女巫策略改成带优先级、带保密要求的操作规约。保持现有 JSON 行动契约不变。"
+}

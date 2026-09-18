@@ -1,0 +1,107 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-base 已经是可用基线：20 局里 16 胜、4 负，评测状态 retained。但它的核心问题不是“不会赢”，而是“赢得不稳定、成本偏高、策略不够像真人”：当前 Task-Agent 基本是无状态的通用壳，缺少跨回合压缩记忆、缺少狼队协同的稳定收敛机制，也缺少根据局势切换打法的显式结构。随机回放里能看到多次夜刀投票分裂导致 no-kill，说明下一代应优先做“轻量记忆 + 狼人专用决策骨架 + 更自然的公开发言结构”，而不是单纯堆更长 prompt。",
+  "evidence": [
+    {
+      "source": "current_agent.py",
+      "fact": "observe() 里直接 del sync_packet，明确不保留跨行动状态；decide() 每次都重新组装完整 turn_packet，没有任何压缩后的历史摘要。"
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "prompt 里直接塞入 game / public_rules / self / private_information / public_state / request / history_policy，属于重上下文、低结构化输入；系统还限制 max_prompt_chars=12000，说明现在的输入组织对预算敏感。"
+    },
+    {
+      "source": "read_evaluation_summary",
+      "fact": "wolf-base 的总评测为 20 局、16 胜、4 负，win_rate=0.8；decision_count=564，fallback_count=2，invalid_decision_count=2，说明基线能跑通，但并不精致。"
+    },
+    {
+      "source": "read_evaluation_summary",
+      "fact": "总 token usage 很高：successful_response_count=229、api_attempt_count=429、input_tokens=1078282、output_tokens=12703、unreported_api_attempt_count=200，说明上下文和重试成本都偏高。"
+    },
+    {
+      "source": "random_game_replay(game10)",
+      "fact": "多次夜间狼人投票分裂：round 2、3、5、6、8 都出现了 tied_target_ids 或 no-kill，说明狼人协同没有稳定收敛到单一刀口。"
+    },
+    {
+      "source": "random_game_replay(game10)",
+      "fact": "白天发言大量使用相似结构：‘先听一圈/看票型/别划水/稳一点’ 这类模板化表达反复出现，缺少对具体票型、查验、警徽和遗言的针对性回应。"
+    },
+    {
+      "source": "list_skills + read_skill",
+      "fact": "可用技能里已经存在 speech-structure、strategy-switching、vote-analysis、endgame-counting、information-reliability、te5-wolf-deep-hide、te5-hook-wolf、sheriff-leadership 等，说明系统具备把发言/票型/残局/站边显式化的知识基础，但当前基线没有把这些能力结构化进代码或 prompt。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "无跨回合记忆",
+      "details": "observe() 丢弃同步包，导致狼人无法稳定记住前几轮公开发言、票型、警徽归属和自己/队友的历史承诺；这会让夜刀和白天叙事都更像临场反应而不是持续策略。"
+    },
+    {
+      "cause": "上下文没有压缩和分层",
+      "details": "每次决策都重新注入大而全的状态对象，没有把“本轮关键信息”“上一轮结论”“需要追踪的少量目标”拆开，容易造成 token 浪费，也容易把模型推向安全但空泛的模板回答。"
+    },
+    {
+      "cause": "缺少狼人专用决策骨架",
+      "details": "当前实现只做通用 JSON 契约和基本校验，没有把狼人的关键任务拆成“夜刀收敛、倒钩/深水选择、警徽利用、残局屠边计算”四类可复用逻辑。回放里多次夜刀分票就是这个问题的直接表现。"
+    },
+    {
+      "cause": "缺少局势切换规则",
+      "details": "面对平安夜、对跳、警徽转移、关键好人死亡或残局临界点时，没有明确的策略切换触发器，容易继续沿用前一轮的说法和投票习惯。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "把 observe() 从“丢弃同步包”改成“维护一个严格限长的结构化记忆”：至少保存最近 3-6 轮的公开票型、警徽归属、死亡顺序、自己最近的公开发言/投票、以及狼队夜间讨论的最终结论摘要；decide() 只把压缩后的摘要和当前轮关键状态送入模型，而不是整包原样透传。",
+      "rationale": "解决无状态问题，同时降低 prompt 体积和重复信息噪声，让狼队能连续地做身份叙事和夜刀协调。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加一个轻量的 wolf-specific planner：在夜间发言/投票前，先从记忆里提取‘本轮最优刀口候选、次优备选、队友分歧点、是否需要保留深水位’；若队友投票分裂，则根据固定优先级做确定性 tie-break，并把这个结果写回记忆。",
+      "rationale": "回放里多次出现狼人夜刀 no-kill，说明当前协同没有收敛机制；显式 tie-break 和备选方案能减少空刀。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把公开发言前的提示改成强结构：先输出‘已知事实/我自己的判断/下一步动作’，并在狼牌场景中强制回应票型、查验、警徽或遗言中的至少一个具体点；避免连续复用固定模板句式。",
+      "rationale": "让公开发言更像真实玩家，也更能根据局势变化切换策略，减少‘观望式空话’。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充狼人的最小执行规则：夜间先对齐一个主刀口和一个备选刀口；白天每轮至少给出一个可验证的嫌疑对象和一个备选站边；遇到平安夜、对跳、警徽转移、关键角色死亡时必须显式切换判断框架。",
+      "rationale": "把策略切换、票型分析和残局计算写进角色任务，而不是只停留在通用‘像真人’要求上。"
+    },
+    {
+      "file": "task.md",
+      "change": "加入简短的狼队发言约束示例：例如‘先报依据，再报态度，再报下一轮关注点’，并要求每轮发言回应上一位具体玩家而不是泛泛而谈。",
+      "rationale": "与 speech-structure 技能对齐，减少模板化输出，提升白天的可辩论性和可隐藏性。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "记忆过长或过细会重新推高 token 成本",
+      "mitigation": "必须用固定长度摘要、最近轮数裁剪和字段白名单，避免把完整历史重新塞回 prompt。"
+    },
+    {
+      "risk": "狼人专用 tie-break 过硬可能在少数局面误杀最优刀口",
+      "mitigation": "tie-break 只用于队友分裂或信息不足时，且保留次优候选与切换条件，不把单一规则写死。"
+    },
+    {
+      "risk": "公开发言结构化后可能显得机械",
+      "mitigation": "保留一定自然语言弹性，但强制包含事实、判断和下一步三个要素即可，不要求固定模板句。"
+    },
+    {
+      "risk": "把更多逻辑塞进 task.md 可能和代码逻辑重复",
+      "mitigation": "task.md 只写行为原则和触发条件，具体裁剪、摘要和 tie-break 逻辑放在 task_agent.py，避免双重来源冲突。"
+    },
+    {
+      "risk": "共享 Task-Agent 代码会让非狼角色也受影响",
+      "mitigation": "修改时保持通用框架不变，只在 wolf role task 中注入狼专用规则，不改 action schema 和引擎约束。"
+    }
+  ],
+  "code_agent_brief": "请在不改 Game Engine、规则、schema、工具或密钥的前提下，升级 wolf-base 的 Task-Agent：1) 在 task_agent.py 里把 observe() 改为维护一个严格限长的结构化记忆（最近轮次的公开票型、警徽、死亡顺序、自己与队友的关键发言/投票摘要），并用该摘要替代当前每次直接透传完整状态的做法；2) 增加一个 wolf-specific 的轻量决策层，用于夜间主刀/备刀选择、队友分裂时的确定性 tie-break、以及残局时的优先级排序；3) 把公开发言输出改成‘事实-判断-下一步’结构，强制回应具体票型/查验/警徽/遗言中的至少一项，避免固定模板；4) 在 task.md 里补充狼人夜间对齐、白天站边、平安夜/对跳/警徽转移/残局切换的简短规则说明。目标是降低模板化发言和夜刀分裂，控制 prompt/token 成本，并保持 JSON 行动输出与现有校验兼容。"
+}

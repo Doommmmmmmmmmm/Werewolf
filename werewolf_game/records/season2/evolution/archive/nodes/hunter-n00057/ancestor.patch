@@ -1,0 +1,424 @@
+--- hunter-n00040/task_agent.py
++++ hunter-n00057/task_agent.py
+@@ -32,7 +32,7 @@
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _PASS_LIKE_ACTION_KINDS = frozenset({"pass", "skip", "wait", "idle", "noop", "none"})
+-DEFAULT_PUBLIC_MEMORY_SIZE = 24
++DEFAULT_PUBLIC_MEMORY_SIZE = 32
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -185,7 +185,7 @@
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
+         self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)
+         self._player_notes: dict[str, dict[str, Any]] = {}
+-        self._round_memory: deque[str] = deque(maxlen=10)
++        self._round_memory: deque[str] = deque(maxlen=12)
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -204,7 +204,7 @@
+             if event:
+                 self._public_memory.append(event)
+ 
+-    def _recent_memory(self, limit: int = 8) -> list[str]:
++    def _recent_memory(self, limit: int = 12) -> list[str]:
+         if limit <= 0:
+             return []
+         combined = list(self._public_memory)
+@@ -223,13 +223,13 @@
+             item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)
+         ]
+         phase = self._request_phase_label(turn_packet, request, allowed_actions)
+-        recent_memory = self._recent_memory(8)
++        recent_memory = self._recent_memory(12)
+         evidence_snapshot = self._evidence_snapshot(recent_memory)
+         brief: dict[str, Any] = {
+             "phase": phase,
+             "recent_public_signals": recent_memory,
+             "evidence_snapshot": evidence_snapshot,
+-            "current_round_dialogue_preview": self._compact_dialogue(current_dialogue, limit=3),
++            "current_round_dialogue_preview": self._compact_dialogue(current_dialogue, limit=4),
+         }
+         mode = self._request_mode(allowed_actions)
+         if mode == "hunter_reaction":
+@@ -237,11 +237,14 @@
+             brief.update(
+                 {
+                     "decision_mode": "hunter_reaction",
+-                    "focus": "先比票型、改口、身份声明和死亡链条；只有多源证据都很弱时才考虑跳过。",
++                    "focus": "先比票型、身份冲突、对跳和死亡链条；只要有多源目标就优先出手，不要把跳过当默认。",
+                     "target_ranking": ranking["target_ranking"],
+                     "skip_option": ranking["skip_option"],
+                     "skip_condition": ranking["skip_condition"],
++                    "must_shoot": ranking["must_shoot"],
++                    "must_shoot_target": ranking["must_shoot_target"],
+                     "top_vote_pressure": evidence_snapshot["top_vote_pressure"],
++                    "top_target_evidence": evidence_snapshot["top_target_evidence"],
+                     "top_contradictions": evidence_snapshot["top_contradictions"],
+                     "claimed_roles": evidence_snapshot["claimed_roles"],
+                     "hard_clears": evidence_snapshot["hard_clears"],
+@@ -371,6 +374,7 @@
+                 "support_lines": deque(maxlen=4),
+                 "contradictions": deque(maxlen=4),
+                 "death_links": deque(maxlen=4),
++                "target_evidence": deque(maxlen=12),
+                 "latest_vote": "",
+                 "status": "unknown",
+                 "hard_clear": False,
+@@ -415,6 +419,63 @@
+                 seen.add(player_id)
+                 result.append(player_id)
+         return result
++
++    def _structured_target_evidence(self, record: Mapping[str, Any]) -> list[dict[str, Any]]:
++        text = str(record.get("text") or "").strip()
++        if not text:
++            return []
++        actor = str(record.get("actor") or "").strip()
++        round_value = record.get("round")
++        phase_value = record.get("phase")
++        summary = self._compact_text(record.get("summary") or text, limit=72)
++        source = actor or self._compact_text(record.get("source") or "", limit=24)
++        candidate_ids = self._unique_strings(
++            [*self._player_ids_from_text(text), str(record.get("target") or "").strip()]
++        )
++        if not candidate_ids:
++            return []
++        evidence_words = {
++            "hard_accuse": ("查杀", "点杀", "验杀", "狼", "狼人", "匪"),
++            "support": ("金水", "好人", "支持", "站边", "保", "护"),
++            "pressure": ("怀疑", "投", "票", "出", "打", "踩", "对跳"),
++            "conflict": ("改口", "矛盾", "反水", "自相矛盾"),
++        }
++        seen: set[tuple[str, str, str]] = set()
++        edges: list[dict[str, Any]] = []
++        for target_id in candidate_ids:
++            if not target_id:
++                continue
++            for match in re.finditer(re.escape(target_id), text):
++                window = text[max(0, match.start() - 8) : match.end() + 8]
++                kinds: list[str] = []
++                if any(word in window for word in evidence_words["hard_accuse"]):
++                    kinds.append("hard_accuse")
++                if any(word in window for word in evidence_words["support"]):
++                    kinds.append("support")
++                if any(word in window for word in evidence_words["pressure"]):
++                    kinds.append("pressure")
++                if any(word in window for word in evidence_words["conflict"]):
++                    kinds.append("conflict")
++                if not kinds:
++                    continue
++                snippet = self._compact_text(window, limit=48)
++                for kind in kinds:
++                    key = (target_id, kind, source or snippet)
++                    if key in seen:
++                        continue
++                    seen.add(key)
++                    edges.append(
++                        {
++                            "target_id": target_id,
++                            "source": source,
++                            "kind": kind,
++                            "snippet": snippet,
++                            "summary": summary,
++                            "round": round_value,
++                            "phase": phase_value,
++                        }
++                    )
++        return edges
+ 
+     def _player_label(self, player_id: str) -> str:
+         note = self._player_notes.get(player_id)
+@@ -511,15 +572,54 @@
+                 mention_note["last_round"] = round_value
+                 mention_note["last_phase"] = phase_value
+         if target and is_vote:
+-            self._player_note(target)["attack_lines"].append(self._compact_text(summary or f"{actor}投{target}", limit=60))
++            vote_summary = self._compact_text(summary or f"{actor}投{target}", limit=60)
++            target_note = self._player_note(target)
++            target_note["attack_lines"].append(vote_summary)
++            target_note["target_evidence"].append(
++                {
++                    "target_id": target,
++                    "source": actor,
++                    "kind": "vote",
++                    "snippet": vote_summary,
++                    "summary": vote_summary,
++                    "round": round_value,
++                    "phase": phase_value,
++                }
++            )
+         if target and is_death:
+-            self._player_note(target)["death_links"].append(self._compact_text(summary or text or f"{target}死亡", limit=60))
++            death_summary = self._compact_text(summary or text or f"{target}死亡", limit=60)
++            target_note = self._player_note(target)
++            target_note["death_links"].append(death_summary)
++            target_note["target_evidence"].append(
++                {
++                    "target_id": target,
++                    "source": actor,
++                    "kind": "death_link",
++                    "snippet": death_summary,
++                    "summary": death_summary,
++                    "round": round_value,
++                    "phase": phase_value,
++                }
++            )
++        structured_edges = [] if (is_vote or is_death) else self._structured_target_evidence(record)
++        for edge in structured_edges:
++            target_id = str(edge.get("target_id") or "").strip()
++            if not target_id:
++                continue
++            target_note = self._player_note(target_id)
++            target_note["target_evidence"].append(edge)
++            edge_text = self._compact_text(edge.get("summary") or edge.get("snippet") or text, limit=60)
++            if edge.get("kind") == "support":
++                target_note["support_lines"].append(edge_text)
++            else:
++                target_note["attack_lines"].append(edge_text)
+ 
+     def _evidence_snapshot(self, recent_memory: list[str]) -> dict[str, list[str]]:
+         vote_pressure: Counter[str] = Counter()
+         role_claims: dict[str, list[str]] = {}
+         top_contradictions: list[str] = []
+         hard_clears: list[str] = []
++        target_evidence: list[str] = []
+         for player_id, note in self._player_notes.items():
+             latest_vote = str(note.get("latest_vote") or "").strip()
+             if latest_vote:
+@@ -534,6 +634,13 @@
+                 role_claims.setdefault(role, []).append(player_id)
+             if note.get("hard_clear"):
+                 hard_clears.append(self._player_label(player_id))
++            structured = list(note.get("target_evidence") or [])
++            if structured:
++                sources = self._unique_strings([str(item.get("source") or "").strip() for item in structured])
++                kinds = self._unique_strings([str(item.get("kind") or "").strip() for item in structured])
++                target_evidence.append(
++                    f"{self._player_label(player_id)}:{len(sources)}源/{len(kinds)}类/{len(structured)}条"
++                )
+         claimed_roles: list[str] = []
+         for role, players in sorted(role_claims.items(), key=lambda item: (-len(item[1]), item[0])):
+             claimed_roles.append(f"{role}:{'/'.join(players[:3])}")
+@@ -541,10 +648,53 @@
+                 break
+         return {
+             "top_vote_pressure": [f"{player_id}×{count}" for player_id, count in vote_pressure.most_common(3)],
++            "top_target_evidence": target_evidence[:4],
+             "top_contradictions": top_contradictions[:3],
+             "claimed_roles": claimed_roles[:4],
+             "hard_clears": hard_clears[:4],
+-            "recent_signals": recent_memory[-4:],
++            "recent_signals": recent_memory[-6:],
++        }
++
++    def _target_evidence_stats(self, target_id: str) -> dict[str, Any]:
++        target_note = self._player_notes.get(target_id) or {}
++        entries = list(target_note.get("target_evidence") or [])
++        source_kinds: dict[str, set[str]] = {}
++        sources_by_kind: dict[str, set[str]] = {
++            "hard_accuse": set(),
++            "support": set(),
++            "pressure": set(),
++            "conflict": set(),
++            "vote": set(),
++            "death_link": set(),
++        }
++        kind_counts: Counter[str] = Counter()
++        samples: list[str] = []
++        for entry in entries:
++            source = str(entry.get("source") or "").strip()
++            kind = str(entry.get("kind") or "").strip()
++            snippet = self._compact_text(entry.get("snippet") or entry.get("summary") or "", limit=36)
++            if source:
++                source_kinds.setdefault(source, set()).add(kind)
++                sources_by_kind.setdefault(kind, set()).add(source)
++            kind_counts[kind] += 1
++            if snippet:
++                samples.append(f"{source or '?'}:{kind}:{snippet}")
++        independent_sources = len(source_kinds)
++        evidence_types = len([kind for kind, count in kind_counts.items() if count > 0])
++        multi_source_overlap = sum(1 for kinds in source_kinds.values() if len(kinds) >= 2)
++        return {
++            "entry_count": len(entries),
++            "independent_sources": independent_sources,
++            "evidence_types": evidence_types,
++            "multi_source_overlap": multi_source_overlap,
++            "hard_accuse_sources": len(sources_by_kind.get("hard_accuse") or set()),
++            "support_sources": len(sources_by_kind.get("support") or set()),
++            "pressure_sources": len(sources_by_kind.get("pressure") or set()),
++            "conflict_sources": len(sources_by_kind.get("conflict") or set()),
++            "vote_sources": len(sources_by_kind.get("vote") or set()),
++            "death_sources": len(sources_by_kind.get("death_link") or set()),
++            "kind_counts": kind_counts,
++            "samples": samples[:4],
+         }
+ 
+     def _hunter_target_ranking(
+@@ -576,24 +726,30 @@
+         ranking.sort(key=lambda item: item["score"], reverse=True)
+         skip_option = self._pass_like_action_kind(allowed_actions)
+         best_score = ranking[0]["score"] if ranking else 0.0
+-        strongest_signals = max(
+-            (
+-                sum(1 for value in item.get("signals", {}).values() if isinstance(value, int) and value > 0)
+-                for item in ranking
+-            ),
+-            default=0,
+-        )
++        strong_targets = [
++            item
++            for item in ranking
++            if int(item.get("signals", {}).get("independent_sources", 0)) >= 2
++            and int(item.get("signals", {}).get("evidence_types", 0)) >= 2
++        ]
+         if skip_option:
+-            if strongest_signals >= 2 or best_score >= 1.4:
+-                skip_condition = "只有当所有合法目标都只剩单一薄弱线索、且没有改口/对跳/死亡链条冲突时才可跳过。"
++            if strong_targets:
++                leader = strong_targets[0]
++                skip_condition = (
++                    f"已有多源目标 {leader['target_id']}：至少{leader['signals'].get('independent_sources', 0)}个独立来源、"
++                    f"{leader['signals'].get('evidence_types', 0)}类证据；只在所有合法目标都只剩单薄单源线索时才可跳过。"
++                )
+             else:
+-                skip_condition = "证据过弱且没有明显多源冲突时可以跳过；否则优先出手。"
++                skip_condition = "当前所有合法目标都未达到两类独立证据或多发言者重叠；若仍要跳过，只能在证据确实单薄时。"
+         else:
+             skip_condition = "没有跳过动作时，必须从合法目标里选风险最低且证据最弱的那个。"
+         return {
+             "target_ranking": ranking[:4],
+             "skip_option": skip_option,
+             "skip_condition": skip_condition,
++            "must_shoot": bool(strong_targets),
++            "must_shoot_target": strong_targets[0]["target_id"] if strong_targets else "",
++            "best_score": best_score,
+         }
+ 
+     def _score_hunter_target(
+@@ -603,12 +759,19 @@
+         turn_packet: Mapping[str, Any],
+     ) -> dict[str, Any]:
+         pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])")
++        target_note = self._player_notes.get(target_id) or {}
++        stats = self._target_evidence_stats(target_id)
+         score = 0.0
+         reasons: list[str] = []
+         signals = {
+             "vote_pressure": 0,
+-            "contradictions": 0,
+-            "claim_conflict": 0,
++            "independent_sources": stats["independent_sources"],
++            "evidence_types": stats["evidence_types"],
++            "multi_source_overlap": stats["multi_source_overlap"],
++            "hard_accuse_sources": stats["hard_accuse_sources"],
++            "support_sources": stats["support_sources"],
++            "pressure_sources": stats["pressure_sources"],
++            "conflict_sources": stats["conflict_sources"],
+             "death_links": 0,
+             "clear_hits": 0,
+             "recent_mentions": 0,
+@@ -625,16 +788,36 @@
+             for line in list(note.get("support_lines") or [])[-1:]:
+                 if pattern.search(line):
+                     signals["recent_mentions"] += 1
++        vote_pressure = max(vote_pressure, stats["vote_sources"])
+         if vote_pressure:
+             signals["vote_pressure"] = vote_pressure
+-            score += 0.8 + min(vote_pressure, 4) * 0.55
++            score += 0.7 + min(vote_pressure, 4) * 0.45
+             reasons.append(f"票压{vote_pressure}")
+-        target_note = self._player_notes.get(target_id) or {}
++        if stats["independent_sources"]:
++            score += 0.35 * min(stats["independent_sources"], 4)
++            reasons.append(f"独立来源{stats['independent_sources']}")
++        if stats["evidence_types"]:
++            score += 0.25 * min(stats["evidence_types"], 4)
++            reasons.append(f"证据类{stats['evidence_types']}")
++        if stats["multi_source_overlap"]:
++            score += 0.8 + 0.2 * min(stats["multi_source_overlap"], 3)
++            reasons.append(f"多源重叠{stats['multi_source_overlap']}")
++        if stats["hard_accuse_sources"]:
++            score += 0.9 + 0.35 * min(stats["hard_accuse_sources"], 4)
++            reasons.append(f"查杀/狼指向{stats['hard_accuse_sources']}")
++        if stats["pressure_sources"]:
++            score += 0.2 + 0.15 * min(stats["pressure_sources"], 4)
++        if stats["conflict_sources"]:
++            score += 0.45 + 0.2 * min(stats["conflict_sources"], 4)
++            reasons.append(f"冲突源{stats['conflict_sources']}")
++        if stats["support_sources"]:
++            score -= 0.55 + 0.2 * min(stats["support_sources"], 4)
++            reasons.append(f"正向背书{stats['support_sources']}")
+         contradictions = list(target_note.get("contradictions") or [])
+         if contradictions:
+-            signals["contradictions"] = len(contradictions)
+             score += 0.7 + 0.35 * min(len(contradictions), 3)
+             reasons.append("改口/对跳:" + self._compact_text(contradictions[-1], limit=48))
++            signals["conflict_sources"] = max(signals["conflict_sources"], len(contradictions))
+         death_links = list(target_note.get("death_links") or [])
+         if death_links:
+             signals["death_links"] = len(death_links)
+@@ -642,7 +825,6 @@
+             reasons.append("死亡链:" + self._compact_text(death_links[-1], limit=48))
+         target_claims = self._unique_strings(list(target_note.get("claims") or []) + list(target_note.get("revealed_roles") or []))
+         if len(target_claims) >= 2:
+-            signals["claim_conflict"] = len(target_claims)
+             score += 0.9
+             reasons.append("多次身份声明:" + "/".join(target_claims[:2]))
+         if target_claims:
+@@ -654,7 +836,7 @@
+             for role in target_claims:
+                 claimers = role_claim_counts.get(role, [])
+                 if len(claimers) >= 2:
+-                    signals["claim_conflict"] = max(signals["claim_conflict"], len(claimers))
++                    signals["conflict_sources"] = max(signals["conflict_sources"], len(claimers))
+                     score += 0.45 + 0.15 * min(len(claimers), 4)
+                     reasons.append(f"对跳{role}:{'/'.join(claimers[:3])}")
+                     break
+@@ -675,21 +857,20 @@
+             reasons.append(self._compact_text(f"最近记忆命中{recent_hits}次", limit=60))
+         if target_note.get("hard_clear"):
+             signals["clear_hits"] += 1
+-            score -= 1.8
++            score -= 2.0
+             reasons.append("公开硬清")
+         if target_note.get("soft_clear"):
+             signals["clear_hits"] += 1
+-            score -= 0.8
++            score -= 0.9
+             reasons.append("软清/正向背书")
+         if target_note.get("status") in {"dead", "out"}:
+-            score -= 0.6
++            score -= 0.7
+             reasons.append("已出局")
+         if not reasons:
+             reasons.append("公开证据单薄")
+-        # 若允许，优先比较多源冲突；单一薄证据不应直接压成高优先级。
+-        if signals["vote_pressure"] == 0 and signals["contradictions"] == 0 and signals["claim_conflict"] == 0 and signals["death_links"] == 0:
+-            score = max(0.0, score - 0.6)
+-        return {"score": score, "reasons": reasons[:4], "signals": signals}
++        if signals["vote_pressure"] == 0 and signals["independent_sources"] < 2 and signals["conflict_sources"] == 0 and signals["death_links"] == 0:
++            score = max(0.0, score - 0.5)
++        return {"score": score, "reasons": reasons[:5], "signals": signals}
+ 
+     @staticmethod
+     def _pass_like_action_kind(allowed_actions: list[Mapping[str, Any]]) -> str:
+@@ -958,7 +1139,7 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
+-            "memory_brief": self._recent_memory(8),
++            "memory_brief": self._recent_memory(12),
+             "decision_brief": self._decision_brief(turn_packet, current_dialogue),
+             "history_policy": {
+                 "default_context": "current_state_only",
+--- hunter-n00040/task.md
++++ hunter-n00057/task.md
+@@ -6,4 +6,5 @@
+ - 公开发言优先回应当前争议，按这个顺序组织判断：先看票型和身份声明是否一致，再看改口、对跳和死亡链条，最后才看主观像狼与否。
+ - 被要求开枪时，只在合法 target_ids 内比较目标；优先选择同时被票型、身份冲突、改口/对跳和死亡链条指向的人。
+ - 只有当所有合法目标都只有单一薄弱线索、且看不出明显多源冲突时，才可以选择跳过；如果已经出现明显证据差异，即使分数不高也不要把“跳过”当默认。
++- 猎人反应时要把证据按目标合并后再比较：优先看票型、身份冲突、改口、对跳和死亡链条；如果同一目标被多个独立公开来源同时指向，默认直接出手，不要先 pass。
+ - 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手；如果目标中存在明显硬清或公开确认的好人，优先保护。

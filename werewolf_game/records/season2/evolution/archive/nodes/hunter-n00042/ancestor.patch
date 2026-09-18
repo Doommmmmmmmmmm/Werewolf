@@ -1,0 +1,556 @@
+--- hunter-n00008/task_agent.py
++++ hunter-n00042/task_agent.py
+@@ -31,7 +31,9 @@
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _PASS_LIKE_ACTION_KINDS = frozenset({"pass", "skip", "wait", "idle", "noop", "none"})
+-DEFAULT_PUBLIC_MEMORY_SIZE = 12
++DEFAULT_PUBLIC_MEMORY_SIZE = 18
++DEFAULT_STRUCTURED_ROUND_MEMORY_SIZE = 3
++DEFAULT_STRUCTURED_CATEGORY_MEMORY_SIZE = 6
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -183,6 +185,13 @@
+         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
+         self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)
++        self._vote_memory: deque[str] = deque(maxlen=DEFAULT_STRUCTURED_CATEGORY_MEMORY_SIZE)
++        self._claim_memory: deque[str] = deque(maxlen=DEFAULT_STRUCTURED_CATEGORY_MEMORY_SIZE)
++        self._death_memory: deque[str] = deque(maxlen=DEFAULT_STRUCTURED_CATEGORY_MEMORY_SIZE)
++        self._conflict_memory: deque[str] = deque(maxlen=DEFAULT_STRUCTURED_CATEGORY_MEMORY_SIZE)
++        self._round_summary_by_round: dict[str, deque[str]] = {}
++        self._round_order: deque[str] = deque()
++        self._player_signals: dict[str, dict[str, Any]] = {}
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -200,6 +209,7 @@
+         for event in self._extract_public_events(sync_packet):
+             if event:
+                 self._public_memory.append(event)
++                self._record_public_summary(event)
+ 
+     def _recent_memory(self, limit: int = 5) -> list[str]:
+         if limit <= 0:
+@@ -216,20 +226,26 @@
+             item for item in request.get("allowed_actions", []) if isinstance(item, Mapping)
+         ]
+         phase = self._request_phase_label(turn_packet, request, allowed_actions)
+-        recent_memory = self._recent_memory(5)
++        recent_memory = self._recent_memory(6)
++        layered_memory = self._structured_memory_snapshot()
+         brief: dict[str, Any] = {
+             "phase": phase,
+             "recent_public_signals": recent_memory,
++            "layered_public_memory": layered_memory,
+             "current_round_dialogue_preview": self._compact_dialogue(current_dialogue, limit=3),
+         }
+         mode = self._request_mode(allowed_actions)
+         if mode == "hunter_reaction":
+-            ranking = self._hunter_target_ranking(allowed_actions, recent_memory)
++            ranking = self._hunter_target_ranking(allowed_actions)
+             brief.update(
+                 {
+                     "decision_mode": "hunter_reaction",
+-                    "focus": "先比较合法 target_ids 的票型、改口、身份声明和死亡链条；证据不足时优先跳过。",
++                    "focus": "先逐一比较合法 target_ids 的票型、身份声明、改口和死亡链；若最高分目标具备多类公开证据且分差明显，优先开枪，只有所有候选都只是单类弱证据且误伤风险高时才允许 pass。",
+                     "target_ranking": ranking["target_ranking"],
++                    "best_target": ranking["best_target"],
++                    "best_score": ranking["best_score"],
++                    "second_score": ranking["second_score"],
++                    "shooting_rule": ranking["shooting_rule"],
+                     "skip_option": ranking["skip_option"],
+                     "skip_condition": ranking["skip_condition"],
+                 }
+@@ -322,20 +338,247 @@
+         return preview
+ 
+     def _recent_controversy(self, recent_memory: list[str]) -> str:
+-        if not recent_memory:
++        pieces = list(self._conflict_memory)[-2:]
++        pieces.extend(line for line in recent_memory[-2:] if line)
++        if not pieces:
+             return "暂无足够公开记忆"
+-        return "；".join(recent_memory[-3:])
++        return "；".join(pieces[-3:])
+ 
+     def _key_contradiction(self, recent_memory: list[str]) -> str:
+-        for line in reversed(recent_memory):
+-            if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "自相矛盾", "投票", "死亡", "警长")):
++        for line in reversed(list(self._conflict_memory) + recent_memory):
++            if any(
++                keyword in line
++                for keyword in (
++                    "改口",
++                    "矛盾",
++                    "对跳",
++                    "反水",
++                    "自相矛盾",
++                    "投票",
++                    "死亡",
++                    "警长",
++                )
++            ):
+                 return line
+         return recent_memory[-1] if recent_memory else "暂无明确矛盾"
++
++    def _structured_memory_snapshot(self) -> dict[str, list[str]]:
++        return {
++            "recent_public_signals": self._recent_memory(6),
++            "vote_summaries": list(self._vote_memory)[-3:],
++            "identity_summaries": list(self._claim_memory)[-3:],
++            "death_summaries": list(self._death_memory)[-3:],
++            "conflict_summaries": list(self._conflict_memory)[-3:],
++            "round_summaries": self._round_summary_snapshot(),
++        }
++
++    def _round_summary_snapshot(self) -> list[str]:
++        snapshot: list[str] = []
++        for round_key in list(self._round_order)[-DEFAULT_STRUCTURED_ROUND_MEMORY_SIZE:]:
++            notes = list(self._round_summary_by_round.get(round_key, []))
++            if notes:
++                snapshot.append(f"{round_key}: " + "；".join(notes[-3:]))
++        return snapshot
++
++    def _record_public_summary(self, summary: str) -> None:
++        categories = self._summary_categories(summary)
++        if "vote" in categories:
++            self._vote_memory.append(summary)
++        if "claim" in categories:
++            self._claim_memory.append(summary)
++        if "death" in categories:
++            self._death_memory.append(summary)
++        if "conflict" in categories:
++            self._conflict_memory.append(summary)
++        self._update_player_signals(summary, categories)
++        round_key = self._extract_round_key(summary)
++        if round_key:
++            if round_key not in self._round_summary_by_round:
++                self._round_summary_by_round[round_key] = deque(maxlen=DEFAULT_STRUCTURED_CATEGORY_MEMORY_SIZE)
++                self._round_order.append(round_key)
++                while len(self._round_order) > DEFAULT_STRUCTURED_ROUND_MEMORY_SIZE:
++                    oldest = self._round_order.popleft()
++                    self._round_summary_by_round.pop(oldest, None)
++            bucket = self._round_summary_by_round[round_key]
++            if summary not in bucket:
++                bucket.append(summary)
++
++    def _update_player_signals(self, summary: str, categories: list[str]) -> None:
++        player_ids = re.findall(r"\bp\d+\b", summary)
++        if not player_ids:
++            return
++        lower = summary.lower()
++        for player_id in dict.fromkeys(player_ids):
++            bucket = self._player_signals.setdefault(
++                player_id,
++                {
++                    "vote": 0,
++                    "claim": 0,
++                    "death": 0,
++                    "conflict": 0,
++                    "support": 0,
++                    "accusation": 0,
++                    "notes": deque(maxlen=4),
++                },
++            )
++            for category in categories:
++                if category in bucket:
++                    bucket[category] = int(bucket[category]) + 1
++            if any(token in summary for token in ("好人", "金水", "可信", "稳定", "对得上")):
++                bucket["support"] = int(bucket["support"]) + 1
++            if any(token in summary for token in ("狼人", "查杀", "冲票", "带狼")):
++                bucket["accusation"] = int(bucket["accusation"]) + 1
++            if any(token in lower for token in ("support", "trusted", "good")):
++                bucket["support"] = int(bucket["support"]) + 1
++            notes = bucket["notes"]
++            if isinstance(notes, deque) and summary not in notes:
++                notes.append(summary)
++
++    @staticmethod
++    def _summary_categories(summary: str) -> list[str]:
++        categories: list[str] = []
++        lower = summary.lower()
++        if any(token in summary for token in ("票型", "投票→", "投票")) or "vote" in lower:
++            categories.append("vote")
++        if any(token in summary for token in ("身份声明", "身份:", "身份公开", "claim")):
++            categories.append("claim")
++        if any(token in summary for token in ("死亡链", "死亡→", "被刀", "出局", "被票", "发生死亡")) or any(
++            token in lower for token in ("death", "killed", "eliminated")
++        ):
++            categories.append("death")
++        if any(
++            keyword in summary
++            for keyword in (
++                "改口",
++                "矛盾",
++                "对跳",
++                "反水",
++                "自相矛盾",
++                "带节奏",
++                "卖队",
++                "冲票",
++                "踩",
++                "查杀",
++            )
++        ):
++            categories.append("conflict")
++        if not categories:
++            categories.append("speech")
++        return categories
++
++    @staticmethod
++    def _extract_round_key(summary: str) -> str:
++        match = re.search(r"\[(r\d+)", summary)
++        if match:
++            return match.group(1)
++        match = re.search(r"\br\d+\b", summary)
++        return match.group(0) if match else ""
++
++    def _target_evidence_snapshot(self, target_id: str) -> dict[str, Any]:
++        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])")
++        buckets: dict[str, list[str]] = {
++            "vote": [],
++            "claim": [],
++            "death": [],
++            "conflict": [],
++            "support": [],
++            "accusation": [],
++        }
++        seen: set[str] = set()
++        sources = (
++            ("vote", self._vote_memory),
++            ("claim", self._claim_memory),
++            ("death", self._death_memory),
++            ("conflict", self._conflict_memory),
++            ("recent", self._public_memory),
++        )
++        for source_category, source in sources:
++            for line in reversed(source):
++                if line in seen or not pattern.search(line):
++                    continue
++                seen.add(line)
++                lower = line.lower()
++                if source_category == "vote" or any(token in line for token in ("票型", "投票→", "投票")) or "vote" in lower:
++                    buckets["vote"].append(line)
++                if source_category == "claim" or any(token in line for token in ("身份声明", "身份:", "身份公开")) or "claim" in lower:
++                    buckets["claim"].append(line)
++                if source_category == "death" or any(token in line for token in ("死亡链", "死亡→", "被刀", "出局", "被票", "发生死亡")) or any(
++                    token in lower for token in ("death", "killed", "eliminated")
++                ):
++                    buckets["death"].append(line)
++                if source_category == "conflict" or any(
++                    keyword in line
++                    for keyword in (
++                        "改口",
++                        "矛盾",
++                        "对跳",
++                        "反水",
++                        "自相矛盾",
++                        "带节奏",
++                        "卖队",
++                        "冲票",
++                        "踩",
++                        "查杀",
++                    )
++                ):
++                    buckets["conflict"].append(line)
++                if any(token in line for token in ("好人", "金水", "可信", "稳定", "对得上")):
++                    buckets["support"].append(line)
++                if any(token in line for token in ("狼人", "查杀", "冲票", "带狼")):
++                    buckets["accusation"].append(line)
++                if all(len(items) >= 2 for items in buckets.values()):
++                    break
++        counts = {name: len(items) for name, items in buckets.items()}
++        player_bucket = self._player_signals.get(target_id)
++        if isinstance(player_bucket, Mapping):
++            for name in ("vote", "claim", "death", "conflict", "support", "accusation"):
++                try:
++                    counts[name] += int(player_bucket.get(name, 0))
++                except (TypeError, ValueError):
++                    continue
++            bucket_notes = player_bucket.get("notes")
++            if isinstance(bucket_notes, deque):
++                for note in reversed(bucket_notes):
++                    if note not in seen and pattern.search(note):
++                        lower_note = note.lower()
++                        if any(token in note for token in ("票型", "投票→", "投票")) or "vote" in lower_note:
++                            buckets["vote"].append(note)
++                        if any(token in note for token in ("身份声明", "身份:", "身份公开")) or "claim" in lower_note:
++                            buckets["claim"].append(note)
++                        if any(token in note for token in ("死亡链", "死亡→", "被刀", "出局", "被票", "发生死亡")) or any(
++                            token in lower_note for token in ("death", "killed", "eliminated")
++                        ):
++                            buckets["death"].append(note)
++                        if any(
++                            keyword in note
++                            for keyword in (
++                                "改口",
++                                "矛盾",
++                                "对跳",
++                                "反水",
++                                "自相矛盾",
++                                "带节奏",
++                                "卖队",
++                                "冲票",
++                                "踩",
++                                "查杀",
++                            )
++                        ):
++                            buckets["conflict"].append(note)
++                        if any(token in note for token in ("好人", "金水", "可信", "稳定", "对得上")):
++                            buckets["support"].append(note)
++                        if any(token in note for token in ("狼人", "查杀", "冲票", "带狼")):
++                            buckets["accusation"].append(note)
++        channels = sum(1 for name in ("vote", "claim", "death", "conflict") if buckets[name])
++        return {
++            "counts": counts,
++            "evidence_channels": channels,
++            "notes": {name: items[:2] for name, items in buckets.items() if items},
++        }
+ 
+     def _hunter_target_ranking(
+         self,
+         allowed_actions: list[Mapping[str, Any]],
+-        recent_memory: list[str],
+     ) -> dict[str, Any]:
+         target_ids: list[str] = []
+         for action in allowed_actions:
+@@ -348,52 +591,91 @@
+                     target_ids.append(target_id)
+         ranking: list[dict[str, Any]] = []
+         for target_id in target_ids:
+-            score, reasons = self._score_hunter_target(target_id, recent_memory)
++            evidence = self._target_evidence_snapshot(target_id)
++            score, reasons = self._score_hunter_target(target_id, evidence)
+             ranking.append(
+                 {
+                     "target_id": target_id,
+                     "score": round(score, 2),
++                    "evidence_channels": evidence["evidence_channels"],
+                     "reasons": reasons,
+                 }
+             )
+-        ranking.sort(key=lambda item: item["score"], reverse=True)
++        ranking.sort(key=lambda item: (item["score"], item["evidence_channels"]), reverse=True)
+         skip_option = self._pass_like_action_kind(allowed_actions)
+-        best_score = ranking[0]["score"] if ranking else 0.0
++        best = ranking[0] if ranking else {"target_id": "", "score": 0.0, "evidence_channels": 0}
++        second_score = ranking[1]["score"] if len(ranking) > 1 else 0.0
++        best_score = float(best["score"])
++        best_channels = int(best.get("evidence_channels", 0))
+         if skip_option:
+-            skip_condition = "若没有明确矛盾、票型偏差或身份冲突，优先跳过。"
++            shooting_rule = "最高分目标若同时拥有≥2类公开证据且分差明显，优先开枪。"
++            if best_score >= 2.5 and best_channels >= 2:
++                skip_condition = "当前最高分目标已有多类公开证据，不要因为没有完美定论而跳过。"
++            else:
++                skip_condition = "只有当所有候选都只是单类弱证据，且最高分<2.0或与次高分差<0.6时才可跳过。"
+         else:
++            shooting_rule = "没有跳过动作时，直接选择最高分且证据渠道更多的目标。"
+             skip_condition = "没有跳过动作时，只选分数最高且风险最低的目标。"
+-        if best_score < 1.0:
+-            skip_condition = "证据不足时直接跳过；若不能跳过，再选最弱风险目标。"
+         return {
+             "target_ranking": ranking[:4],
++            "best_target": best.get("target_id", ""),
++            "best_score": best_score,
++            "second_score": second_score,
++            "shooting_rule": shooting_rule,
+             "skip_option": skip_option,
+             "skip_condition": skip_condition,
+         }
+ 
+-    def _score_hunter_target(self, target_id: str, recent_memory: list[str]) -> tuple[float, list[str]]:
+-        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])")
++    def _score_hunter_target(self, target_id: str, evidence: Mapping[str, Any]) -> tuple[float, list[str]]:
++        counts = evidence.get("counts") if isinstance(evidence, Mapping) else {}
++        notes = evidence.get("notes") if isinstance(evidence, Mapping) else {}
+         score = 0.0
+         reasons: list[str] = []
+-        for line in recent_memory:
+-            if not pattern.search(line):
+-                continue
+-            line_score = 0.2
+-            if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "带节奏", "卖队", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")):
+-                line_score += 1.3
+-                reasons.append(self._compact_text(line, limit=60))
+-            if any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
+-                line_score += 0.4
+-            if any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水")):
+-                line_score -= 0.5
+-            if "狼人" in line:
+-                line_score += 0.8
+-            if "好人" in line:
+-                line_score -= 0.2
+-            score += line_score
++
++        def note_excerpt(category: str) -> str:
++            category_notes = notes.get(category) if isinstance(notes, Mapping) else None
++            if isinstance(category_notes, list) and category_notes:
++                return self._compact_text(category_notes[0], limit=52)
++            return ""
++
++        vote_count = int(counts.get("vote", 0)) if isinstance(counts, Mapping) else 0
++        claim_count = int(counts.get("claim", 0)) if isinstance(counts, Mapping) else 0
++        death_count = int(counts.get("death", 0)) if isinstance(counts, Mapping) else 0
++        conflict_count = int(counts.get("conflict", 0)) if isinstance(counts, Mapping) else 0
++        support_count = int(counts.get("support", 0)) if isinstance(counts, Mapping) else 0
++        accusation_count = int(counts.get("accusation", 0)) if isinstance(counts, Mapping) else 0
++
++        if vote_count:
++            score += min(3.0, vote_count * 0.9)
++            reasons.append(f"票型×{vote_count}" + (f" {note_excerpt('vote')}" if note_excerpt('vote') else ""))
++        if conflict_count:
++            score += min(4.0, conflict_count * 1.25)
++            reasons.append(f"改口/对跳×{conflict_count}" + (f" {note_excerpt('conflict')}" if note_excerpt('conflict') else ""))
++        if claim_count:
++            score += min(1.8, claim_count * 0.45)
++            reasons.append(f"身份声明×{claim_count}" + (f" {note_excerpt('claim')}" if note_excerpt('claim') else ""))
++        if death_count:
++            score += min(2.0, death_count * 0.8)
++            reasons.append(f"死亡链×{death_count}" + (f" {note_excerpt('death')}" if note_excerpt('death') else ""))
++        if accusation_count:
++            score += min(1.8, accusation_count * 0.55)
++            reasons.append(f"查杀/狼人×{accusation_count}" + (f" {note_excerpt('accusation')}" if note_excerpt('accusation') else ""))
++        if support_count:
++            score -= min(2.0, support_count * 0.7)
++            reasons.append(f"好人/金水×{support_count}" + (f" {note_excerpt('support')}" if note_excerpt('support') else ""))
++
++        if conflict_count and vote_count:
++            score += 0.4
++        if claim_count and conflict_count:
++            score += 0.6
++        if death_count and (vote_count or conflict_count):
++            score += 0.3
++        if support_count and not (vote_count or conflict_count or death_count):
++            score -= 0.4
++
+         if not reasons:
+-            reasons.append("公开记忆里缺少直接矛盾，只能低置信度判断")
+-        return score, reasons[:3]
++            reasons.append("公开证据里还没有稳定的结构化命中")
++        return score, reasons[:4]
+ 
+     @staticmethod
+     def _pass_like_action_kind(allowed_actions: list[Mapping[str, Any]]) -> str:
+@@ -410,7 +692,9 @@
+         default_phase = sync_packet.get("phase") or sync_packet.get("public_phase")
+ 
+         def add_event(item: object) -> None:
+-            event = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)
++            event = self._summarize_public_event(
++                item, default_round=default_round, default_phase=default_phase
++            )
+             if not event or event in seen:
+                 return
+             seen.add(event)
+@@ -513,39 +797,59 @@
+         text = str(item.get("text") or item.get("content") or item.get("message") or "").strip()
+         role = str(item.get("role") or item.get("revealed_role") or item.get("identity") or "").strip()
+ 
+-        parts: list[str] = []
+-        if actor:
+-            parts.append(actor)
+-        if kind in {"speak", "speech", "say", "dialogue", "statement"} or text:
++        conflict_keywords = (
++            "改口",
++            "矛盾",
++            "对跳",
++            "反水",
++            "自相矛盾",
++            "带节奏",
++            "卖队",
++            "冲票",
++            "踩",
++            "查杀",
++        )
++
++        category = "发言"
++        detail = ""
++        if kind in {"vote", "voting"} or item.get("vote") is not None or "投票" in text:
++            category = "票型"
++            voter = actor or target or "?"
++            if target:
++                detail = f"{voter}→{target}"
++            else:
++                detail = f"{voter}:{TaskAgent._compact_text(text or item.get('vote'), limit=24)}"
++        elif kind in {"death", "died", "eliminate", "eliminated", "kill", "killed"} or item.get("death") is not None or any(
++            token in text for token in ("死亡", "被刀", "出局", "被票")
++        ):
++            category = "死亡链"
++            who = target or actor or "?"
++            detail = who
+             if text:
+-                parts.append(f"发言:{TaskAgent._compact_text(text, limit=36)}")
+-        elif kind in {"vote", "voting"} or item.get("vote") is not None:
+-            if target:
+-                parts.append(f"投票→{target}")
+-            elif item.get("vote") is not None:
+-                parts.append(f"投票→{TaskAgent._compact_text(item.get('vote'), limit=24)}")
+-        elif kind in {"death", "died", "eliminate", "eliminated", "kill", "killed"} or item.get("death") is not None:
+-            if target:
+-                parts.append(f"死亡→{target}")
+-            else:
+-                parts.append("发生死亡")
+-        elif kind in {"reveal", "identity", "open_role", "claim"} or role:
++                detail += f" {TaskAgent._compact_text(text, limit=28)}"
++        elif kind in {"reveal", "identity", "open_role", "claim"} or role or any(
++            token in text for token in ("身份", "预言家", "守卫", "猎人", "狼人", "好人", "金水", "查杀")
++        ):
++            category = "身份声明"
++            claimer = actor or target or "?"
+             claim = role or text or "身份公开"
+-            parts.append(f"身份:{TaskAgent._compact_text(claim, limit=28)}")
++            detail = f"{claimer}: {TaskAgent._compact_text(claim, limit=28)}"
++        elif any(keyword in text for keyword in conflict_keywords):
++            category = "矛盾"
++            subject = actor or target or "?"
++            detail = f"{subject}: {TaskAgent._compact_text(text, limit=28)}"
+         else:
+-            for key in ("vote", "votes", "result", "status", "event"):
+-                value = item.get(key)
+-                if value is not None:
+-                    parts.append(f"{key}:{TaskAgent._compact_text(value, limit=28)}")
+-                    break
+-            if not parts and text:
+-                parts.append(TaskAgent._compact_text(text, limit=36))
+-
+-        if not parts:
++            subject = actor or target
++            if subject and text:
++                detail = f"{subject}: {TaskAgent._compact_text(text, limit=28)}"
++            elif text:
++                detail = TaskAgent._compact_text(text, limit=40)
++            elif subject:
++                detail = subject
++
++        if not detail:
+             return None
+-        if prefix:
+-            return prefix + " ".join(parts)
+-        return " ".join(parts)
++        return f"{prefix}{category} {detail}"
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -565,7 +869,7 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
+-            "memory_brief": self._recent_memory(5),
++            "memory_brief": self._recent_memory(6),
+             "decision_brief": self._decision_brief(turn_packet, current_dialogue),
+             "history_policy": {
+                 "default_context": "current_state_only",
+--- hunter-n00008/task.md
++++ hunter-n00042/task.md
+@@ -4,6 +4,6 @@
+ 
+ - 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据：发言、票型、改口、身份声明、死亡顺序。
+ - 公开发言要回应当下争议，优先比较“谁支持谁、谁反复改口、谁的票型和身份声明不一致”。
+-- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择与票型、发言和死亡链条最不一致的人。
+-- 如果公开证据不足，或目标之间没有明显差异，要明确走跳过条件；不要把“带走最像狼的人”当成固定模板。
+-- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。+- 被要求开枪时，只在合法 target_ids 内逐一比较目标；必须显式对照公开票型、身份声明、改口、死亡链四类证据，而不是泛化成“谁最像狼”。
++- 如果某个合法目标同时被多轮公开证据一致指向，就优先开枪；只有当所有候选都只是单类弱证据、且分差很小并伴随较高误伤风险时，才可以明确选择跳过。
++- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。

@@ -1,0 +1,517 @@
+--- witch-n00003/task_agent.py
++++ witch-n00062/task_agent.py
+@@ -219,11 +219,26 @@
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
++        tool_context = turn_packet.get("tool_context") or {}
++        current_dialogue = tool_context.get("current_round_dialogue") or []
++
+         private_state = self._build_private_resource_summary(private)
+         if private_state:
+             self._last_private_resource_summary = private_state
+-        compact_memory = self._compact_memory_snapshot()
++        compact_memory = self._compact_memory_snapshot(turn_packet, current_dialogue)
+         safety_notes = self._build_safety_notes(private)
++        witch_state_snapshot = self._build_witch_state_snapshot(turn_packet, current_dialogue)
++
++        if self.profile.role == "witch":
++            direct_plan = self._plan_witch_action(turn_packet, current_dialogue)
++            if direct_plan is not None:
++                plan_error = decision_error(direct_plan, turn_packet["request"])
++                if plan_error is None:
++                    self._last_decision_audit = {
++                        "planned_action": direct_plan,
++                        "decision_source": "witch_planner",
++                    }
++                    return direct_plan
+ 
+         system = self._system_prompt(private)
+         prompt = {
+@@ -232,8 +247,10 @@
+             "self": turn_packet["self"],
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
++            "current_round_dialogue": current_dialogue,
+             "request": turn_packet["request"],
+             "compact_memory": compact_memory,
++            "witch_state_snapshot": witch_state_snapshot,
+             "private_resource_state": private_state,
+             "safety_notes": safety_notes,
+             "history_policy": {
+@@ -243,9 +260,6 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
+-
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -384,7 +398,7 @@
+             if value is not None:
+                 self._model_token_usage[key] += value
+ 
+-    def _compact_memory_snapshot(self) -> dict[str, Any]:
++    def _compact_memory_snapshot(self, turn_packet: Mapping[str, Any], current_dialogue: Any) -> dict[str, Any]:
+         snapshot: dict[str, Any] = {
+             "recent_public": self._recent_public_summaries[-4:],
+         }
+@@ -392,6 +406,9 @@
+             snapshot["last_public_round_phase"] = self._last_public_round_phase
+         if self._last_private_resource_summary:
+             snapshot["private_resource_state"] = self._last_private_resource_summary
++        public_summary = self._build_public_state_summary(turn_packet.get("public_state"), current_dialogue)
++        if public_summary:
++            snapshot["witch_state"] = public_summary
+         return snapshot
+ 
+     def _build_private_resource_summary(self, private: Mapping[str, Any]) -> str:
+@@ -416,6 +433,7 @@
+         return (
+             "公开发言只允许基于公开事实；"
+             "不得自报女巫、药水余量、夜刀目标、夜间选择、是否已用药、未公开身份链；"
++            "女巫夜间决策应优先高置信公开证据，证据不足时保留资源；"
+             "任何内部状态都不能被说成已公开事实。"
+         )
+ 
+@@ -442,7 +460,10 @@
+             }
+             return action
+ 
+-        pass_action = self._find_pass_action(turn_packet["request"].get("allowed_actions", []), turn_packet["request"])
++        pass_action = self._find_pass_action(
++            turn_packet["request"].get("allowed_actions", []),
++            turn_packet["request"],
++        )
+         if pass_action is None:
+             self._last_decision_audit = {
+                 "raw_response": raw_response,
+@@ -451,11 +472,12 @@
+             return action
+ 
+         confidence_targets = self._high_confidence_targets(turn_packet)
+-        if target_id in confidence_targets:
++        target_info = confidence_targets.get(target_id)
++        if target_info is not None and int(target_info.get("score", 0) or 0) >= self._poison_confidence_threshold(turn_packet, None):
+             self._last_decision_audit = {
+                 "raw_response": raw_response,
+                 "normalized_action": action,
+-                "high_confidence_targets": sorted(confidence_targets),
++                "high_confidence_targets": confidence_targets,
+             }
+             return action
+ 
+@@ -465,51 +487,339 @@
+             "normalized_action": action,
+             "fallback_action": pass_action,
+             "fallback_reason": fallback_reason,
+-            "high_confidence_targets": sorted(confidence_targets),
++            "high_confidence_targets": confidence_targets,
+         }
+         return pass_action
+ 
+-    def _high_confidence_targets(self, turn_packet: dict[str, Any]) -> set[str]:
+-        texts: list[str] = []
+-        texts.extend(self._recent_public_summaries[-4:])
+-        texts.append(self._last_public_round_phase)
+-        texts.append(self._last_private_resource_summary)
+-        for key in ("public_state", "game", "request"):
+-            value = turn_packet.get(key)
+-            if value is not None:
+-                texts.append(self._safe_json_dump(value))
+-        tool_context = turn_packet.get("tool_context") or {}
+-        current_dialogue = tool_context.get("current_round_dialogue")
+-        if current_dialogue:
+-            texts.append(self._safe_json_dump(current_dialogue))
+-
+-        combined = " \n ".join(text for text in texts if text)
+-        combined_lower = combined.lower()
+-        if not combined:
+-            return set()
+-
+-        confidence_markers = (
++    def _plan_witch_action(
++        self,
++        turn_packet: Mapping[str, Any],
++        current_dialogue: Any,
++    ) -> dict[str, Any] | None:
++        request = turn_packet.get("request") or {}
++        allowed_actions = request.get("allowed_actions")
++        if not isinstance(allowed_actions, list):
++            return None
++        if any(
++            isinstance(allowed, Mapping) and self._is_speech_action_kind(str(allowed.get("kind") or ""))
++            for allowed in allowed_actions
++        ):
++            return None
++
++        private = turn_packet.get("private_information") or {}
++        public_summary = self._build_public_state_summary(turn_packet.get("public_state"), current_dialogue)
++        pass_action = self._find_pass_action(allowed_actions, request)
++
++        if self._resource_flag(private, ("antidote_available", "save_available", "heal_available")):
++            heal_action = self._find_resource_action(allowed_actions, self._is_heal_action_kind)
++            if heal_action is not None:
++                night_target = public_summary.get("night_kill_target")
++                confirmed_good_targets = set(public_summary.get("confirmed_good_targets", []))
++                if night_target and night_target in confirmed_good_targets:
++                    planned = self._select_target_action(heal_action, request, str(night_target))
++                    if planned is not None:
++                        return planned
++
++        if self._resource_flag(private, ("poison_available", "poison_left", "kill_available")):
++            poison_action = self._find_resource_action(allowed_actions, self._is_poison_action_kind)
++            if poison_action is not None:
++                confidence_targets = self._high_confidence_targets(
++                    turn_packet,
++                    current_dialogue=current_dialogue,
++                    public_summary=public_summary,
++                )
++                target_ids = poison_action.get("target_ids")
++                if isinstance(target_ids, list) and target_ids:
++                    threshold = self._poison_confidence_threshold(turn_packet, public_summary)
++                    best_target: str | None = None
++                    best_score = -1
++                    for candidate in target_ids:
++                        candidate_id = str(candidate)
++                        info = confidence_targets.get(candidate_id)
++                        if info is None:
++                            continue
++                        score = int(info.get("score", 0) or 0)
++                        if score >= threshold and score > best_score:
++                            best_target = candidate_id
++                            best_score = score
++                    if best_target is not None:
++                        planned = self._select_target_action(poison_action, request, best_target)
++                        if planned is not None:
++                            return planned
++
++        if pass_action is not None:
++            return pass_action
++        return None
++
++    def _build_witch_state_snapshot(
++        self,
++        turn_packet: Mapping[str, Any],
++        current_dialogue: Any,
++    ) -> dict[str, Any]:
++        snapshot: dict[str, Any] = {}
++        if self._last_private_resource_summary:
++            snapshot["resources"] = self._last_private_resource_summary
++        public_summary = self._build_public_state_summary(turn_packet.get("public_state"), current_dialogue)
++        if public_summary:
++            snapshot["public_state"] = public_summary
++        confidence_targets = self._high_confidence_targets(
++            turn_packet,
++            current_dialogue=current_dialogue,
++            public_summary=public_summary,
++        )
++        if confidence_targets:
++            snapshot["high_confidence_targets"] = sorted(confidence_targets)
++        return snapshot
++
++    def _build_public_state_summary(self, public_state: Any, current_dialogue: Any) -> dict[str, Any]:
++        fragments = self._public_text_fragments(public_state, current_dialogue)
++        summary: dict[str, Any] = {}
++
++        alive_count = self._extract_first_scalar(
++            public_state,
++            ("alive_count", "living_count", "survivor_count", "remaining_players", "players_alive"),
++        )
++        if alive_count is not None:
++            summary["alive_count"] = alive_count
++
++        night_target = self._extract_target_ids_from_fragments(
++            fragments,
++            ("刀口", "夜刀", "夜杀", "被刀", "死亡", "出局", "淘汰", "night kill", "wolf kill"),
++            limit=1,
++        )
++        if night_target:
++            summary["night_kill_target"] = night_target[0]
++
++        confirmed_good_targets = self._extract_target_ids_from_fragments(
++            fragments,
++            ("金水", "好人", "清白", "已验好", "验好", "确认好", "公认好", "预言家", "警长", "seer", "sheriff"),
++            limit=4,
++        )
++        if confirmed_good_targets:
++            summary["confirmed_good_targets"] = confirmed_good_targets
++
++        public_wolf_targets = self._extract_target_ids_from_fragments(
++            fragments,
++            ("查杀", "强狼", "必狼", "明狼", "铁狼", "狼坑", "锁狼", "悍跳", "验出狼", "查到狼", "wolf"),
++            limit=4,
++        )
++        if public_wolf_targets:
++            summary["public_wolf_targets"] = public_wolf_targets
++
++        vote_focus_targets = self._extract_target_ids_from_fragments(
++            fragments,
++            ("投票", "票型", "归票", "跟票", "票归", "vote", "ballot"),
++            limit=4,
++        )
++        if vote_focus_targets:
++            summary["recent_vote_focus"] = vote_focus_targets
++
++        return summary
++
++    def _public_text_fragments(self, *nodes: Any) -> list[str]:
++        fragments: list[str] = []
++        for node in nodes:
++            if node is None:
++                continue
++            if isinstance(node, str):
++                text = self._squash_whitespace(node)
++            else:
++                text = self._squash_whitespace(self._safe_json_dump(node))
++            if text:
++                fragments.append(text)
++        fragments.extend(self._recent_public_summaries[-4:])
++        if self._last_public_round_phase:
++            fragments.append(self._last_public_round_phase)
++        return fragments
++
++    def _extract_target_ids_from_fragments(
++        self,
++        fragments: list[str],
++        keywords: tuple[str, ...],
++        limit: int = 5,
++    ) -> list[str]:
++        targets: list[str] = []
++        seen: set[str] = set()
++        for fragment in fragments:
++            snippet = self._extract_keyword_snippet(fragment, keywords)
++            if not snippet:
++                continue
++            for target in self._extract_player_ids(snippet):
++                if target in seen:
++                    continue
++                seen.add(target)
++                targets.append(target)
++                if len(targets) >= limit:
++                    return targets
++        return targets
++
++    def _score_public_targets(
++        self,
++        turn_packet: Mapping[str, Any],
++        *,
++        current_dialogue: Any = None,
++        public_summary: Mapping[str, Any] | None = None,
++    ) -> dict[str, dict[str, Any]]:
++        fragments = self._public_text_fragments(turn_packet.get("public_state"), current_dialogue)
++        if public_summary:
++            fragments.append(self._safe_json_dump(public_summary))
++        if not fragments:
++            return {}
++
++        strong_markers = (
+             "查杀",
+-            "狼人",
++            "强狼",
++            "必狼",
++            "明狼",
++            "铁狼",
++            "狼坑",
++            "锁狼",
+             "悍跳",
+-            "刀口",
+-            "狼刀",
+-            "验出",
+-            "强狼",
+-            "明狼",
+-            "必狼",
++            "验出狼",
++            "查到狼",
++            "公认狼",
+             "高置信",
+-            "可毒",
+-            "毒他",
+-            "刀他",
+-            "wolf",
+-            "kill",
+-            "poison",
+-            "suspicious",
+-        )
+-        if not any(marker.lower() in combined_lower for marker in confidence_markers):
+-            return set()
+-        return set(_PLAYER_ID_PATTERN.findall(combined))
++            "狼",
++        )
++        consensus_markers = ("一致", "共识", "多数", "统一", "跟票", "归票", "全票", "锁定", "确认")
++        scored: dict[str, dict[str, Any]] = {}
++
++        for fragment in fragments:
++            text = self._squash_whitespace(fragment)
++            if not text:
++                continue
++            lowered = text.lower()
++            fragment_targets: set[str] = set()
++            for marker in strong_markers:
++                escaped = re.escape(marker)
++                for match in re.finditer(rf"(?:{escaped})[\s\S]{{0,18}}(p\d+)", text, re.IGNORECASE):
++                    target = match.group(1).lower()
++                    entry = scored.setdefault(target, {"score": 0, "evidence": []})
++                    entry["score"] += 3
++                    entry["evidence"].append(self._truncate_text(match.group(0), 80))
++                    fragment_targets.add(target)
++                for match in re.finditer(rf"(p\d+)[\s\S]{{0,18}}(?:{escaped})", text, re.IGNORECASE):
++                    target = match.group(1).lower()
++                    entry = scored.setdefault(target, {"score": 0, "evidence": []})
++                    entry["score"] += 3
++                    entry["evidence"].append(self._truncate_text(match.group(0), 80))
++                    fragment_targets.add(target)
++            if len(fragment_targets) == 1 and any(marker in lowered for marker in consensus_markers):
++                target = next(iter(fragment_targets))
++                entry = scored.setdefault(target, {"score": 0, "evidence": []})
++                entry["score"] += 1
++                entry["evidence"].append(self._truncate_text(text, 80))
++
++        if public_summary:
++            for target in public_summary.get("public_wolf_targets", []):
++                target_id = str(target).lower()
++                if target_id not in scored:
++                    continue
++                scored[target_id]["score"] += 1
++                scored[target_id]["evidence"].append("public_state_high_confidence")
++
++        return scored
++
++    def _high_confidence_targets(
++        self,
++        turn_packet: dict[str, Any],
++        *,
++        current_dialogue: Any = None,
++        public_summary: Mapping[str, Any] | None = None,
++    ) -> dict[str, dict[str, Any]]:
++        scored = self._score_public_targets(
++            turn_packet,
++            current_dialogue=current_dialogue,
++            public_summary=public_summary,
++        )
++        threshold = self._poison_confidence_threshold(turn_packet, public_summary)
++        return {
++            target: info
++            for target, info in scored.items()
++            if int(info.get("score", 0) or 0) >= threshold
++        }
++
++    def _poison_confidence_threshold(
++        self,
++        turn_packet: Mapping[str, Any],
++        public_summary: Mapping[str, Any] | None,
++    ) -> int:
++        alive_count = None
++        if isinstance(public_summary, Mapping):
++            alive_count = self._nonnegative_int(public_summary.get("alive_count"), fallback=None)
++        if alive_count is None:
++            alive_count = self._nonnegative_int(
++                self._extract_first_scalar(
++                    turn_packet.get("public_state"),
++                    ("alive_count", "living_count", "survivor_count", "remaining_players", "players_alive"),
++                ),
++                fallback=None,
++            )
++        if alive_count is not None and alive_count <= 6:
++            return 5
++        return 6
++
++    def _find_resource_action(
++        self,
++        allowed_actions: Any,
++        kind_predicate: Any,
++    ) -> Mapping[str, Any] | None:
++        if not isinstance(allowed_actions, list):
++            return None
++        for allowed in allowed_actions:
++            if not isinstance(allowed, Mapping):
++                continue
++            kind = str(allowed.get("kind") or "")
++            if kind_predicate(kind):
++                return allowed
++        return None
++
++    def _resource_flag(self, private: Mapping[str, Any], key_hints: tuple[str, ...]) -> bool:
++        value = self._extract_first_scalar(private, key_hints)
++        if value is None:
++            return False
++        if isinstance(value, str):
++            return value.lower() not in {"", "0", "false", "none", "no", "off", "null"}
++        return bool(value)
++
++    def _select_target_action(
++        self,
++        allowed: Mapping[str, Any],
++        request: Mapping[str, Any],
++        target_id: str,
++    ) -> dict[str, Any] | None:
++        allowed_target_ids = allowed.get("target_ids")
++        allowed_target_id = allowed.get("target_id")
++        if isinstance(allowed_target_ids, list):
++            if not allowed_target_ids:
++                return None
++            normalized_targets = {str(item) for item in allowed_target_ids}
++            if target_id not in normalized_targets:
++                return None
++        elif allowed_target_id is None:
++            return None
++        elif str(allowed_target_id) != target_id:
++            return None
++        kind = str(allowed.get("kind") or "")
++        if not kind:
++            return None
++        action = {
++            "request_id": request["request_id"],
++            "player_id": request["player_id"],
++            "kind": kind,
++            "target_id": target_id,
++        }
++        return action
++
++    @staticmethod
++    def _is_heal_action_kind(kind: str) -> bool:
++        normalized = kind.lower().strip()
++        return any(token in normalized for token in ("heal", "save", "antidote", "witch_heal", "witch_save"))
++
++    @staticmethod
++    def _is_speech_action_kind(kind: str) -> bool:
++        normalized = kind.lower().strip()
++        return normalized in _SPEECH_ACTION_KINDS or normalized.endswith("_speak") or normalized.endswith("_speech")
+ 
+     def _find_pass_action(
+         self,
+--- witch-n00003/task.md
++++ witch-n00062/task.md
+@@ -4,13 +4,13 @@
+ 
+ ## 硬规则
+ 
+-1. 行动前必须先确认三件事：
++1. 行动前先确认三件事：
+    - 当晚是否真的存在狼刀/夜杀目标；
+    - 自己的解药、毒药余量；
+    - 当前动作是否仍然合法。
+-2. 救人只在“高价值且可能改变轮次”的情况下使用解药；如果救不出关键轮次，优先保留。
+-3. 毒药只打高置信狼人、悍跳核心或已经被多方公开证据锁定的目标；证据不足时优先保留资源，或选择合法弃权。
+-4. 若当前没有足够依据，就不要强行用药；“保留资源”永远比低置信误毒更安全。
++2. 解药只在“夜刀目标明确且救下后能明显改变局势”时使用；如果没有明确目标，优先保留。
++3. 毒药只在公开信息已经形成高置信时使用：例如公开出现直接查杀、验人结果指向狼人，或多方公开发言与票型一致锁定同一目标。证据不足时，优先保留资源，或选择合法弃权。
++4. 如果当前没有足够依据，就不要强行用药；“保留资源”永远比低置信误毒更安全。
+ 
+ ## 发言禁区
+ 
+@@ -24,8 +24,9 @@
+ 
+ 只能基于公开信息发言，不要把内部状态说成既成事实。
+ 
+-## 决策习惯
++## 决策梯度
+ 
++- 先看是否有明确夜刀目标；有且该目标是公开确认好人、核心信息位或明显关键位时，优先考虑救人。
++- 再看是否存在公开高置信狼人目标；若有直接查杀、验人结论、强一致票型或多方锁定，就优先毒杀。
++- 如果证据不够强，就保留药水，不要把女巫做成通用发言代理。
+ - 每次决策都结合最近几天的票型、死亡信息、警长归票和公开发言摘要。
+-- 不要固定首夜必用药；要根据局势判断救、毒、留。
+-- 目标不清晰时，宁可保留，也不要把药水浪费在低置信对象上。

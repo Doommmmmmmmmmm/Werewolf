@@ -1,0 +1,153 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-n00037 保留了 n00034 的可见状态记忆、风险画像和自动纠错能力，但 20 局仅胜 4 局，胜率从祖先 guard-n00034 的 40% 降至 20%。核心问题不是行动协议稳定性：该节点 303 次守卫决策中无 fallback、无 invalid decision；主要问题是守护目标判断被过度复杂且语义混杂的启发式画像接管，导致模型的合法判断被自动改写，并把公开压力、身份声明、投票目标、发言提及和热度等不同性质信号累计成长期刀口风险。下一代应保留受限状态记忆和 schema 修复，但取消或显著收紧对合法模型目标的强制覆盖，改为短期、分层、可解释的保护优先级。",
+  "evidence": [
+    {
+      "fact": "guard-n00037 的评测结果为 20 局 4 胜 16 负，胜率 0.2；303 次 focus-role 决策中 fallback 为 0、invalid decision 为 0。",
+      "implication": "协议可靠性已经解决，性能损失主要来自策略选择而非输出格式。"
+    },
+    {
+      "fact": "祖先 guard-n00034 的评测结果为 20 局 8 胜 12 负，胜率 0.4，focus-role fallback 仅 1 次。",
+      "implication": "n00037 相比直接祖先出现明显策略退化；不能把退化归因于 n00034 的基本状态记忆方案本身。"
+    },
+    {
+      "fact": "在提供的 game6 中，守卫 p5 第 1 夜守 p1，而狼人实际选择 p5；第 2 夜守 p2，而狼人实际选择公开预言家 p6；第 3 夜守 p8，而狼人选择 p3；第 4 夜守 p9，而狼人选择 p12。四次均未拦截狼人攻击。",
+      "implication": "该局的目标排序没有抓住明显的公开核心位：第 2 夜 p6 已公开竞选并持续作为预言家和警长带队，狼人随后明确讨论并集体选择 p6；第 3、4 夜也存在明确的警长/警徽链威胁。"
+    },
+    {
+      "fact": "game6 第 2 夜狼人讨论明确说“刀p6，警长带节奏太稳”，三名狼人全部投 p6；守卫却选择 p2。第 3 夜狼人明确选择 p3，守卫选择 p8；第 4 夜狼人明确选择 p12，守卫选择 p9。",
+      "implication": "至少在回放可观察结果上，守卫的画像排序没有对公开神职、警长和被狼人高价值处理的核心位赋予足够优先级。"
+    },
+    {
+      "fact": "n00037 的 _guard_candidate_profile 将 threat、claim、vote、pressure、exposure、public_focus、salient 和 recency 合并为长期 player_risk_profile，并以 wolf_attack_risk * 100 为主导分数。",
+      "implication": "投票压力、被怀疑、身份声明和真正的狼刀威胁被当成同一种信号；而且高权重累计状态会跨轮保留，容易把已经过时的白天冲突误判为今晚刀口。"
+    },
+    {
+      "fact": "n00037 的 _update_guard_risk_memory 会递归扫描 public_state、current_round_dialogue 及多个嵌套容器；_signal_for_key 对包含 target、claim、vote、suspect、public 等词的字段直接提取玩家编号并增加风险。",
+      "implication": "字段名和文本中出现玩家编号即可改变风险，缺少事件语义、说话者、时间和信号方向的区分。尤其 target、claim 或 public 可能只是记录结构，不代表该玩家更可能被狼人攻击。"
+    },
+    {
+      "fact": "n00037 的 _repair_guard_decision 不仅修复非法 target_id，还会在模型已经返回合法目标时比较启发式分数；当 score_gap 超过阈值时直接把目标替换为评分第一名。",
+      "implication": "外部代码在没有身份信息、没有狼人真实目标、也没有守护成功确认的情况下，强行覆盖模型的合法综合判断。这是高风险的策略性干预，而不是协议纠错。"
+    },
+    {
+      "fact": "n00037 对自身和上一夜目标使用极大的固定负分，并在 repeat forbidden 时过滤上一目标；self 只有在候选极少或无外部高分候选时才可能被选。",
+      "implication": "实现把“默认不要重复”和“没有更好目标时可以自守”近似成几乎绝对禁用，可能在残局或所有外部候选都可疑时错误压低自守价值。"
+    },
+    {
+      "fact": "祖先分支 n00035 已经明确尝试将公开热度降为次级信号，并生成 guard_memory_summary；n00038 进一步加入了不主动跳守卫、不公开守护对象的提示；n00036 因 smoke fallback/error 失败，不能作为可直接继承的实现。",
+      "implication": "下一代应选择性继承 n00035 的可解释记忆摘要和 n00038 的身份保密提示，但不要继承 n00037 当前的强制分数覆盖，也要避免 n00036 类似的高风险额外校验导致 smoke 失败。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "合法行动被启发式自动改写",
+      "confidence": "高",
+      "detail": "_repair_guard_decision 的职责从“修复协议错误”扩展为“替模型做守护决策”。当模型目标合法但不符合代码评分时，代码直接换成排名第一的候选，导致模型上下文中的完整语义判断无法生效。"
+    },
+    {
+      "cause": "长期累计画像缺乏时间衰减和事件语义",
+      "confidence": "高",
+      "detail": "player_risk_profile 的 threat、claim、vote、pressure 等值跨轮累加，清理的只是 _guard_signal_round_counts，而不是画像本身。旧轮次的发言、投票和怀疑会持续影响后续夜晚。"
+    },
+    {
+      "cause": "把“被好人怀疑”误当成“会被狼人攻击”",
+      "confidence": "高",
+      "detail": "pressure、vote、public_focus 和 claim 都能提高 wolf_attack_risk。实际狼人可能保护队友、制造抗推位或故意推动某人出局；这些公开压力信号不应与狼人真实刀口风险等价。"
+    },
+    {
+      "cause": "对身份声明和公开神职的处理没有分层",
+      "confidence": "中高",
+      "detail": "claim 只作为通用风险增量，没有区分可信预言家、警长/警徽持有者、猎人自报、可疑狼跳和普通身份讨论。game6 第 2 夜公开预言家 p6 的保护价值应高于普通猎人声明 p2，但当前画像可能因累计压力把 p2 排在 p6 前。"
+    },
+    {
+      "cause": "候选过滤和重复守护逻辑过度僵硬",
+      "confidence": "中",
+      "detail": "self 使用 -10000 等硬惩罚，上一目标使用极大惩罚并过滤。规则只要求遵守引擎给出的合法候选和当前规则，策略层应保留在残局自守或重复目标具有明显价值时的例外判断。"
+    },
+    {
+      "cause": "状态解析过于宽泛，容易从结构字段制造伪信号",
+      "confidence": "高",
+      "detail": "_scan_guard_signal_tree、_extract_focus_ids 和 _extract_ids_by_keys 对嵌套对象递归提取编号，按字段名匹配而非按已知公开事件结构解析，可能把记录中的 target、claim、public 或 players 字段解释成对候选者的正向保护信号。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "收紧 _repair_guard_decision：保留“模型返回 target_id 不在当前 allowed target_ids 时，替换为一个合法候选”的协议兜底；删除或默认关闭对已合法 target_id 的 score_gap 强制覆盖。若保留策略建议，仅在模型选择自守且存在明确、近期、可信的外部神职保护证据时覆盖，并设置很高阈值。",
+      "rationale": "协议修复和策略替决策应分离。当前 n00037 的主要风险是合法选择被代码覆盖，而不是非法行动。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "将 _guard_candidate_profile 和相关排序改为分层信号：第一层为近期公开可信神职/核心好人保护价值，例如无对跳的预言家声明、已确认好人、当前警长或警徽链核心；第二层为最近一轮明确的狼人威胁或公开刀口线索；第三层才使用被多人点名、投票压力和公开热度。pressure、vote、exposure 不得直接以同等权重加入 wolf_attack_risk。",
+      "rationale": "守卫目标是预测狼人攻击，不是保护最受好人怀疑或最热的人。game6 第 2 夜的 p6 应因公开预言家和警长身份获得明显优先级。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把风险画像改为按 round 保存的短期桶或使用明确衰减：每名玩家记录最近 1 至 2 轮的 threat、trusted_claim、confirmed_good、sheriff、pressure 等分量，进入新轮时降低或丢弃旧轮信号；不要只清理 _guard_signal_round_counts 而保留永久累计分数。",
+      "rationale": "避免第一轮的发言争执持续污染第四轮守护判断，同时保留跨轮必要的公开身份和警徽链信息。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写公开状态解析，优先读取结构化字段和当前轮 dialogue；限制 _scan_guard_signal_tree 的递归范围，不要对任意包含 target、claim、public、players 的嵌套字段自动加分。对 dialogue 只记录 speaker、明确被点名对象、动作类型和 round，并避免把说话者的“怀疑别人”同时转换成说话者自身的刀口风险。",
+      "rationale": "减少结构字段造成的伪信号和“提到某人就保护某人”的误判，提升画像的可解释性。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加 guard_memory_summary，但只输出候选 target_ids 内的简短分层证据，例如 candidate、recent_threat、trusted_claim、sheriff_or_badge、recent_pressure、last_protected；明确标注这些是公开信号而非身份事实。不要把完整 player_risk_profile 注入 prompt。",
+      "rationale": "模型需要可读的状态摘要来辅助判断，但不能被大量历史分数和不透明累计值锚定。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "将 repeat/self 规则改为软约束：上一目标在规则不允许连续守护时必须剔除；若规则允许或字段缺失，避免默认用极大惩罚。self 仅在存在明显更好的外部候选时降权，否则允许模型选择自守。",
+      "rationale": "遵守规则的硬限制，同时保留残局、全员可疑或守卫本人是唯一高价值目标时的策略空间。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _system_prompt、_turn_instruction 和 guard_memory_summary 中加入简短身份保密提示：默认不主动公开守卫身份、具体守护对象或把平安夜当作守中证明；不要新增会拒绝正常 speak/last_words 的硬校验。",
+      "rationale": "继承 n00038 的低风险提示价值，但避免 n00036 类似的额外发言校验造成 smoke 失败或误伤正常发言。"
+    },
+    {
+      "file": "task.md",
+      "change": "把守卫目标优先级改写为明确的两阶段规程：先判断近期公开可信神职/核心好人和明确刀口威胁，再用投票压力和公开热度作辅助；合法模型选择不得仅因话多、被点名或画像分数高而被自动替换；保留只从 target_ids 选择、不把守护成功当作确认、默认避免违规重复守护。",
+      "rationale": "让 prompt 规程与代码的实际行为一致，减少模型被“公开焦点优先”或“评分第一必选”误导。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加纯本地单元测试或 smoke 覆盖：合法模型目标在普通分数差异下保持不变；非法目标被修复为合法候选；上一轮压力不会在两轮后保持原权重；公开无对跳预言家/警长在候选中获得高于普通压力位的摘要优先级；所有输出仍通过既有 decision_error。",
+      "rationale": "n00036 已因 smoke fallback/error 被淘汰，下一代必须先验证协议稳定性，再评估策略收益。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "删除合法目标覆盖后，模型可能重新出现较差的守护选择。",
+      "mitigation": "保留结构化 guard_memory_summary 和只在强证据下的窄范围纠偏；先用 smoke 和固定回放验证，不要恢复当前无条件 score_gap 覆盖。"
+    },
+    {
+      "risk": "过度信任公开预言家或警长声明可能保护到狼人伪装的神职。",
+      "mitigation": "使用“可信声明”而非绝对身份事实；无对跳、连续有效查验、警徽链和当前狼人威胁应提高权重，但保留模型对真假身份的综合判断。"
+    },
+    {
+      "risk": "短期衰减可能丢失早期形成的关键警徽链或确认好人信息。",
+      "mitigation": "只衰减 pressure、vote、heat 等战术信号；trusted_claim、confirmed_good 和 sheriff/badge 等结构化长期事实单独保存，且只影响保护价值，不直接当作身份真相。"
+    },
+    {
+      "risk": "严格限制递归解析可能漏掉某些合法公开字段。",
+      "mitigation": "优先支持当前已知 packet、public_state 和 current_round_dialogue 结构，并对未知字段采取不加分而非猜测性加分；通过 smoke 和回放检查解析结果。"
+    },
+    {
+      "risk": "自守软约束可能提高早期无依据自守比例。",
+      "mitigation": "只在外部候选没有明显近期 threat/trusted-claim 优势时允许自守，并在 prompt 中明确“没有更好外部目标时才考虑自守”。"
+    },
+    {
+      "risk": "game6 是单局证据，不能证明所有失败都由同一目标排序造成。",
+      "mitigation": "将 game6 的目标选择作为强示例而非完整因果证明；下一轮应比较 20 局胜率、守中率、合法行动率和每轮保护目标类型，重点验证 n00034 与 n00037 的差异。"
+    }
+  ],
+  "code_agent_brief": "请在候选工作区修改 task_agent.py 和必要时 task.md，目标是生成 guard 的下一代 Task-Agent。不得修改 Game Engine、规则、身份能力、信息可见性、行动 schema、模型客户端、工具实现或评测配置。基于 guard-n00037 的代码，优先完成以下工作：1）保留所有现有协议校验和非法 target_id 的兜底修复，但禁止在模型已经返回合法 guard_protect target_id 时仅因启发式分数或 score_gap 自动替换；2）重构守卫记忆为候选 target_ids 范围内的短期、分层摘要，区分近期公开可信神职/核心好人、明确狼人威胁、被查验或警徽链信息、普通 pressure/vote/heat，不能把这些信号永久等权累计；3）限制公开状态解析到已知结构化字段和 current_round_dialogue，避免任意嵌套 key 包含 target/claim/public 就产生风险分；4）保留“不重复上一夜目标”的规则硬约束，但将 self 和其他策略偏好设为软约束，只有外部候选有明显更强近期证据时才压低自守；5）在 prompt 和 task.md 中说明保护目标应先看近期最可能被狼刀的可信好人/公开核心位，热度和被怀疑只能辅助，不把守护成功当作确认，不主动泄露守卫和具体守护对象；6）不要新增容易误伤正常发言的硬文本拒绝逻辑。实现后至少验证：非法 target_id 会被修复；合法但非启发式第一名的模型目标保持不变；上一轮压力会衰减；公开无对跳预言家/警长在摘要中优先于普通热度位；所有 smoke 决策无 fallback 和 invalid decision。"
+}

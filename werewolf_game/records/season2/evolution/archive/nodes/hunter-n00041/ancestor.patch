@@ -1,0 +1,624 @@
+--- hunter-n00008/task_agent.py
++++ hunter-n00041/task_agent.py
+@@ -32,6 +32,9 @@
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _PASS_LIKE_ACTION_KINDS = frozenset({"pass", "skip", "wait", "idle", "noop", "none"})
+ DEFAULT_PUBLIC_MEMORY_SIZE = 12
++DEFAULT_MAX_TRACKED_PLAYERS = 12
++DEFAULT_DOSSIER_MAX_ENTRIES = 3
++PLAYER_ID_PATTERN = re.compile(r"(?<![A-Za-z0-9])(p\d+)(?![A-Za-z0-9])")
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -183,6 +186,8 @@
+         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+         self.max_prompt_chars = max(1, int(max_prompt_chars))
+         self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)
++        self._player_dossiers: dict[str, dict[str, Any]] = {}
++        self._dossier_seq = 0
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -200,6 +205,7 @@
+         for event in self._extract_public_events(sync_packet):
+             if event:
+                 self._public_memory.append(event)
++        self._prune_player_dossiers()
+ 
+     def _recent_memory(self, limit: int = 5) -> list[str]:
+         if limit <= 0:
+@@ -217,10 +223,12 @@
+         ]
+         phase = self._request_phase_label(turn_packet, request, allowed_actions)
+         recent_memory = self._recent_memory(5)
++        evidence_snapshot = self._evidence_snapshot(recent_memory)
+         brief: dict[str, Any] = {
+             "phase": phase,
+             "recent_public_signals": recent_memory,
+             "current_round_dialogue_preview": self._compact_dialogue(current_dialogue, limit=3),
++            "evidence_snapshot": evidence_snapshot,
+         }
+         mode = self._request_mode(allowed_actions)
+         if mode == "hunter_reaction":
+@@ -228,28 +236,31 @@
+             brief.update(
+                 {
+                     "decision_mode": "hunter_reaction",
+-                    "focus": "先比较合法 target_ids 的票型、改口、身份声明和死亡链条；证据不足时优先跳过。",
++                    "focus": "先看 evidence_snapshot 里的票压、改口、身份冲突和硬清；证据不够就跳过。",
+                     "target_ranking": ranking["target_ranking"],
+                     "skip_option": ranking["skip_option"],
+                     "skip_condition": ranking["skip_condition"],
++                    "suspicion_focus": ranking.get("suspicion_focus", {}),
+                 }
+             )
+         elif mode == "last_words":
+             brief.update(
+                 {
+                     "decision_mode": "last_words",
+-                    "focus": "收束到已公开的票型、身份矛盾和死亡顺序，不要泛化找狼。",
++                    "focus": "收束到已公开的票型、身份声明和死亡链条，只点一个具体怀疑对象和一个依据。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
++                    "suspicion_focus": self._top_suspicion_focus(recent_memory),
+                 }
+             )
+         elif mode == "speak":
+             brief.update(
+                 {
+                     "decision_mode": "speak",
+-                    "focus": "回应当前争议，优先点出最近票型变化与身份声明矛盾。",
++                    "focus": "回应当前争议，必须点名一个具体怀疑对象和一个具体依据，避免空话。",
+                     "current_controversy": self._recent_controversy(recent_memory),
+                     "key_contradiction": self._key_contradiction(recent_memory),
++                    "suspicion_focus": self._top_suspicion_focus(recent_memory),
+                 }
+             )
+         else:
+@@ -322,15 +333,381 @@
+         return preview
+ 
+     def _recent_controversy(self, recent_memory: list[str]) -> str:
+-        if not recent_memory:
++        snapshot = self._evidence_snapshot(recent_memory, limit=2)
++        parts: list[str] = []
++        if snapshot["top_contradictions"]:
++            parts.extend(item["summary"] for item in snapshot["top_contradictions"][:2])
++        if not parts and recent_memory:
++            parts.extend(recent_memory[-2:])
++        if not parts:
+             return "暂无足够公开记忆"
+-        return "；".join(recent_memory[-3:])
++        return "；".join(parts[:2])
+ 
+     def _key_contradiction(self, recent_memory: list[str]) -> str:
++        snapshot = self._evidence_snapshot(recent_memory, limit=1)
++        if snapshot["top_contradictions"]:
++            return snapshot["top_contradictions"][0]["summary"]
+         for line in reversed(recent_memory):
+             if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "自相矛盾", "投票", "死亡", "警长")):
+                 return line
+         return recent_memory[-1] if recent_memory else "暂无明确矛盾"
++
++    def _top_suspicion_focus(self, recent_memory: list[str]) -> dict[str, Any]:
++        rows: list[dict[str, Any]] = []
++        for player_id, dossier in self._player_dossiers.items():
++            if player_id == self.player_id:
++                continue
++            rows.append(self._player_dossier_snapshot(player_id, dossier))
++        if rows:
++            rows.sort(
++                key=lambda item: (
++                    item["score"],
++                    item["vote_pressure"],
++                    item["contradiction_score"],
++                    item["mention_count"],
++                ),
++                reverse=True,
++            )
++            top = rows[0]
++            return {
++                "player_id": top["player_id"],
++                "score": top["score"],
++                "reasons": [top["summary"]][:2],
++                "evidence": {
++                    "summary": top["summary"],
++                    "vote_pressure": top["vote_pressure"],
++                    "contradiction_score": top["contradiction_score"],
++                    "claims": top["claims"],
++                    "hard_clear": top["hard_clear"],
++                    "soft_clear": top["soft_clear"],
++                },
++            }
++        ranking = self._hunter_target_ranking([], recent_memory)
++        if ranking["target_ranking"]:
++            top = ranking["target_ranking"][0]
++            return {
++                "player_id": top["target_id"],
++                "score": top["score"],
++                "reasons": top["reasons"][:2],
++                "evidence": top["evidence"],
++            }
++        for line in reversed(recent_memory):
++            if line:
++                return {"player_id": "", "score": 0.0, "reasons": [line[:60]]}
++        return {}
++
++    def _ensure_player_dossier(self, player_id: str) -> dict[str, Any]:
++        dossier = self._player_dossiers.get(player_id)
++        if dossier is None:
++            dossier = {
++                "last_seen_seq": 0,
++                "last_round": "",
++                "mention_count": 0,
++                "vote_switches": 0,
++                "contradictions": 0,
++                "recent_speeches": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "claimed_roles": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "vote_out": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES + 1),
++                "vote_in": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES + 1),
++                "support_lines": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "attack_lines": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "support_mentions": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "attack_mentions": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "hard_clears": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "soft_clears": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++                "death_links": deque(maxlen=DEFAULT_DOSSIER_MAX_ENTRIES),
++            }
++            self._player_dossiers[player_id] = dossier
++        return dossier
++
++    def _touch_player_dossier(self, player_id: str, round_value: object = None) -> dict[str, Any]:
++        dossier = self._ensure_player_dossier(player_id)
++        self._dossier_seq += 1
++        dossier["last_seen_seq"] = self._dossier_seq
++        if round_value is not None:
++            dossier["last_round"] = self._compact_text(round_value, limit=12)
++        return dossier
++
++    def _prune_player_dossiers(self) -> None:
++        excess = len(self._player_dossiers) - DEFAULT_MAX_TRACKED_PLAYERS
++        if excess <= 0:
++            return
++        removable = sorted(
++            self._player_dossiers.items(),
++            key=lambda item: (
++                int(item[1].get("last_seen_seq", 0)),
++                int(item[1].get("mention_count", 0))
++                + int(item[1].get("vote_switches", 0))
++                + int(item[1].get("contradictions", 0)),
++            ),
++        )
++        for player_id, _ in removable[:excess]:
++            self._player_dossiers.pop(player_id, None)
++
++    @staticmethod
++    def _extract_player_ids(text: str) -> list[str]:
++        if not text:
++            return []
++        seen: list[str] = []
++        for match in PLAYER_ID_PATTERN.findall(text):
++            if match not in seen:
++                seen.append(match)
++        return seen
++
++    @staticmethod
++    def _extract_claim_from_text(text: str) -> str:
++        if not text:
++            return ""
++        claim_markers = ("我是", "我跳", "我认", "我报", "自称", "claim", "报身份", "身份是")
++        if not any(marker in text for marker in claim_markers):
++            return ""
++        for role in ("预言家", "女巫", "猎人", "守卫", "白痴", "狼人", "村民", "平民", "警长", "好人"):
++            if role in text:
++                return role
++        return ""
++
++    @staticmethod
++    def _public_text_signals(text: str) -> dict[str, bool]:
++        support = any(keyword in text for keyword in ("站边", "保", "保一下", "保护", "认好", "支持", "偏好", "信他", "放过"))
++        attack = any(keyword in text for keyword in ("踩", "打", "冲票", "查杀", "怀疑", "可疑", "卖队", "反水", "矛盾", "对跳", "假身份", "骗", "抗推"))
++        hard_clear = any(keyword in text for keyword in ("金水", "硬清", "铁好", "查验好人", "验好", "确定好人"))
++        soft_clear = any(keyword in text for keyword in ("像好人", "暂放", "先放", "不急出", "先不出", "偏好", "大概率好", "好人面", "暂时放"))
++        contradiction = any(keyword in text for keyword in ("改口", "矛盾", "对跳", "反水", "前后不一", "自相矛盾", "打脸", "变票"))
++        death = any(keyword in text for keyword in ("死亡", "出局", "被刀", "被杀", "倒牌", "翻牌"))
++        return {
++            "support": support and not attack,
++            "attack": attack and not support,
++            "hard_clear": hard_clear,
++            "soft_clear": soft_clear and not hard_clear,
++            "contradiction": contradiction,
++            "death": death,
++        }
++
++    def _update_player_dossiers_from_public_item(
++        self,
++        item: object,
++        *,
++        default_round: object = None,
++        default_phase: object = None,
++    ) -> None:
++        if not isinstance(item, Mapping):
++            return
++
++        round_value = item.get("round", default_round)
++        phase_value = item.get("phase", item.get("public_phase", default_phase))
++        actor = str(
++            item.get("speaker")
++            or item.get("player_id")
++            or item.get("from_player_id")
++            or item.get("from")
++            or item.get("actor")
++            or item.get("source")
++            or ""
++        ).strip()
++        target = str(item.get("target_id") or item.get("target") or item.get("votee") or "").strip()
++        kind = str(item.get("kind") or item.get("action") or item.get("type") or "").strip().lower()
++        text = str(item.get("text") or item.get("content") or item.get("message") or "").strip()
++        role = str(item.get("role") or item.get("revealed_role") or item.get("identity") or "").strip()
++        line = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase) or ""
++        mentioned_ids = self._extract_player_ids(text)
++        signals = self._public_text_signals(text)
++
++        tracked_ids: list[str] = []
++        for player_id in (actor, target, *mentioned_ids):
++            if player_id and player_id not in tracked_ids:
++                tracked_ids.append(player_id)
++        for player_id in tracked_ids:
++            self._touch_player_dossier(player_id, round_value=round_value)
++
++        if actor:
++            actor_dossier = self._touch_player_dossier(actor, round_value=round_value)
++            if text and kind in {"speak", "speech", "say", "dialogue", "statement", "talk"}:
++                actor_dossier["recent_speeches"].append(self._compact_text(text, limit=56))
++            if role:
++                role_text = self._compact_text(role, limit=20)
++                if role_text and role_text not in actor_dossier["claimed_roles"]:
++                    actor_dossier["claimed_roles"].append(role_text)
++            claim = self._extract_claim_from_text(text)
++            if claim and claim not in actor_dossier["claimed_roles"]:
++                actor_dossier["claimed_roles"].append(claim)
++            if signals["contradiction"]:
++                actor_dossier["contradictions"] += 1
++            if signals["support"] and line:
++                actor_dossier["support_lines"].append(self._compact_text(line, limit=56))
++            if signals["attack"] and line:
++                actor_dossier["attack_lines"].append(self._compact_text(line, limit=56))
++            if signals["death"] and line:
++                actor_dossier["death_links"].append(self._compact_text(line, limit=48))
++
++        if kind in {"vote", "voting"} and actor and target:
++            actor_dossier = self._touch_player_dossier(actor, round_value=round_value)
++            target_dossier = self._touch_player_dossier(target, round_value=round_value)
++            if actor_dossier["vote_out"] and actor_dossier["vote_out"][-1] != target:
++                actor_dossier["vote_switches"] += 1
++                actor_dossier["contradictions"] += 1
++            actor_dossier["vote_out"].append(target)
++            target_dossier["vote_in"].append(actor)
++
++        if target and line:
++            target_dossier = self._touch_player_dossier(target, round_value=round_value)
++            if signals["hard_clear"]:
++                target_dossier["hard_clears"].append(self._compact_text(line, limit=56))
++            elif signals["soft_clear"]:
++                target_dossier["soft_clears"].append(self._compact_text(line, limit=56))
++            if signals["support"]:
++                target_dossier["support_mentions"].append(self._compact_text(line, limit=56))
++            if signals["attack"]:
++                target_dossier["attack_mentions"].append(self._compact_text(line, limit=56))
++            if signals["death"]:
++                target_dossier["death_links"].append(self._compact_text(line, limit=48))
++            if text:
++                target_dossier["mention_count"] += 1
++
++        if not line:
++            return
++        for player_id in mentioned_ids:
++            dossier = self._touch_player_dossier(player_id, round_value=round_value)
++            dossier["mention_count"] += 1
++            if signals["hard_clear"]:
++                dossier["hard_clears"].append(self._compact_text(line, limit=56))
++            elif signals["soft_clear"]:
++                dossier["soft_clears"].append(self._compact_text(line, limit=56))
++            if signals["support"]:
++                dossier["support_mentions"].append(self._compact_text(line, limit=56))
++            if signals["attack"]:
++                dossier["attack_mentions"].append(self._compact_text(line, limit=56))
++            if signals["death"]:
++                dossier["death_links"].append(self._compact_text(line, limit=48))
++            if phase_value is not None:
++                dossier["last_round"] = self._compact_text(f"{round_value}/{phase_value}", limit=12)
++
++    def _player_dossier_snapshot(self, player_id: str, dossier: Mapping[str, Any]) -> dict[str, Any]:
++        claimed_roles = self._unique_tail(list(dossier.get("claimed_roles", [])), limit=2)
++        vote_out = self._unique_tail(list(dossier.get("vote_out", [])), limit=3)
++        vote_in = self._unique_tail(list(dossier.get("vote_in", [])), limit=3)
++        support_mentions = list(dossier.get("support_mentions", []))[-2:]
++        attack_mentions = list(dossier.get("attack_mentions", []))[-2:]
++        support_lines = list(dossier.get("support_lines", []))[-2:]
++        attack_lines = list(dossier.get("attack_lines", []))[-2:]
++        hard_clears = list(dossier.get("hard_clears", []))[-2:]
++        soft_clears = list(dossier.get("soft_clears", []))[-2:]
++        death_links = list(dossier.get("death_links", []))[-2:]
++        claim_conflict = max(0, len(claimed_roles) - 1)
++        vote_pressure = len(vote_in) + len(attack_mentions)
++        contradiction_score = int(dossier.get("contradictions", 0)) + int(dossier.get("vote_switches", 0)) + claim_conflict
++        hard_clear = bool(hard_clears)
++        soft_clear = bool(soft_clears)
++        support_pressure = len(support_mentions) + len(support_lines)
++        attack_pressure = len(attack_mentions) + len(attack_lines)
++        risk_score = vote_pressure + contradiction_score + attack_pressure - support_pressure
++        if hard_clear:
++            risk_score -= 3
++        elif soft_clear:
++            risk_score -= 1
++        summary_bits: list[str] = []
++        if vote_pressure:
++            summary_bits.append(f"{vote_pressure}票压")
++        if contradiction_score:
++            summary_bits.append(f"{contradiction_score}次冲突")
++        if claimed_roles:
++            summary_bits.append("身份:" + "/".join(claimed_roles))
++        if hard_clear:
++            summary_bits.append("硬清")
++        elif soft_clear:
++            summary_bits.append("软清")
++        if death_links:
++            summary_bits.append("死亡相关")
++        summary = "；".join(summary_bits[:3]) if summary_bits else "公开证据稀薄"
++        return {
++            "player_id": player_id,
++            "summary": summary,
++            "score": round(float(risk_score), 2),
++            "vote_pressure": vote_pressure,
++            "contradiction_score": contradiction_score,
++            "claims": claimed_roles,
++            "vote_out": vote_out,
++            "vote_in": vote_in,
++            "support_mentions": support_mentions,
++            "attack_mentions": attack_mentions,
++            "support_lines": support_lines,
++            "attack_lines": attack_lines,
++            "hard_clear": hard_clear,
++            "soft_clear": soft_clear,
++            "death_links": death_links,
++            "last_round": str(dossier.get("last_round") or ""),
++            "mention_count": int(dossier.get("mention_count", 0)),
++        }
++
++    def _evidence_snapshot(self, recent_memory: list[str], limit: int = 3) -> dict[str, Any]:
++        rows: list[dict[str, Any]] = []
++        for player_id, dossier in self._player_dossiers.items():
++            rows.append(self._player_dossier_snapshot(player_id, dossier))
++        if not rows:
++            fallback = [
++                {"player_id": "", "summary": line, "score": 0.0}
++                for line in recent_memory[-limit:]
++                if line
++            ]
++            return {
++                "top_contradictions": fallback[:limit],
++                "top_vote_pressure": [],
++                "claimed_roles": [],
++                "hard_clears": [],
++                "soft_clears": [],
++            }
++
++        contradictions = sorted(
++            [item for item in rows if item["contradiction_score"] > 0],
++            key=lambda item: (item["contradiction_score"], item["vote_pressure"], item["score"]),
++            reverse=True,
++        )[:limit]
++        vote_pressure = sorted(
++            [item for item in rows if item["vote_pressure"] > 0],
++            key=lambda item: (item["vote_pressure"], item["contradiction_score"], item["score"]),
++            reverse=True,
++        )[:limit]
++        claimed_roles = [
++            {
++                "player_id": item["player_id"],
++                "claims": item["claims"],
++                "summary": item["summary"],
++            }
++            for item in sorted(rows, key=lambda item: (len(item["claims"]), item["score"]), reverse=True)
++            if item["claims"]
++        ][:limit]
++        hard_clears = [
++            {"player_id": item["player_id"], "summary": item["summary"]}
++            for item in rows
++            if item["hard_clear"]
++        ][:limit]
++        soft_clears = [
++            {"player_id": item["player_id"], "summary": item["summary"]}
++            for item in rows
++            if item["soft_clear"] and not item["hard_clear"]
++        ][:limit]
++        return {
++            "top_contradictions": [
++                {"player_id": item["player_id"], "summary": item["summary"], "score": item["score"]}
++                for item in contradictions
++            ],
++            "top_vote_pressure": [
++                {"player_id": item["player_id"], "summary": item["summary"], "score": item["score"]}
++                for item in vote_pressure
++            ],
++            "claimed_roles": claimed_roles,
++            "hard_clears": hard_clears,
++            "soft_clears": soft_clears,
++        }
++
++    @staticmethod
++    def _unique_tail(values: list[str], limit: int) -> list[str]:
++        if limit <= 0:
++            return []
++        seen: list[str] = []
++        for value in values[-(limit * 2) :]:
++            if value and value not in seen:
++                seen.append(value)
++        return seen[-limit:]
+ 
+     def _hunter_target_ranking(
+         self,
+@@ -349,50 +726,118 @@
+         ranking: list[dict[str, Any]] = []
+         for target_id in target_ids:
+             score, reasons = self._score_hunter_target(target_id, recent_memory)
++            dossier = self._player_dossiers.get(target_id)
++            evidence = self._player_dossier_snapshot(target_id, dossier) if dossier else {
++                "player_id": target_id,
++                "summary": "公开证据稀薄",
++                "score": 0.0,
++                "vote_pressure": 0,
++                "contradiction_score": 0,
++                "claims": [],
++                "hard_clear": False,
++                "soft_clear": False,
++            }
+             ranking.append(
+                 {
+                     "target_id": target_id,
+                     "score": round(score, 2),
+                     "reasons": reasons,
++                    "evidence": {
++                        "summary": evidence["summary"],
++                        "vote_pressure": evidence.get("vote_pressure", 0),
++                        "contradiction_score": evidence.get("contradiction_score", 0),
++                        "claims": evidence.get("claims", []),
++                        "hard_clear": evidence.get("hard_clear", False),
++                        "soft_clear": evidence.get("soft_clear", False),
++                    },
+                 }
+             )
+         ranking.sort(key=lambda item: item["score"], reverse=True)
+         skip_option = self._pass_like_action_kind(allowed_actions)
+         best_score = ranking[0]["score"] if ranking else 0.0
++        second_score = ranking[1]["score"] if len(ranking) > 1 else None
+         if skip_option:
+-            skip_condition = "若没有明确矛盾、票型偏差或身份冲突，优先跳过。"
++            if best_score < 1.8:
++                skip_condition = "证据仍偏软：优先跳过，等票压、改口和身份冲突更硬再出手。"
++            elif second_score is not None and best_score - second_score < 0.5 and best_score < 2.6:
++                skip_condition = "候选之间差距不够，优先跳过以降低误伤。"
++            else:
++                skip_condition = "只有当某个目标同时具备票压、改口和身份冲突时才出手。"
+         else:
+-            skip_condition = "没有跳过动作时，只选分数最高且风险最低的目标。"
+-        if best_score < 1.0:
+-            skip_condition = "证据不足时直接跳过；若不能跳过，再选最弱风险目标。"
++            skip_condition = "没有跳过动作时，优先选证据最硬且硬清风险最低的目标。"
++        suspicion_focus = {}
++        if ranking:
++            top = ranking[0]
++            suspicion_focus = {
++                "player_id": top["target_id"],
++                "score": top["score"],
++                "reasons": top["reasons"][:2],
++                "evidence": top["evidence"],
++            }
+         return {
+             "target_ranking": ranking[:4],
+             "skip_option": skip_option,
+             "skip_condition": skip_condition,
++            "suspicion_focus": suspicion_focus,
+         }
+ 
+     def _score_hunter_target(self, target_id: str, recent_memory: list[str]) -> tuple[float, list[str]]:
+-        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])")
++        dossier = self._player_dossiers.get(target_id)
+         score = 0.0
+         reasons: list[str] = []
+-        for line in recent_memory:
++        if dossier is not None:
++            snapshot = self._player_dossier_snapshot(target_id, dossier)
++            if snapshot["hard_clear"]:
++                score -= 4.0
++                reasons.append("已有硬清/强保")
++            if snapshot["soft_clear"]:
++                score -= 1.5
++                reasons.append("存在软清")
++            if snapshot["vote_pressure"]:
++                vote_bonus = min(2.4, 0.6 * snapshot["vote_pressure"])
++                score += vote_bonus
++                reasons.append(f"{snapshot['vote_pressure']}点投票/攻击压力")
++            if snapshot["contradiction_score"]:
++                contradiction_bonus = min(3.0, 0.8 * snapshot["contradiction_score"])
++                score += contradiction_bonus
++                reasons.append(f"{snapshot['contradiction_score']}点改口/冲突")
++            if snapshot["attack_mentions"] or snapshot["attack_lines"]:
++                attack_bonus = min(1.6, 0.4 * (len(snapshot["attack_mentions"]) + len(snapshot["attack_lines"])))
++                score += attack_bonus
++                reasons.append("存在攻击线")
++            if snapshot["support_mentions"] or snapshot["support_lines"]:
++                support_bonus = min(1.2, 0.35 * (len(snapshot["support_mentions"]) + len(snapshot["support_lines"])))
++                score -= support_bonus
++                reasons.append("也有站边/保护")
++            if len(snapshot["claims"]) > 1:
++                claim_bonus = min(1.2, 0.4 * (len(snapshot["claims"]) - 1))
++                score += claim_bonus
++                reasons.append("身份说法不止一种")
++            if snapshot["death_links"]:
++                death_bonus = min(0.8, 0.25 * len(snapshot["death_links"]))
++                score += death_bonus
++                reasons.append("与死亡链条有关")
++            if snapshot["mention_count"]:
++                score += min(0.6, 0.12 * snapshot["mention_count"])
++        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])")
++        fallback_hits = 0
++        for line in recent_memory[-5:]:
+             if not pattern.search(line):
+                 continue
+-            line_score = 0.2
++            fallback_hits += 1
+             if any(keyword in line for keyword in ("改口", "矛盾", "对跳", "反水", "带节奏", "卖队", "假", "骗", "冲票", "踩", "查杀", "自相矛盾")):
+-                line_score += 1.3
+-                reasons.append(self._compact_text(line, limit=60))
+-            if any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
+-                line_score += 0.4
+-            if any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水")):
+-                line_score -= 0.5
+-            if "狼人" in line:
+-                line_score += 0.8
+-            if "好人" in line:
+-                line_score -= 0.2
+-            score += line_score
++                score += 0.5
++                if len(reasons) < 3:
++                    reasons.append(self._compact_text(line, limit=60))
++            elif any(keyword in line for keyword in ("投票", "票型", "站边", "出局", "死亡", "身份", "警长", "发言", "表态")):
++                score += 0.2
++            elif any(keyword in line for keyword in ("可信", "一致", "解释清楚", "对得上", "稳定", "金水")):
++                score -= 0.2
+         if not reasons:
+-            reasons.append("公开记忆里缺少直接矛盾，只能低置信度判断")
++            if fallback_hits:
++                reasons.append("最近公开记忆里有少量相关线索，但结构化证据仍弱")
++            else:
++                reasons.append("结构化证据很少，只能低置信度判断")
+         return score, reasons[:3]
+ 
+     @staticmethod
+@@ -410,6 +855,11 @@
+         default_phase = sync_packet.get("phase") or sync_packet.get("public_phase")
+ 
+         def add_event(item: object) -> None:
++            self._update_player_dossiers_from_public_item(
++                item,
++                default_round=default_round,
++                default_phase=default_phase,
++            )
+             event = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)
+             if not event or event in seen:
+                 return
+--- hunter-n00008/task.md
++++ hunter-n00041/task.md
+@@ -3,7 +3,8 @@
+ 你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。
+ 
+ - 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据：发言、票型、改口、身份声明、死亡顺序。
+-- 公开发言要回应当下争议，优先比较“谁支持谁、谁反复改口、谁的票型和身份声明不一致”。
+-- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择与票型、发言和死亡链条最不一致的人。
++- 优先维护一个按玩家聚合的简短证据画像：最近发言、身份声明、投票历史、被点名次数、支持/攻击线、死亡相关性、硬清/软清。
++- 公开发言要回应当下争议，必须点名一个具体怀疑对象和一个具体依据，优先比较“谁支持谁、谁反复改口、谁的票型和身份声明不一致”。
++- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择证据最硬、误伤风险最低的人，而不是只看谁最像狼。
+ - 如果公开证据不足，或目标之间没有明显差异，要明确走跳过条件；不要把“带走最像狼的人”当成固定模板。
+-- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。+- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。

@@ -1,0 +1,483 @@
+--- hunter-n00032/task_agent.py
++++ hunter-n00075/task_agent.py
+@@ -33,9 +33,9 @@
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
+ _PASS_KIND_ALIASES = frozenset({"pass", "skip", "wait", "noop", "none", "hold"})
+-_PUBLIC_MEMORY_MAX_ROUNDS = 8
+-_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY = 4
+-_PUBLIC_MEMORY_MAX_SCAN_DEPTH = 3
++_PUBLIC_MEMORY_MAX_ROUNDS = 12
++_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY = 6
++_PUBLIC_MEMORY_MAX_SCAN_DEPTH = 4
+ 
+ _MEMORY_KEYS = {
+     "round",
+@@ -290,6 +290,18 @@
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+         decision_brief = self._build_decision_brief(turn_packet)
++        if self.profile.role == "hunter" and self._infer_hunter_decision_mode(
++            turn_packet["request"],
++            str(
++                turn_packet.get("game", {}).get(
++                    "public_phase",
++                    turn_packet.get("game", {}).get("phase", turn_packet["request"].get("phase", "unknown")),
++                )
++            ),
++        ) == "hunter_reaction":
++            direct_action = self._choose_hunter_reaction_action(turn_packet)
++            if direct_action is not None:
++                return direct_action
+         system = self._system_prompt(private, decision_brief=decision_brief)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -458,33 +470,36 @@
+         dialogue_preview = self._summarize_current_dialogue(turn_packet.get("tool_context"))
+ 
+         lines = [f"模式：{mode}；阶段：{phase}"]
++        legal_targets = ranking.get("legal_targets") or []
++        if legal_targets:
++            lines.append("合法目标：" + "、".join(legal_targets[:6]))
+         recent_memory = ranking.get("recent_memory") or []
+         if recent_memory:
+-            lines.append("最近公开记忆：" + " | ".join(recent_memory[-3:]))
++            lines.append("近记忆：" + " | ".join(recent_memory[-4:]))
++        if pressure.get("vote_chain"):
++            lines.append("票链：" + pressure["vote_chain"])
+         if pressure.get("conflicts"):
+             lines.append("最近争议：" + "；".join(pressure["conflicts"][:2]))
+-        if pressure.get("vote_chain"):
+-            lines.append("票链：" + pressure["vote_chain"])
+         if pressure.get("top_evidence"):
+             lines.append("证据：" + "；".join(pressure["top_evidence"][:2]))
+         if dialogue_preview:
+             lines.append("当前对话：" + dialogue_preview)
+ 
+         ordered = ranking.get("target_ranking") or []
++        if ordered:
++            top_bits = []
++            for item in ordered[:3]:
++                reason = str(item.get("reason") or "")[:28]
++                top_bits.append(f"{item.get('target_id')}({item.get('score')}:{reason})")
++            lines.append("目标排序：" + " > ".join(top_bits))
+         if mode == "hunter_reaction":
+-            legal_targets = ranking.get("legal_targets") or []
+-            if legal_targets:
+-                lines.append("合法目标：" + "、".join(legal_targets[:6]))
+-            if ordered:
+-                top_bits = []
+-                for item in ordered[:3]:
+-                    reason = str(item.get("reason") or "")[:28]
+-                    top_bits.append(f"{item.get('target_id')}({item.get('score')}:{reason})")
+-                lines.append("目标排序：" + " > ".join(top_bits))
++            if ranking.get("best_target"):
++                lines.append(f"优先开枪：{ranking['best_target']}")
++            lines.append(f"建议：{ '开枪' if ranking.get('recommended_action') == 'shoot' else '跳过' if ranking.get('recommended_action') == 'pass' else '继续比较' }")
+             if ranking.get("pass_recommended"):
+-                lines.append("证据不足或连锁风险高时优先跳过")
+-            elif ranking.get("best_target"):
+-                lines.append(f"优先目标：{ranking['best_target']}")
++                lines.append("仅在所有候选都弱或连锁风险高时跳过")
++            else:
++                lines.append("先比票型一致性、身份可信度、连锁风险，再决定是否开枪")
+         elif mode == "day_vote":
+             if pressure.get("top_names"):
+                 lines.append("重点怀疑：" + "、".join(pressure["top_names"]))
+@@ -500,6 +515,75 @@
+                 lines.append("重点人名：" + "、".join(pressure["top_names"]))
+             lines.append("发言要求：必须引用最近1-2条公开证据，点名1个具体玩家，并给出1个具体理由；优先说票型、对跳、金水/查杀冲突，不要空泛套话。")
+         return self._truncate_text("\n".join(lines), 900)
++
++    def _choose_hunter_reaction_action(self, turn_packet: Mapping[str, Any]) -> dict[str, Any] | None:
++        request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
++        public_state = turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {}
++        ranking = self._rank_hunter_targets(request, public_state, list(self._recent_public_events))
++        request_id = turn_packet.get("request", {}).get("request_id")
++        if request_id is None:
++            return None
++        request_id = str(request_id)
++
++        if not ranking.get("legal_targets"):
++            pass_kind = self._select_targetless_action_kind(request)
++            if pass_kind:
++                return {"request_id": request_id, "player_id": self.player_id, "kind": pass_kind}
++            return None
++
++        best_target = ranking.get("best_target")
++        if best_target and ranking.get("direct_shoot_recommended"):
++            shoot_kind = self._select_target_action_kind(request, str(best_target))
++            if shoot_kind:
++                return {
++                    "request_id": request_id,
++                    "player_id": self.player_id,
++                    "kind": shoot_kind,
++                    "target_id": str(best_target),
++                }
++
++        if ranking.get("pass_recommended"):
++            pass_kind = self._select_targetless_action_kind(request)
++            if pass_kind:
++                return {"request_id": request_id, "player_id": self.player_id, "kind": pass_kind}
++        return None
++
++    def _select_target_action_kind(self, request: Mapping[str, Any], target_id: str) -> str:
++        raw_actions = request.get("allowed_actions") if isinstance(request.get("allowed_actions"), list) else []
++        target_text = str(target_id)
++        fallback_kind = ""
++        for allowed in raw_actions:
++            if not isinstance(allowed, Mapping):
++                continue
++            kind = str(allowed.get("kind") or "").strip()
++            if not kind:
++                continue
++            target_ids = allowed.get("target_ids")
++            if not isinstance(target_ids, list):
++                continue
++            normalized_targets = {str(item) for item in target_ids if item is not None}
++            if target_text in normalized_targets:
++                return kind
++            if not fallback_kind and normalized_targets:
++                fallback_kind = kind
++        return fallback_kind
++
++    def _select_targetless_action_kind(self, request: Mapping[str, Any]) -> str:
++        raw_actions = request.get("allowed_actions") if isinstance(request.get("allowed_actions"), list) else []
++        fallback_kind = ""
++        for allowed in raw_actions:
++            if not isinstance(allowed, Mapping):
++                continue
++            kind = str(allowed.get("kind") or "").strip()
++            if not kind or kind.lower() in _SPEECH_ACTION_KINDS:
++                continue
++            if allowed.get("target_ids"):
++                continue
++            if kind.lower() in _PASS_KIND_ALIASES:
++                return kind
++            if not fallback_kind:
++                fallback_kind = kind
++        return fallback_kind
+ 
+     def _infer_hunter_decision_mode(self, request: Mapping[str, Any], phase: str) -> str:
+         raw_actions = request.get("allowed_actions") if isinstance(request.get("allowed_actions"), list) else []
+@@ -602,7 +686,7 @@
+         legal_targets = self._collect_target_ids(request)
+         recent_memory = [
+             self._truncate_text(str(entry.get("summary") or self._public_memory_label(entry)), 140)
+-            for entry in memory_entries[-4:]
++            for entry in memory_entries[-6:]
+         ]
+         if not legal_targets:
+             return {
+@@ -610,7 +694,9 @@
+                 "recent_memory": recent_memory,
+                 "target_ranking": [],
+                 "pass_recommended": True,
++                "direct_shoot_recommended": False,
+                 "best_target": None,
++                "recommended_action": "pass",
+             }
+ 
+         target_ranking: list[dict[str, Any]] = []
+@@ -620,7 +706,7 @@
+                 {
+                     "target_id": target_id,
+                     "score": score,
+-                    "reason": "；".join(reasons) if reasons else "证据不足",
++                    "reason": ";".join(reasons) if reasons else "证据不足",
+                 }
+             )
+         target_ranking.sort(key=lambda item: (-int(item["score"]), str(item["target_id"])))
+@@ -628,13 +714,18 @@
+         second = target_ranking[1] if len(target_ranking) > 1 else None
+         best_score = int(best["score"]) if best else 0
+         second_score = int(second["score"]) if second else 0
+-        pass_recommended = best is None or best_score < 4 or (best_score - second_score < 2 and best_score < 6)
++        margin = best_score - second_score
++        direct_shoot_recommended = bool(best and best_score >= 4 and (margin >= 2 or best_score >= 6))
++        pass_recommended = best is None or (best_score <= 3 and second_score <= 3 and margin < 2)
++        recommended_action = "shoot" if direct_shoot_recommended else "pass" if pass_recommended else "defer"
+         return {
+             "legal_targets": legal_targets,
+             "recent_memory": recent_memory,
+             "target_ranking": target_ranking,
+             "pass_recommended": pass_recommended,
+-            "best_target": best["target_id"] if best and not pass_recommended else None,
++            "direct_shoot_recommended": direct_shoot_recommended,
++            "recommended_action": recommended_action,
++            "best_target": best["target_id"] if best else None,
+         }
+ 
+     def _score_hunter_target(self, target_id: str, memory_entries: list[dict[str, Any]], public_state: Mapping[str, Any]) -> tuple[int, list[str]]:
+@@ -644,20 +735,26 @@
+         target_lower = target_token.lower()
+         score = 0
+         reasons: list[str] = []
+-        seen_rounds: set[str] = set()
+-        public_blob = ""
++        mention_rounds: set[str] = set()
++        accusers: set[str] = set()
++        supporters: set[str] = set()
++        vote_hits = 0
++        conflict_hits = 0
+         try:
+             public_blob = json.dumps(public_state, ensure_ascii=False, separators=(",", ":"))
+         except TypeError:
+             public_blob = repr(public_state)
+         public_blob = self._truncate_text(public_blob, 1000)
+-
+-        for entry in memory_entries[-8:]:
++        public_blob_lower = public_blob.lower()
++
++        def add_reason(text: str) -> None:
++            if text and len(reasons) < 4:
++                reasons.append(self._truncate_text(text, 80))
++
++        for entry in memory_entries[-10:]:
+             entry_label = self._public_memory_label(entry)
+-            if entry_label in seen_rounds:
+-                continue
+             records = entry.get("records") if isinstance(entry.get("records"), list) else []
+-            matched_this_entry = False
++            entry_has_target = False
+             for record in records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY]:
+                 record_text = self._public_record_text(record)
+                 if not record_text:
+@@ -666,51 +763,107 @@
+                 speaker = self._first_compact(record, ("speaker", "voter", "player"))
+                 target = self._first_compact(record, ("target", "vote"))
+                 claim = self._first_compact(record, ("claim",))
+-                hit = _text_mentions_token(record_text, target_token) or any(
++                target_hit = _text_mentions_token(record_text, target_token) or any(
+                     _text_mentions_token(candidate, target_token) or _text_mentions_token(target_token, candidate)
+                     for candidate in (speaker, target, claim)
+                     if candidate
+                 )
+-                if not hit:
++                if not target_hit:
+                     continue
+-                matched_this_entry = True
+-                delta = 0
++                entry_has_target = True
++                mention_rounds.add(entry_label)
++
++                record_score = 0
++                negative = any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "冲票", "带票", "带节奏", "矛盾", "反水"))
++                positive = any(word in lower for word in ("金水", "可信", "好人", "站边", "支持", "清白"))
++                vote_terms = any(word in lower for word in ("票", "vote", "投", "投给", "出票", "跟票", "弃票"))
++                contradiction = any(word in lower for word in ("前后不一", "自相矛盾", "改口", "对不上", "口径变了", "解释不通"))
++
+                 if target and target_lower in target.lower():
+-                    if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "冲票", "带票", "矛盾", "反水", "带节奏")):
+-                        delta += 4
+-                    elif any(word in lower for word in ("票", "vote", "投", "怀疑", "身份", "死亡", "出局")):
+-                        delta += 2
+-                    if any(word in lower for word in ("金水", "可信", "好人", "站边", "支持", "清白")):
+-                        delta -= 3
++                    if negative:
++                        record_score += 4
++                        conflict_hits += 1
++                        if speaker:
++                            accusers.add(speaker)
++                        add_reason(f"{entry_label} {record_text}")
++                    elif vote_terms:
++                        record_score += 2
++                        vote_hits += 1
++                        if speaker:
++                            accusers.add(speaker)
++                        add_reason(f"{entry_label} 票压：{record_text}")
++                    if positive:
++                        record_score -= 3
++                        if speaker:
++                            supporters.add(speaker)
++                        add_reason(f"{entry_label} 被公开保/金水：{record_text}")
+                 elif speaker and target_token in speaker.lower():
+-                    if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "矛盾")):
+-                        delta += 2
++                    if negative or contradiction:
++                        record_score += 2
++                        conflict_hits += 1
++                        accusers.add(speaker)
++                        add_reason(f"{entry_label} 发言冲突：{record_text}")
+                 elif claim and target_token in claim.lower():
+-                    if any(word in lower for word in ("对跳", "查杀", "狼", "wolf")):
+-                        delta += 2
++                    if negative:
++                        record_score += 2
++                        conflict_hits += 1
++                        if speaker:
++                            accusers.add(speaker)
++                        add_reason(f"{entry_label} 对跳/查杀：{record_text}")
++                    elif positive:
++                        record_score -= 2
++                        if speaker:
++                            supporters.add(speaker)
++                        add_reason(f"{entry_label} 公开好人链：{record_text}")
+                 elif target_token in lower:
+-                    if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "冲票", "带票", "矛盾")):
+-                        delta += 1
+-                    if any(word in lower for word in ("金水", "可信", "好人", "站边", "支持")):
+-                        delta -= 1
+-                if not delta:
+-                    continue
+-                score += delta
+-                if len(reasons) < 3:
+-                    reasons.append(self._truncate_text(f"{entry_label} {record_text}", 72))
+-            if matched_this_entry:
+-                seen_rounds.add(entry_label)
++                    if negative:
++                        record_score += 1
++                        conflict_hits += 1
++                    if positive:
++                        record_score -= 1
++
++                if vote_terms and target_token in lower:
++                    record_score += 1
++                    vote_hits += 1
++                if contradiction and target_token in lower:
++                    record_score += 1
++                    conflict_hits += 1
++                if any(word in lower for word in ("死亡", "出局", "翻牌", "验", "夜刀", "刀口")) and target_token in lower:
++                    record_score += 1
++                if negative and positive:
++                    record_score += 1
++
++                if record_score:
++                    score += record_score
++                    add_reason(f"{entry_label} {record_text}")
++            if entry_has_target:
+                 score += 1
++
++        if len(mention_rounds) >= 2:
++            score += min(len(mention_rounds), 3)
++        if len(accusers) >= 2:
++            score += 2
++        elif len(accusers) == 1 and conflict_hits >= 2:
++            score += 1
++        if len(accusers) and len(supporters):
++            score += 1
++        if vote_hits >= 2:
++            score += 1
++        if conflict_hits >= 2:
++            score += 1
++
+         if _text_mentions_token(public_blob, target_token):
+             score += 1
+-            if len(reasons) < 3:
+-                reasons.append("public_state出现该目标")
+-        if _text_mentions_token(" ".join(self._public_memory_label(entry) for entry in memory_entries), target_token):
++            add_reason("public_state出现该目标")
++        if _text_mentions_token(public_blob_lower, target_token) and any(word in public_blob_lower for word in ("查杀", "wolf", "狼", "对跳", "冲票", "带票", "矛盾", "反水")):
+             score += 1
+-        score = max(score, 0)
++        if _text_mentions_token(public_blob_lower, target_token) and any(word in public_blob_lower for word in ("金水", "好人", "可信", "清白")):
++            score -= 1
++
+         if not reasons:
+             reasons.append("公开记忆里缺少强关联")
+-        return score, reasons[:3]
++        score = max(score, 0)
++        return score, self._dedupe_preserve_order(reasons)[:4]
+ 
+     def _build_public_memory_entry(self, value: Any) -> dict[str, Any] | None:
+         if not isinstance(value, Mapping):
+@@ -718,13 +871,14 @@
+         records: list[dict[str, Any]] = []
+         self._extract_public_records(value, records, depth=0, seen=set())
+         round_part, phase_part = self._public_memory_key(value)
+-        summary = self._format_public_memory_entry(round_part, phase_part, records, value)
++        enriched_records = [self._attach_public_context(record, round_part, phase_part) for record in records]
++        summary = self._format_public_memory_entry(round_part, phase_part, enriched_records, value)
+         if not summary:
+             return None
+         return {
+             "round": round_part,
+             "phase": phase_part,
+-            "records": records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY],
++            "records": enriched_records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY],
+             "summary": summary,
+         }
+ 
+@@ -738,7 +892,7 @@
+             if not isinstance(record, Mapping):
+                 continue
+             signature = tuple(
+-                self._first_compact(record, (key,)) for key in ("speaker", "voter", "player", "target", "vote", "claim", "death", "kind", "text")
++                self._first_compact(record, (key,)) for key in ("round", "phase", "speaker", "voter", "player", "target", "vote", "claim", "death", "kind", "text")
+             )
+             if signature in seen:
+                 continue
+@@ -799,7 +953,7 @@
+         return self._truncate_text(f"{header}: " + " | ".join(segments), 220)
+ 
+     def _extract_public_records(self, value: Any, records: list[dict[str, Any]], *, depth: int, seen: set[tuple[str, ...]]) -> None:
+-        if len(records) >= 12 or depth > _PUBLIC_MEMORY_MAX_SCAN_DEPTH:
++        if len(records) >= 16 or depth > _PUBLIC_MEMORY_MAX_SCAN_DEPTH:
+             return
+         if isinstance(value, Mapping):
+             record = self._mapping_to_public_record(value)
+@@ -811,7 +965,7 @@
+                     seen.add(signature)
+                     records.append(record)
+             for item in value.values():
+-                if len(records) >= 12:
++                if len(records) >= 16:
+                     return
+                 if isinstance(item, (Mapping, list, tuple)):
+                     self._extract_public_records(item, records, depth=depth + 1, seen=seen)
+@@ -819,7 +973,7 @@
+         if isinstance(value, (list, tuple)):
+             for item in value[:6]:
+                 self._extract_public_records(item, records, depth=depth + 1, seen=seen)
+-                if len(records) >= 12:
++                if len(records) >= 16:
+                     return
+             return
+         if isinstance(value, str):
+@@ -853,17 +1007,25 @@
+     def _public_record_text(self, value: Any) -> str:
+         if isinstance(value, Mapping):
+             parts: list[str] = []
+-            for key in ("speaker", "voter", "player", "target", "vote", "claim", "death", "kind", "text"):
++            for key in ("round", "phase", "speaker", "voter", "player", "target", "vote", "claim", "death", "kind", "text"):
+                 compact = self._first_compact(value, (key,))
+                 if compact:
+                     if key == "text" and parts:
+                         parts.append(f"text={compact}")
+                     else:
+                         parts.append(f"{key}={compact}")
+-            return self._compact_text(" ".join(parts), 160)
++            return self._compact_text(" ".join(parts), 180)
+         if isinstance(value, str):
+             return self._compact_text(value, 160)
+         return self._compact_text(self._compact_value(value), 160)
++
++    def _attach_public_context(self, record: Mapping[str, Any], round_part: str, phase_part: str) -> dict[str, Any]:
++        enriched = dict(record)
++        if round_part and "round" not in enriched:
++            enriched["round"] = round_part
++        if phase_part and "phase" not in enriched:
++            enriched["phase"] = phase_part
++        return enriched
+ 
+     @staticmethod
+     def _dedupe_preserve_order(items: list[str]) -> list[str]:
+--- hunter-n00032/task.md
++++ hunter-n00075/task.md
+@@ -3,11 +3,11 @@
+ 你的目标是帮助好人找狼，并在被击杀触发猎人行动时做出稳定、合法、可解释的选择。
+ 
+ ## 决策 checklist
+-1. 先确认当前阶段是否真的到了猎人反应；只在行动包明确允许时开枪或跳过。
+-2. 先列出当前合法目标，绝不使用行动包外的目标，也不要把尚未发生的猎人反应当作事实。
+-3. 猎人反应阶段必须先比较合法目标，再按“身份可信度 / 票型一致性 / 连锁风险”三项判断；证据不足时优先跳过。
+-4. 结合最近 1~2 轮公开发言、票型、死亡链和公开身份跳点，优先找：高票、带节奏、与已公开好人链冲突、前后说法不一致的玩家。
+-5. 活着时的发言必须引用最近 1~2 条公开证据，至少带 1 个具体人名和 1 个具体理由；不要用空泛套话代替判断。
++1. 先确认当前阶段是否真的到了猎人反应；只有行动包明确允许时，才可以开枪、跳过或执行同类合法动作。
++2. 猎人反应时先列出当前全部合法目标，再按“票型一致性 / 身份可信度 / 连锁风险”三项逐个比较；只能在合法目标内排序，不能用行动包外的人名。
++3. 只要某个目标同时满足高票压强、被多轮重复点名、与公开好人链冲突、或前后说法矛盾，就应优先考虑开枪；只有所有候选都弱、或连锁风险明显偏高时才跳过。
++4. 判断目标时必须同时看最近更长的公开票链、对跳链、死亡链和身份公开链，优先找：持续被集火、与已公开好人链冲突、说法前后不一致、或在昼夜链上自洽性最差的玩家。
++5. 活着时的发言必须引用最近 1~2 条公开证据，至少带 1 个具体人名和 1 个具体理由；不要用空泛套话代替判断，也不要把没有发生的猎人反应写成事实。
+ 
+ ## 公开发言规则
+ - 活着时保持自然的好人视角，回应当下争议，但必须落到具体人名、具体票型或具体身份冲突上。

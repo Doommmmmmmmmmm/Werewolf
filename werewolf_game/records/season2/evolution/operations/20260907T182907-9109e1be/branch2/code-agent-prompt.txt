@@ -1,0 +1,147 @@
+你正在修改狼人杀角色 wolf 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf-n00044 已是稳定可用节点：20 局 14 胜、无 focus fallback/invalid，当前代码的公开记忆、夜刀收敛和发言约束比祖先明显成熟。下一代不应大改框架，而应补上两个高杠杆缺口：一是把“私有狼队名单/队友存活状态”显式纳入策略层，避免白天发言和投票计划完全按公共压力自动卖队友；二是为白天投票、警长竞选/警长投票等非发言 target/pass 行动增加 wolf-specific 计划。目前 _build_wolf_strategy 只有夜间 target_actions 和发言动作有策略，day_vote、sheriff_vote、sheriff_candidacy 等经常落入 stage=other，导致模型只凭通用 prompt 决策。在抽样胜局中这种缺口已造成给真预言家警徽、连续牺牲队友等高风险行为，虽偶然赢局，但在失败局中全狼出局说明该风险会被放大。",
+  "evidence": [
+    {
+      "source": "read_evaluation_summary",
+      "fact": "wolf-n00044 最近评测 20 局完成 20 局，胜 14 负 6，胜率 0.70；focus_role_only 下 fallback_count=0、invalid_decision_count=0，recommended_status=retained。",
+      "interpretation": "结构化输出和运行稳定性已经足够好，下一代应做小范围策略增强，而不是重写校验、工具或 prompt 框架。"
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "_build_wolf_strategy 对 is_night 且 target_actions 的场景构建 night_plan；对 speech_actions 构建 day_focus；其他行动直接返回 stage='other'、objective='只做当前合法行动，不额外发散'。",
+      "interpretation": "day_vote、sheriff_vote、sheriff_candidacy 等关键非发言行动没有狼队专用建议，模型只能从大包上下文自行推断。"
+    },
+    {
+      "source": "random_game_replay game3 seq64-94",
+      "fact": "p4 公开跳预言家并报 p1 查杀；随后警长投票中 p1、p8、p12 等狼仍投给 p4，p4 以 8.0 票当选警长。",
+      "interpretation": "狼队在警长投票阶段没有显式规避“已查杀队友的预言家候选”，给真预言家 1.5 票权与带队权，属于高风险投票缺口。"
+    },
+    {
+      "source": "random_game_replay game3 seq104-145",
+      "fact": "p1 白天发言称 p4 竞选时没给具体查验或逻辑链，但实际 p4 在 seq64 已明确报验 p1 查杀；p1 当天被 10.5 票出局。",
+      "interpretation": "在被查杀/对跳场景，叙事没有围绕真实公开链做足够一致的反驳或牺牲定位，出现可被好人抓住的事实错误。"
+    },
+    {
+      "source": "random_game_replay game3 seq187-223",
+      "fact": "p5 在 p4 死后称 p4 与 p2 可能狼踩狼/递刀，随后被多数玩家批评推论跳跃，并在当天以 9.5 票出局。",
+      "interpretation": "当前 day_focus 的最高压力/警徽链策略容易生成过猛、证据不足的攻击；需要区分‘硬冲公共权力位’与‘软质疑、转移、保队友’。"
+    },
+    {
+      "source": "random_game_replay game3 seq259-289",
+      "fact": "p8 先公开站 p7，被 p9/p10/p11/p12 连续抓成抱团，p12 随后补刀要求票压 p8，p8 当天出局。",
+      "interpretation": "牺牲队友在该胜局中最终成功，但体现出当前策略没有显式的队友保护/切割阈值，可能把局面推向连续卖狼。"
+    },
+    {
+      "source": "read_game_replay game4 final_snapshot",
+      "fact": "game4 为失败局，最终 winner='village'；最终公开/审计角色显示狼为 p1、p3、p7、p8，四狼全部死亡，唯一存活者 p12 为 villager。",
+      "interpretation": "至少一类失败来自狼队被逐个清出；结合代码缺少队友感知的白天投票/叙事规划，合理怀疑过度跟随公共压力和缺少队友风险管理是重要弱点。"
+    },
+    {
+      "source": "current_agent.py",
+      "fact": "_select_day_focus(turn_packet, memory_snapshot, current_dialogue, speech_actions) 只遍历 public_state records，未读取 private_information 中的狼队友；_score_target 只避免 target_id == self.player_id，不避免狼队友。",
+      "interpretation": "白天发言对象、夜刀候选和投票建议都缺少显式 teammate-aware 约束；虽然夜刀 allowed_actions 可能排除了部分非法目标，但公开叙事不会避免误伤队友。"
+    },
+    {
+      "source": "read_evolution_path / read_previous_diagnosis",
+      "fact": "祖先 n00004 引入公开记忆和压缩；n00020 胜率约 0.65 且曾有少量 invalid/fallback；n00044 胜率提升至 0.70 且 focus 无非法行动。",
+      "interpretation": "当前进化方向有效，下一步应在现有记忆/策略层增量添加 wolf vote/team heuristics，避免引入复杂外部状态或破坏稳定性。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "关键白天非发言行动缺少狼队策略层",
+      "details": "当前 _build_wolf_strategy 只对夜间 target_actions 和 speak/last_words 构建具体策略。day_vote、sheriff_vote、sheriff_candidacy、pass 类政治动作落入 stage='other'，没有推荐目标、规避目标、队友保护或警长局规则。"
+    },
+    {
+      "cause": "私有狼队信息没有被系统性利用",
+      "details": "虽然狼人行动包应能看到狼队友，但当前代码没有统一抽取 wolf_ids/alive_wolf_ids，也没有把队友身份传给 _select_day_focus、_rank_targets 或投票策略。因此白天对象选择只看公共压力，容易跟风卖队友或制造队友抱团。"
+    },
+    {
+      "cause": "警长竞选/警长投票缺少反预言家防御",
+      "details": "抽样胜局中真预言家 p4 报 p1 查杀后仍获得狼票并当选。代码没有识别‘候选人公开跳预言家且查杀本狼/队友’这种高危险候选，也没有优先投非该候选或狼队候选。"
+    },
+    {
+      "cause": "白天攻击模式对证据强度和队友风险的阈值过粗",
+      "details": "_select_day_focus 根据警长、claim、票型、提及等公共特征给最高压力者分配 attack/deflect/sacrifice，但没有区分目标是否队友、是否已有不可逆查杀、是否只是可软质疑的警徽链。结果可能出现证据不足的硬冲，如 p5 对 p2 递刀论被全场反打。"
+    },
+    {
+      "cause": "事实一致性检查不足",
+      "details": "p1 白天称 p4 竞选时没给具体查验，但公开回放显示 p4 已报 p1 查杀。当前 compact dialogue 只保留最近 3 条、ledger claim 提取有限，模型在被查杀高压场景可能遗漏关键公开事实。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增私有狼队抽取 helper，例如 _wolf_team_ids(private_information) 和 _alive_wolf_ids(private_information, records/memory)。支持常见字段 wolf_ids、wolves、teammates、known_wolves、team_members；过滤 None，保留 self。把结果加入 _build_compact_turn_prompt 的 wolf_strategy 或 private_team_context，但不要写入公开发言文本。",
+      "rationale": "让策略层能区分队友、自己和外部玩家；这是后续队友保护、警长投票规避和残局人数判断的基础。只读取行动包内已有私有信息，不越界。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_wolf_strategy 中，在 night 分支之前或之后新增对 day_vote/sheriff_vote 这类 target_actions 的白天投票策略分支，例如 _build_vote_strategy(turn_packet, memory_snapshot, current_dialogue, target_actions)。返回 recommended_target、avoid_targets、mode、reason、backup_target。day_vote 优先压非狼公共高压点；若最高压力是队友，则按阈值选择 soft_bus/deflect：只有队友已被明确查杀、票势不可逆或牺牲可换叙事时才建议投队友，否则推荐第二高非狼目标或 pass/分票合法项。",
+      "rationale": "补齐当前 stage='other' 的最大策略空洞，减少模型在投票阶段无计划跟风，尤其减少连续卖队友。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 sheriff_vote 增加专用 ranking：候选人若在 current_dialogue/recent_public_claims 中跳预言家、报查杀 self 或 alive_wolf_id，则加入 avoid_targets 并大幅降权；优先投非该候选、可疑好人候选或存活狼候选。若所有候选都不理想，允许 pass（若合法）或选择最不威胁候选。输出 reason 中明确‘避免给查杀队友的预言家警徽’。",
+      "rationale": "修复 game3 中狼票把 p4 真预言家送上警长的高风险行为。警徽 1.5 票权和发言顺序对狼局影响很大，是低成本高收益增强。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为 sheriff_candidacy/pass 阶段增加轻量 deterministic 建议：若 allowed_actions 同时含 sheriff_candidate 和 pass，使用 wolf_ids 与 seat/id 排序决定至多 1 名狼上警（例如最低 seat 或 hash(self.player_id+round) 命中的狼），其他狼默认 pass；如果已有公开查杀/对跳压力则受压狼可不上警或可悍跳由模型决定。把建议写入 wolf_strategy.stage='sheriff_candidacy'。",
+      "rationale": "避免多狼同时上警或全狼无计划上警，同时保留一名狼争夺警徽/搅局的可能。该规则确定性强，适合多狼独立会话。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展 _select_day_focus 签名，传入 wolf_team_ids/alive_wolf_ids。候选排序时保留公共压力原始分，但在返回 day_focus 中加入 target_is_teammate、teammate_pressure_level、recommended_public_stance。若目标是队友且 pressure 不到不可逆阈值，mode 从 attack/sacrifice 调整为 deflect 或 soft_distance，并要求发言‘轻踩不归票、转向非狼证据点’；若队友被查杀或已成票焦点，才允许 sacrifice，并给出后续解释锚点。",
+      "rationale": "保持当前发言具体性的优点，同时把卖队友变成有阈值、有后续叙事的选择，而不是单纯追随最高公共压力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强公开声明/查杀提取：在 _public_claim_text 或新增 _extract_claim_signals 中识别 text 中的‘预言家/查杀/金水/验了/警徽流/猎人/女巫/守卫’及 p\\d+ 目标，形成 recent_public_claims 的结构化 signal（speaker、role_claim、accused_ids、trusted_ids、raw_text）。优先从 current_round_dialogue 和 public ledger 最近文本提取，不需要完整历史。",
+      "rationale": "让被查杀和警长投票策略能依据真实公开发言，降低 p1 那类‘否认对方给过查验’的事实错误。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _build_compact_turn_prompt 中为 vote/candidacy 阶段也提供 wolf_strategy，而不仅 day speech。确保 prompt 仍压缩在预算内：只传 top 3 候选、top 3 avoid、最近 3 条 claim signal，不注入完整历史。",
+      "rationale": "符合运行预算和工具约束，避免因策略字段过长导致 prompt 截断或成本上升。"
+    },
+    {
+      "file": "task.md",
+      "change": "追加一段‘警长与投票补充任务’：警长投票不要把警徽给公开查杀自己或队友的强神职候选，除非明确执行深度倒钩；白天投票先判断目标是否队友，队友非不可救时优先软切割或转移到非狼证据点，队友不可救时牺牲并保留后续解释；残局按 slaughter_side 优先判断屠民/屠神路径。",
+      "rationale": "把代码生成的策略与角色任务文本对齐，减少模型忽略新增字段。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "过度保护队友可能显得抱团",
+      "mitigation": "不要简单禁止投队友；使用 pressure 阈值。队友被明确查杀、发言崩盘或票势不可逆时仍允许 sacrifice/soft_bus。"
+    },
+    {
+      "risk": "private_information 中狼队字段名不确定",
+      "mitigation": "helper 做宽松字段扫描，并在找不到 wolf_ids 时退化为空集合，不影响现有稳定性。"
+    },
+    {
+      "risk": "新增 claim 文本解析可能误判普通玩家复述‘查杀’为自己声明",
+      "mitigation": "只把 speaker 自称‘我是预言家/我验了/我查杀’作为强 claim；其他包含关键词的文本仅作为 weak signal，降权使用。"
+    },
+    {
+      "risk": "投票策略过强可能减少模型灵活性",
+      "mitigation": "在 wolf_strategy 中给 recommended_target/backup/avoid 和 rationale，而不是绕过模型直接返回行动；保留模型根据 allowed_actions 最终选择。"
+    },
+    {
+      "risk": "增加策略字段会提高 prompt 长度和 token 成本",
+      "mitigation": "限制每类列表最多 3 项，文本 clip 到 60-80 字；不要注入完整回放或完整历史。"
+    },
+    {
+      "risk": "警长竞选 deterministic 分工在狼队字段缺失时失效",
+      "mitigation": "缺失时保持原行为；有字段时只作为建议，不改变行动 schema。"
+    }
+  ],
+  "code_agent_brief": "请在候选工作区只修改 task_agent.py 和 task.md，不改 Game Engine、规则、行动 schema、工具、模型网关或评测。目标是在 wolf-n00044 当前稳定代码上做最小增量：1) 在 task_agent.py 增加从 turn_packet['private_information'] 宽松抽取狼队友列表的 helper，并结合 public_state/memory 过滤 alive_wolf_ids；2) 修改 _build_compact_turn_prompt/_build_wolf_strategy，让 day_vote、sheriff_vote、sheriff_candidacy/pass 这些非发言关键阶段也有 wolf_strategy，而不是 stage='other'；3) 实现 _build_vote_strategy：day_vote 推荐非狼公共高压目标，若最高压力是队友则按‘明确查杀/票势不可逆才牺牲，否则软切割或转移’处理；sheriff_vote 避免把警徽投给公开跳预言家且查杀 self 或 alive_wolf_id 的候选，优先非该候选/狼候选/pass；sheriff_candidacy 用 wolf_ids 的 seat/id 排序确定至多一名狼上警，其余默认 pass 建议；4) 给 _select_day_focus 传入 alive_wolf_ids，返回 target_is_teammate、recommended_public_stance、soft_bus/deflect/sacrifice 阈值，减少无计划连续卖队友；5) 轻量解析 current_round_dialogue/recent_public_texts 中的预言家、查杀、金水、猎人、女巫、守卫、警徽流信号，只保留最近 3 条 clipped signal，用于投票和发言事实一致性；6) task.md 增加警长投票、队友保护/牺牲阈值、残局 slaughter_side 路径的简短补充。保持现有 normalize_decision/decision_error/工具预算逻辑不变，新增 prompt 字段必须短小，不能注入完整历史。重点回归场景：公开候选 p4 报 p1 查杀时，狼不应默认投 p4 警长；队友成为最高公共压力但未不可救时，其他狼应优先软切割或转移到非狼证据点，而不是机械跟票卖队友。"
+}

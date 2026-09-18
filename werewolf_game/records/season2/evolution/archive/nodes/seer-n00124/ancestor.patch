@@ -1,0 +1,343 @@
+--- seer-n00110/task_agent.py
++++ seer-n00124/task_agent.py
+@@ -188,14 +188,20 @@
+             "total_tokens": 0,
+         }
+         # 这不是完整历史，只是从公开同步和自己的已提交行动中提炼的事实锚点。
+-        self._seer_state: dict[str, list[Any]] = {
++        self._seer_state: dict[str, Any] = {
+             "own_public_claims": [],
++            # Legacy summaries are retained for compatibility, but never define facts.
+             "announced_inspections": [],
+             "announced_vote_targets": [],
+             "announced_badge_flows": [],
+             "last_day_vote_counts": [],
+             "death_events": [],
+             "sheriff_history": [],
++            # These ledgers have deliberately different meanings.
++            "inspection_ledger": [],
++            "public_plan_ledger": [],
++            "public_commitment_ledger": [],
++            "current_pressure_target": None,
+         }
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+@@ -246,12 +252,7 @@
+             if text:
+                 if re.search(r"预言家|先知|\bseer\b", text, re.I):
+                     self._remember("own_public_claims", "公开声称身份：预言家")
+-                for target, team in self._spoken_inspections(text):
+-                    self._remember("announced_inspections", {"target_id": target, "team": team})
+-                for target in self._spoken_targets(text, r"(?:主票|归票|投票|票口|压|出)" ):
+-                    self._remember("announced_vote_targets", target)
+-                for target in self._spoken_badge_targets(text):
+-                    self._remember("announced_badge_flows", target)
++                self._record_seer_public_commitments(text)
+         elif kind in {"VOTE_CAST", "DAY_VOTE_CAST"} and actor == self.player_id:
+             target = self._event_target(flattened)
+             if target:
+@@ -306,15 +307,20 @@
+ 
+     @staticmethod
+     def _spoken_inspections(text: str) -> list[tuple[str, str]]:
++        """Extract only explicit claimed results, never a bare planned target."""
+         found: list[tuple[str, str]] = []
+         target_re = r"(?:p\d+|\d+号)"
+-        for match in re.finditer(target_re + r"[^。；\n]{0,12}(查杀|金水|狼人|狼|好人|村民|wolf|village)", text, re.I):
+-            target_match = re.search(target_re, match.group(0), re.I)
+-            if target_match is None:
+-                continue
+-            target = TaskAgent._normalize_public_target(target_match.group(0))
+-            result = match.group(1).lower()
+-            team = "wolf" if result in {"查杀", "狼人", "狼", "wolf"} else "village"
++        result_re = r"(查杀|金水|验出(?:了)?(?:狼人|狼|好人|村民)|狼人|狼|好人|村民|wolf|village)"
++        # A result must be explicit and close to a player reference.  In particular,
++        # “警徽流 p3” and “先验 p3” do not match this expression.
++        for match in re.finditer(
++            r"(" + target_re + r")(?:(?!(?:p\d+|\d+号))[^。；\n]){0,16}" + result_re,
++            text,
++            re.I,
++        ):
++            target = TaskAgent._normalize_public_target(match.group(1))
++            result = match.group(2).lower()
++            team = "wolf" if ("查杀" in result or "狼" in result or result == "wolf") else "village"
+             found.append((target, team))
+         return found
+ 
+@@ -349,6 +355,8 @@
+         private = turn_packet["private_information"]
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
++        if str(private.get("role")) == "seer":
++            self._sync_seer_inspection_ledger(private)
+ 
+         system = self._system_prompt(private)
+         prompt = {
+@@ -421,6 +429,8 @@
+                 continue
+             self._record_token_usage(raw)
+             action = normalize_decision(raw, turn_packet["request"])
++            if str(private.get("role")) == "seer":
++                action = self._repair_seer_action(action, turn_packet["request"])
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
+                 self._remember_own_action(action)
+@@ -476,47 +486,120 @@
+             if isinstance(text, str):
+                 if re.search(r"预言家|先知|\bseer\b", text, re.I):
+                     self._remember("own_public_claims", "公开声称身份：预言家")
+-                for target, team in self._spoken_inspections(text):
+-                    self._remember("announced_inspections", {"target_id": target, "team": team})
+-                for target in self._spoken_targets(text, r"(?:主票|归票|投票|票口|压|出)"):
+-                    self._remember("announced_vote_targets", target)
+-                for target in self._spoken_badge_targets(text):
+-                    self._remember("announced_badge_flows", target)
++                self._record_seer_public_commitments(text)
+         elif action.get("kind") == "day_vote" and action.get("target_id"):
+             self._remember("announced_vote_targets", str(action["target_id"]))
++
++    def _record_seer_public_commitments(self, text: str) -> None:
++        """Record only small, typed commitments; this is not a second fact source."""
++        for target, team in self._spoken_inspections(text):
++            entry = {"type": "claimed_result", "target_id": target, "team": team}
++            self._remember("public_commitment_ledger", entry, limit=12)
++            # Kept only as a legacy display; it is never used as actual evidence.
++            self._remember("announced_inspections", {"target_id": target, "team": team})
++        for target in self._spoken_badge_targets(text):
++            self._remember("announced_badge_flows", target)
++            self._remember("public_plan_ledger", {"type": "badge_flow", "status": "planned", "target_id": target}, limit=4)
++        for target in self._spoken_targets(text, r"(?:下一验|下验|验人计划|计划验|先验)"):
++            self._remember("public_plan_ledger", {"type": "next_inspection", "status": "planned", "target_id": target}, limit=4)
++        for target in self._spoken_targets(text, r"(?:主票|归票|投票|票口|压|出)"):
++            self._remember("announced_vote_targets", target)
++            self._remember("public_commitment_ledger", {"type": "vote", "target_id": target}, limit=12)
++
++    def _repair_seer_action(
++        self, action: dict[str, Any], request: Mapping[str, Any]
++    ) -> dict[str, Any]:
++        """Repair only an illegal/repeated night check, never public text."""
++        if action.get("kind") != "seer_inspect":
++            return action
++        allowed: list[str] = []
++        for item in request.get("allowed_actions", []):
++            if isinstance(item, Mapping) and item.get("kind") == "seer_inspect":
++                ids = item.get("target_ids")
++                if isinstance(ids, list):
++                    allowed = [str(x) for x in ids]
++                break
++        if not allowed:
++            return action
++        already = {str(x.get("target_id")) for x in self._seer_state["inspection_ledger"]}
++        candidate = str(action.get("target_id", ""))
++        if candidate in allowed and candidate not in already:
++            return action
++        fresh = [target for target in allowed if target not in already]
++        pressure = str(self._seer_state.get("current_pressure_target") or "")
++        replacement = pressure if pressure in fresh else (fresh[0] if fresh else "")
++        if replacement:
++            repaired = dict(action)
++            repaired["target_id"] = replacement
++            return repaired
++        if any(item.get("kind") == "pass" for item in request.get("allowed_actions", []) if isinstance(item, Mapping)):
++            return {"request_id": request.get("request_id"), "player_id": self.player_id, "kind": "pass"}
++        return action
++
++    def _sync_seer_inspection_ledger(self, private: Mapping[str, Any]) -> None:
++        actual = self._extract_seer_known_results(private)
++        ledger = self._seer_state["inspection_ledger"]
++        for index, result in enumerate(actual[:6], start=1):
++            entry = {"seq": index, "target_id": result["target_id"], "team": result["team"]}
++            if entry not in ledger:
++                ledger.append(entry)
++        del ledger[6:]
++
++    def _seer_fact_ledger(
++        self, private: Mapping[str, Any], public_state: object, request: Mapping[str, Any]
++    ) -> dict[str, Any]:
++        del public_state
++        self._sync_seer_inspection_ledger(private)
++        actual = list(self._seer_state["inspection_ledger"][:6])
++        planned = list(self._seer_state["public_plan_ledger"][-4:])
++        legal_votes: list[str] = []
++        raw_actions = request.get("allowed_actions")
++        if isinstance(raw_actions, list):
++            for item in raw_actions:
++                if isinstance(item, Mapping) and item.get("kind") == "day_vote":
++                    ids = item.get("target_ids")
++                    if isinstance(ids, list):
++                        legal_votes = [str(x) for x in ids]
++                    break
++        actual_ids = {str(x["target_id"]) for x in actual}
++        live_wolves = [x["target_id"] for x in actual if x["team"] == "wolf" and x["target_id"] in legal_votes]
++        villages = [x["target_id"] for x in actual if x["team"] == "village"]
++        unresolved = [x for x in planned if x.get("target_id") not in actual_ids]
++        pressure = live_wolves[0] if live_wolves else None
++        if pressure is None:
++            recent_votes = self._seer_state.get("announced_vote_targets", [])
++            pressure = next((str(x) for x in reversed(recent_votes) if str(x) in legal_votes), None)
++        self._seer_state["current_pressure_target"] = pressure
++        claimed = [x for x in self._seer_state["public_commitment_ledger"] if x.get("type") == "claimed_result"]
++        mismatches = [x for x in claimed[-4:] if not any(
++            x.get("target_id") == a.get("target_id") and x.get("team") == a.get("team") for a in actual
++        )]
++        return {
++            "actual_inspections": actual,
++            "planned_targets": planned,
++            "live_verified_wolves": live_wolves[:6],
++            "verified_villagers": villages[:6],
++            "unresolved_plan_targets": unresolved[:4],
++            "legal_vote_targets": legal_votes[:12],
++            "claimed_result_corrections_needed": mismatches[:3],
++        }
+ 
+     def _seer_state_brief(
+         self, private: Mapping[str, Any], public_state: object, request: Mapping[str, Any]
+     ) -> str:
+-        known = self._extract_seer_known_results(private)
+-        allowed = request.get("allowed_actions") if isinstance(request, Mapping) else []
+-        target_ids: set[str] = set()
+-        if isinstance(allowed, list):
+-            for item in allowed:
+-                if isinstance(item, Mapping) and item.get("kind") == "day_vote":
+-                    ids = item.get("target_ids")
+-                    if isinstance(ids, list):
+-                        target_ids.update(str(x) for x in ids)
+-        wolves = [x["target_id"] for x in known if x["team"] == "wolf" and (not target_ids or x["target_id"] in target_ids)]
+-        villages = [x["target_id"] for x in known if x["team"] == "village"]
++        facts = self._seer_fact_ledger(private, public_state, request)
+         brief = {
+-            "私有查验(按收到顺序)": known[:6],
+-            "已公开身份": self._seer_state["own_public_claims"][-6:],
+-            "已公开查验(按顺序)": self._seer_state["announced_inspections"][-8:],
+-            "仍可投的已验狼": wolves[:6],
+-            "已验金水": villages[:6],
+-            "最近公开主票": self._seer_state["announced_vote_targets"][-6:],
+-            "警徽流": self._seer_state["announced_badge_flows"][-6:],
+-            "最近投票结果": self._seer_state["last_day_vote_counts"][-3:],
+-            "公开死亡原因": self._seer_state["death_events"][-6:],
+-            "警长记录": self._seer_state["sheriff_history"][-6:],
++            **facts,
++            "public_identity": self._seer_state["own_public_claims"][-3:],
++            "public_votes": self._seer_state["announced_vote_targets"][-4:],
++            "recent_vote_counts": self._seer_state["last_day_vote_counts"][-2:],
++            "deaths": self._seer_state["death_events"][-4:],
+         }
+-        # 结构化摘要而非原话；截断是最后一道预算保护，避免异常 ID/状态撑大 prompt。
+         return json.dumps(brief, ensure_ascii=False, separators=(",", ":"))[:1800]
+ 
+     @staticmethod
+     def _turn_instruction(request: Mapping[str, Any], private: Mapping[str, Any], feedback: str,
+-                          seer_state: Mapping[str, list[Any]] | None = None) -> str:
++                          seer_state: Mapping[str, Any] | None = None) -> str:
+         instruction = render_prompt(
+             "player_turn_instruction.txt",
+             action_contract=render_action_contract(request),
+@@ -530,7 +613,7 @@
+     @staticmethod
+     def _seer_phase_hint(
+         request: Mapping[str, Any], private: Mapping[str, Any],
+-        seer_state: Mapping[str, list[Any]] | None = None,
++        seer_state: Mapping[str, Any] | None = None,
+     ) -> str:
+         if str(private.get("role")) != "seer":
+             return ""
+@@ -538,10 +621,23 @@
+         allowed_actions = raw_actions if isinstance(raw_actions, list) else []
+         kinds = {str(item.get("kind") or "") for item in allowed_actions if isinstance(item, Mapping)}
+         hints: list[str] = []
++        actual = list((seer_state or {}).get("inspection_ledger", []))[:6]
++        plans = list((seer_state or {}).get("public_plan_ledger", []))[-4:]
++        actual_text = "、".join(f"{x.get('target_id')}={x.get('team')}" for x in actual) or "无"
++        plan_text = "、".join(str(x.get("target_id")) for x in plans) or "无"
+         if "seer_inspect" in kinds:
+-            hints.append("预言家夜验：只从 target_ids 选，避开已验位，优先验证能改变明日放逐的冲突核心或票仓。")
+-        if kinds & {"sheriff_candidate", "sheriff_election_speech", "speak", "last_words"}:
+-            hints.append("首日/警上若已拿到查验，先公开查验事实，再给两个警徽流、验人理由和当日主票；若已暴露且可能夜死，也要把下一验顺序和不同结果下的处置说完。")
++            hints.append(f"夜验只选当前 target_ids 且避开真实已验目标（实际账本：{actual_text}）；警徽流/计划目标不是查验结果。")
++        speech_kinds = {"sheriff_candidate", "sheriff_election_speech", "speak", "last_words"}
++        if kinds & speech_kinds:
++            hints.append(f"发言短骨架：实际查验按顺序[{actual_text}]；计划目标单列为警徽流/下一验[{plan_text}]；再给唯一主票、备选及依据。不得把计划说成查杀/金水。")
++            if not any(x.get("team") == "wolf" for x in actual if isinstance(x, Mapping)):
++                hints.append("当前没有已验狼：必须明说没有查杀，不得用警徽流、投票推断或玩家自述替代查验事实。")
++            if (seer_state or {}).get("public_commitment_ledger"):
++                corrections = [x for x in seer_state["public_commitment_ledger"] if x.get("type") == "claimed_result" and not any(
++                    x.get("target_id") == a.get("target_id") and x.get("team") == a.get("team") for a in actual
++                )]
++                if corrections:
++                    hints.append("曾有公开查验口径与真实账本不符：下一次必须按真实顺序纠正，说明原说法是计划/口径错误，不得继续复述。")
+         if "day_vote" in kinds:
+             known = TaskAgent._extract_seer_known_results(private)
+             allowed_targets = set()
+@@ -556,8 +652,9 @@
+             else:
+                 hints.append("白天投票优先执行自己公开的归票，保护金水，不投已验好人，除非有更高可信的公开事实。")
+         if seer_state and seer_state.get("own_public_claims"):
+-            hints.append("公开一致性硬约束：已经公开跳过预言家就不得否认或改写；复述查验必须严格按‘已公开查验’顺序，不要颠倒时间线。")
++            hints.append("公开一致性硬约束：已经跳预言家就不得否认；只能把实际账本说成已验结果。没有已验狼时明确说‘当前没有已验狼’，不能用警徽流代替。")
+         if "last_words" in kinds:
++            hints.append("遗言模板：先报真实查验，再报公开矛盾，最后给唯一票口、备选和死后执行计划。")
+             death_events = (seer_state or {}).get("death_events", [])
+             own_death = [x for x in death_events if isinstance(x, Mapping)]
+             if own_death:
+@@ -565,6 +662,10 @@
+                 hints.append(f"遗言事实约束：公开记录显示你的死亡原因是“{reason}”；不要说成其他方式。")
+             else:
+                 hints.append("遗言事实约束：若死亡方式无法从公开记录确认，请使用‘我死亡后’等中性说法，不要声称被狼人刀。")
++        if "day_vote" in kinds:
++            pressure = str((seer_state or {}).get("current_pressure_target") or "")
++            if pressure:
++                hints.append(f"唯一主票优先：{pressure}；若改票，必须引用新的公开事实。备选只能作为备选，不要同时给多个主票。")
+         if kinds & {"sheriff_badge_transfer", "destroy"}:
+             hints.append("警徽处置优先传给已公开金水或最可信带队好人；若没有可信接徽者，再考虑撕徽。")
+         return " ".join(hints)
+@@ -620,10 +721,14 @@
+                 "town": "village",
+                 "wolf": "wolf",
+                 "werewolf": "wolf",
++                "狼人": "wolf",
++                "狼": "wolf",
+                 "evil": "wolf",
+                 "mafia": "wolf",
++                "村民": "village",
++                "好人": "village",
+             }
+-            return aliases.get(lowered, text)
++            return aliases.get(lowered)
+ 
+         def add_entry(target: object, team: object) -> None:
+             if target is None:
+@@ -681,9 +786,6 @@
+             "seer_inspections",
+             "seer_checks",
+             "known_results",
+-            "memory",
+-            "role_state",
+-            "seer_state",
+         ):
+             value = private.get(key)
+             if value is not None:
+--- seer-n00110/task.md
++++ seer-n00124/task.md
+@@ -11,7 +11,7 @@
+ 
+ ## 预言家阶段化执行清单
+ 
+-- 首个白天或警上若已经拿到查验，优先公开身份；发言至少包含：昨夜查验目标与结果、验人理由、两个警徽流目标及为什么验、当日主票或主压目标、对金水的保护声明。
++- 首个白天或警上若已经拿到查验，优先公开身份；发言至少包含：真实查验目标与结果、验人理由、两个警徽流计划目标及为什么验、当日唯一主票或主压目标、对金水的保护声明。警徽流只能称为计划，不能写成已验结果。
+ - 若当选警长，白天发言必须给出唯一优先票口和备选票口；投票阶段原则上执行自己公开的归票，不要只说“听完再定”。
+ - 夜间查验优先验证会改变明日放逐结果的对象：对跳者、投/踩自己金水的人、上一轮主导错误放逐的人、关键票仓、警徽候选、发言强势但身份未定者；低优先级是已公开金水、基本坐实好人、已死亡或已验过者。
+ - 若自己已经暴露且可能夜死，白天必须提前留下下一验顺序，以及不同查验结果下的处置，不要把关键信息留到夜里再说。
+@@ -22,6 +22,13 @@
+ - 不得把推断、玩家自述、遗言、平安夜解释或投票推断写成已确认身份。
+ - 可以并且应该明确说“这是推测”或“这是基于当前公开信息的判断”。
+ 
++### 事实账本优先
++
++- 公开复述必须先按真实收到结果的顺序列出实际查验，使用“实际查验/验出”措辞；只能把真实查验账本中的目标说成查杀或金水。
++- 警徽流、下一验、先验某人和验人建议是“计划目标”，必须单独说明为计划；不得把计划目标冒充已完成查验。计划目标若已死亡或尚未查验，要明确说“计划未完成”，并说明当前没有该目标的实际查验结果。
++- 发言最后给出唯一主票、一个备选及依据。若调整原主票，必须指出对应的新公开事实；已验狼存活且可投时，主票优先锁定该目标，已验金水原则上不投。
++- 对跳预言家时先比较双方的实际查验顺序和可核对的公开事实，再给唯一站边与票口；不得用“警徽流目标”冒充查杀，也不得为了维持旧口径继续复述错误时间线。发现口径错误时，按真实账本主动更正。
++
+ ## 公开承诺一致性
+ 
+ - 一旦公开跳过预言家，后续所有发言都必须承认“我已经跳过预言家”，不得改口说自己没跳、没报验或只是诈身份。

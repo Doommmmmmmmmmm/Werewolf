@@ -1,0 +1,641 @@
+--- guard-n00037/task_agent.py
++++ guard-n00099/task_agent.py
+@@ -193,11 +193,12 @@
+         self.model_client = model_client
+         self.persona = persona
+         self.request_coordinator = request_coordinator
+-        self.max_tokens = max_tokens
++        # Enforce the external Task-Agent budget even if a caller supplies looser values.
++        self.max_tokens = min(900, max(1, int(max_tokens)))
+         self.max_decision_retries = max(0, int(max_decision_retries))
+-        self.max_tool_calls_per_decision = max(0, int(max_tool_calls_per_decision))
+-        self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+-        self.max_prompt_chars = max(1, int(max_prompt_chars))
++        self.max_tool_calls_per_decision = min(5, max(0, int(max_tool_calls_per_decision)))
++        self.max_tool_result_tokens = min(1000, max(1, int(max_tool_result_tokens)))
++        self.max_prompt_chars = min(12000, max(1, int(max_prompt_chars)))
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -213,6 +214,7 @@
+         self.player_risk_profile: dict[str, dict[str, int]] = {}
+         self._guard_signal_round_counts: dict[tuple[str, int], dict[str, int]] = {}
+         self._last_observed_round: int | None = None
++        self._guard_memory_round: int | None = None
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+         """接收公开同步，并提取最小守卫记忆。"""
+@@ -226,7 +228,7 @@
+         if str(private.get("role")) != self.profile.role:
+             raise ValueError("Task-Agent 的角色档案与行动包身份不一致")
+ 
+-        self._update_guard_memory(turn_packet.get("public_state") or {})
++        self._update_guard_memory(turn_packet)
+         system = self._system_prompt(private)
+         prompt = {
+             "game": turn_packet["game"],
+@@ -235,6 +237,9 @@
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+             "request": turn_packet["request"],
++            "guard_memory_summary": self._guard_memory_summary(
++                turn_packet["request"], turn_packet
++            ) if self.profile.role == "guard" else None,
+             "history_policy": {
+                 "default_context": "current_state_only",
+                 "current_round_dialogue_tool": CURRENT_ROUND_DIALOGUE_TOOL_NAME,
+@@ -246,7 +251,14 @@
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+         if current_dialogue:
+-            self._update_guard_memory({"current_round_dialogue": current_dialogue})
++            self._update_guard_memory({
++                "round": turn_packet["game"].get("round"),
++                "current_round_dialogue": current_dialogue,
++            })
++            if self.profile.role == "guard":
++                prompt["guard_memory_summary"] = self._guard_memory_summary(
++                    turn_packet["request"], turn_packet
++                )
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -255,7 +267,7 @@
+             return {
+                 "round": turn_packet["game"].get("round"),
+                 "phase": turn_packet["game"].get("public_phase", turn_packet["game"].get("phase")),
+-                "dialogue": current_dialogue,
++                "dialogue": self._bounded_tool_dialogue(current_dialogue),
+             }
+ 
+         feedback = ""
+@@ -330,9 +342,10 @@
+         role_task = self.profile.task
+         if self.profile.role == "guard":
+             role_task = role_task + (
+-                "\n\n守卫约束：只从当前 target_ids 里选；先判定今晚最可能被狼刀的好人；"
+-                "再看公开神职、警徽链和被多人压票者；话多不等于高风险；"
+-                "默认不要重复上一夜目标；不要把守护成功当作已确认结果。"
++                "\n\n守卫约束：只从当前 target_ids 里选；先看近期公开可信神职、确认好人和警徽链核心；"
++                "再看明确的近期狼人威胁，投票压力和热度只能辅助；话多或被点名不等于刀口。"
++                "默认不要重复上一夜目标（仅在规则禁止时是硬限制）；没有明显更好的外部目标时可考虑自守；"
++                "不要把守护成功当作已确认结果，也不要主动公开守卫身份或具体守护对象。"
+             )
+         return render_prompt(
+             "player_system.txt",
+@@ -352,9 +365,9 @@
+         validation_feedback = f"上一次输出未通过校验：{feedback}" if feedback else ""
+         if self.profile.role == "guard":
+             guard_note = (
+-                "守卫执行要点：只在当前 target_ids 内选；先找今晚最可能被刀的好人；"
+-                "优先公开神职、警徽链和被多人压票的关键节点；话多不等于高风险；"
+-                "没有更好目标时再自守。"
++                "守卫执行要点：只在当前 target_ids 内选；先看近期公开可信神职、确认好人和警徽链核心，"
++                "再看明确的近期狼人威胁；投票压力、被怀疑和热度只能辅助。没有明显更好的外部目标时才考虑自守；"
++                "不要公开守卫身份、具体守护对象或把平安夜当作守中证明。"
+             )
+             validation_feedback = guard_note + ("\n" + validation_feedback if validation_feedback else "")
+         return render_prompt(
+@@ -372,6 +385,44 @@
+         if inspect.iscoroutinefunction(complete_json):
+             return await complete_json(max_tokens=self.max_tokens, **kwargs)
+         return await asyncio.to_thread(complete_json, max_tokens=self.max_tokens, **kwargs)
++
++    def _bounded_tool_dialogue(self, dialogue: Any) -> list[Any]:
++        """Keep the restricted tool response below the per-call length budget."""
++        entries = dialogue if isinstance(dialogue, list) else [dialogue]
++        kept: list[Any] = []
++        for entry in reversed(entries):
++            candidate = [entry] + kept
++            if len(json.dumps(candidate, ensure_ascii=False)) > self.max_tool_result_tokens:
++                break
++            kept = candidate
++        if not kept and entries:
++            entry = entries[-1]
++            if isinstance(entry, Mapping):
++                compact = {
++                    key: entry[key] for key in ("speaker_id", "player_id", "text")
++                    if key in entry
++                }
++                if not compact:
++                    compact = {"text": str(entry)}
++                kept = [compact]
++            else:
++                kept = [{"text": str(entry)}]
++        # Compact the final entry until the serialized tool result itself fits.
++        while len(json.dumps(kept, ensure_ascii=False)) > self.max_tool_result_tokens:
++            entry = kept[-1]
++            if isinstance(entry, Mapping):
++                text_key = next((key for key in ("text", "content", "message")
++                                 if isinstance(entry.get(key), str)), None)
++                if text_key is None:
++                    kept = []
++                    break
++                compact = dict(entry)
++                text = str(compact[text_key])
++                compact[text_key] = text[: max(0, len(text) // 2)]
++                kept[-1] = compact
++            else:
++                kept[-1] = str(entry)[: max(0, len(str(entry)) // 2)]
++        return kept
+ 
+     def _record_token_usage(self, response: object) -> None:
+         self._model_token_usage["successful_response_count"] += 1
+@@ -427,21 +478,11 @@
+             return action
+         chosen = action.get("target_id")
+         ranked_targets = {item["candidate"] for item in ranked}
+-        if chosen not in ranked_targets:
+-            repaired = dict(action)
+-            repaired["target_id"] = ranked[0]["candidate"]
+-            return repaired
+-        best = ranked[0]
+-        chosen_item = next(item for item in ranked if item["candidate"] == chosen)
+-        score_gap = best["total_score"] - chosen_item["total_score"]
+-        if chosen_item["rank"] <= 1 and score_gap <= 12:
+-            return action
+-        if score_gap <= 4:
+-            return action
+-        if chosen_item["rank"] <= 2 and score_gap <= 8:
++        if chosen in ranked_targets:
++            # 合法目标代表模型已经完成了策略判断；本地画像绝不覆盖它。
+             return action
+         repaired = dict(action)
+-        repaired["target_id"] = best["candidate"]
++        repaired["target_id"] = ranked[0]["candidate"]
+         return repaired
+ 
+     def _guard_candidate_targets(
+@@ -478,28 +519,25 @@
+         ranked: list[dict[str, Any]] = []
+         for index, candidate in enumerate(candidates):
+             profile = self._guard_candidate_profile(candidate, request, packet, round_no)
++            # self is a preference, never a protocol prohibition.  Repeat is handled
++            # below only when the engine explicitly forbids it.
+             if candidate == self.player_id:
+-                profile["wolf_attack_risk"] -= 10_000
+-                profile["information_value"] -= 10_000
+-                profile["public_pressure"] -= 10_000
+-            if repeat_forbidden and self.last_protected_id and candidate == self.last_protected_id:
+-                profile["wolf_attack_risk"] -= 6_000
+-                profile["information_value"] -= 3_000
+-                profile["public_pressure"] -= 1_000
++                profile["wolf_attack_risk"] -= 3
++                profile["information_value"] -= 2
+             profile["score_key"] = (
++                profile["protection_tier"],
+                 profile["wolf_attack_risk"],
+-                profile["information_value"],
++                profile["trusted_claim"] + profile["confirmed_good"],
+                 profile["public_pressure"],
+-                profile["stage_bonus"],
+                 profile["recency"],
+                 -index,
+             )
+             profile["total_score"] = (
+-                profile["wolf_attack_risk"] * 100
+-                + profile["information_value"] * 14
+-                + profile["public_pressure"] * 5
+-                + profile["stage_bonus"] * 8
+-                + profile["recency"]
++                profile["protection_tier"] * 1000
++                + profile["wolf_attack_risk"] * 10
++                + profile["trusted_claim"] * 3
++                + profile["confirmed_good"] * 3
++                + profile["public_pressure"]
+             )
+             profile["candidate"] = candidate
+             ranked.append(profile)
+@@ -513,11 +551,10 @@
+         return ranked
+ 
+     def _guard_repeat_forbidden(self, allowed: Mapping[str, Any]) -> bool:
+-        if allowed.get("guard_can_repeat_protect") is True:
+-            return False
+         if allowed.get("guard_can_repeat_protect") is False:
+             return True
+-        return True
++        # Missing metadata is not permission to rewrite a legal model choice.
++        return False
+ 
+     def _guard_candidate_profile(
+         self,
+@@ -535,34 +572,28 @@
+         recency = 0
+         if isinstance(last_round, int) and last_round >= 0 and round_no is not None:
+             gap = max(0, round_no - last_round)
+-            recency = max(0, 10 - gap * 2)
+-        threat = int(bucket.get("threat", 0))
+-        claim = int(bucket.get("claim", 0))
++            recency = max(0, 10 - gap * 4)
++        recent_threat = int(bucket.get("recent_threat", bucket.get("threat", 0)))
++        trusted_claim = int(bucket.get("trusted_claim", bucket.get("claim", 0)))
++        confirmed_good = int(bucket.get("confirmed_good", 0))
++        sheriff_or_badge = int(bucket.get("sheriff_or_badge", 0))
++        pressure = int(bucket.get("pressure", 0))
+         vote = int(bucket.get("vote", 0))
+-        pressure = int(bucket.get("pressure", 0))
+         exposure = int(bucket.get("exposure", 0))
+         public_focus = 1 if candidate in self.recent_public_focus_ids else 0
+-        salient = 1 if self._looks_publicly_salient(candidate, request, packet) else 0
+-        wolf_attack_risk = threat * 12 + claim * 5 + vote * 4 + pressure * 2
+-        information_value = claim * 4 + vote * 5 + pressure * 3 + exposure + public_focus * 3 + salient * 3
+-        public_pressure = pressure * 5 + vote * 4 + exposure * 2 + public_focus * 2 + salient
+-        if threat and (claim or vote):
+-            wolf_attack_risk += 4
+-        if claim and vote:
+-            information_value += 3
+-        if alive_count is not None:
+-            if alive_count <= 5:
+-                wolf_attack_risk += 3
+-                information_value += 6
+-                public_pressure += 2
+-            elif alive_count <= 7:
+-                wolf_attack_risk += 1
+-                information_value += 3
+-        if candidate in self.alive_player_cache:
++        # 分层而非等权累计：公开核心和明确近期刀口是主信号，热度仅作微弱 tie-breaker。
++        protection_tier = (
++            sheriff_or_badge * 3 + confirmed_good * 2 + trusted_claim
++        )
++        wolf_attack_risk = recent_threat * 8 + protection_tier * 4
++        information_value = trusted_claim * 3 + confirmed_good * 4 + sheriff_or_badge * 4
++        public_pressure = min(8, pressure + vote + exposure + public_focus)
++        wolf_attack_risk += min(3, pressure + vote)  # 辅助，不能制造主导风险
++        if alive_count is not None and alive_count <= 5:
++            wolf_attack_risk += 1
++            information_value += 2
++        elif alive_count is not None and alive_count <= 7:
+             information_value += 1
+-        if recency:
+-            wolf_attack_risk += recency // 3
+-            information_value += recency // 2
+         return {
+             "wolf_attack_risk": wolf_attack_risk,
+             "information_value": information_value,
+@@ -570,6 +601,14 @@
+             "stage_bonus": stage_bonus,
+             "recency": recency,
+             "alive_count": alive_count or 0,
++            "protection_tier": protection_tier,
++            "recent_threat": recent_threat,
++            "trusted_claim": trusted_claim,
++            "confirmed_good": confirmed_good,
++            "sheriff_or_badge": sheriff_or_badge,
++            "pressure": pressure,
++            "vote": vote,
++            "exposure": exposure,
+         }
+ 
+     def _guard_stage_bonus(self, alive_count: int | None) -> int:
+@@ -641,95 +680,109 @@
+                 self._guard_signal_round_counts.pop(key, None)
+ 
+     def _update_guard_risk_memory(self, packet: Mapping[str, Any], round_no: int | None) -> None:
+-        self._scan_guard_signal_tree(packet, round_no)
++        if round_no is not None and round_no != self._guard_memory_round:
++            self._decay_guard_memory(round_no)
++            self._guard_memory_round = round_no
++        # Only known public structures are interpreted.  Unknown nested records are
++        # deliberately ignored: a field named ``target`` is not evidence of a wolf attack.
++        state = packet.get("public_state") if isinstance(packet.get("public_state"), Mapping) else packet
++        if isinstance(state, Mapping):
++            self._ingest_structured_guard_state(state, round_no)
++            for key in ("current_round_dialogue", "dialogue"):
++                if key in state:
++                    self._ingest_dialogue_entries(state[key], round_no)
++        if "current_round_dialogue" in packet:
++            self._ingest_dialogue_entries(packet["current_round_dialogue"], round_no)
++
++    def _decay_guard_memory(self, round_no: int) -> None:
++        for bucket in self.player_risk_profile.values():
++            for name in ("recent_threat", "threat", "pressure", "vote", "exposure", "claim"):
++                if name in bucket:
++                    # One-round memory remains useful, but old public pressure rapidly fades.
++                    bucket[name] = int(bucket[name] * 0.35)
++            if bucket.get("last_round", -1) < round_no - 2:
++                for name in ("recent_threat", "threat", "pressure", "vote", "exposure", "claim"):
++                    bucket[name] = 0
++
++    def _ingest_structured_guard_state(self, state: Mapping[str, Any], round_no: int | None) -> None:
++        aliases: dict[str, tuple[str, ...]] = {
++            "sheriff_or_badge": ("sheriff_id", "sheriff", "sheriff_chain", "badge_holder_id", "badge_chain", "警长id", "警徽持有者"),
++            "confirmed_good": ("confirmed_good_ids", "confirmed_good", "verified_good_ids", "known_good_ids"),
++            "recent_threat": ("recent_threat_ids", "wolf_attack_candidates", "night_threat_ids", "explicit_threat_ids"),
++            "pressure": ("current_pressure_ids", "suspect_ids", "recent_suspects", "pressure_ids"),
++            "vote": ("current_vote_targets", "vote_targets", "recent_vote_targets"),
++            "exposure": ("public_focus_ids", "key_player_ids"),
++            "trusted_claim": ("trusted_claim_ids", "public_role_claim_ids", "claimed_good_role_ids", "public_seer_ids", "seer_claim_ids"),
++        }
++        for signal_name, keys in aliases.items():
++            for key in keys:
++                value = state.get(key)
++                if value is None:
++                    continue
++                for player_id in self._extract_player_ids(value):
++                    self._bump_player_risk(player_id, signal_name, 1, round_no)
++        # Some kernels expose role claims as records.  A claim is still only a public
++        # signal, but applying it to the claimant is less ambiguous than to mentioned IDs.
++        claims = state.get("claims", state.get("public_claims", state.get("role_claims")))
++        if isinstance(claims, list):
++            for claim in claims:
++                if not isinstance(claim, Mapping):
++                    continue
++                claimant = self._first_id(claim.get("player_id", claim.get("speaker_id", claim.get("claimant"))))
++                role = str(claim.get("role", claim.get("claimed_role", ""))).lower()
++                if claimant and role in {"seer", "witch", "guard", "hunter", "预言家", "女巫", "守卫", "猎人"}:
++                    self._bump_player_risk(claimant, "trusted_claim", 1, round_no)
++        elif isinstance(claims, Mapping):
++            for claimant, role in claims.items():
++                claimant_id = self._first_id(claimant)
++                if claimant_id and str(role).lower() in {"seer", "witch", "guard", "hunter", "预言家", "女巫", "守卫", "猎人"}:
++                    self._bump_player_risk(claimant_id, "trusted_claim", 1, round_no)
+ 
+     def _scan_guard_signal_tree(self, node: Mapping[str, Any] | list[Any] | Any, round_no: int | None) -> None:
++        """Compatibility shim: parse only a public packet's known top-level shape."""
+         if isinstance(node, Mapping):
+-            for key, value in node.items():
+-                key_text = str(key).lower()
+-                if key_text in {"current_round_dialogue", "dialogue", "dialogues", "chat", "speech", "speeches", "transcript"}:
+-                    self._ingest_dialogue_entries(value, round_no)
+-                    continue
+-                signal = self._signal_for_key(key_text)
+-                if signal is not None:
+-                    signal_name, signal_weight = signal
+-                    for player_id in self._extract_player_ids(value):
+-                        self._bump_player_risk(player_id, signal_name, signal_weight, round_no)
+-                    continue
+-                if self._is_guard_signal_container_key(key_text):
+-                    self._scan_guard_signal_tree(value, round_no)
+-            return
+-        if isinstance(node, list):
+-            for item in node:
+-                if isinstance(item, (Mapping, list)):
+-                    self._scan_guard_signal_tree(item, round_no)
++            self._update_guard_risk_memory(node, round_no)
+ 
+     def _signal_for_key(self, key_text: str) -> tuple[str, int] | None:
+-        vote_keys = ("vote", "voted", "投票", "票型", "归票", "票数")
+-        claim_keys = ("claim", "claimed", "身份", "报身份", "自报", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神", "神职")
+-        threat_keys = ("target", "kill", "attack", "夜刀", "刀口", "击杀", "夜里要刀")
+-        pressure_keys = ("suspect", "suspected", "怀疑", "pressure", "point", "点名", "push", "压票", "站边", "focus", "关注", "指认")
+-        exposure_keys = ("public", "公开", "center", "核心", "关键", "hot", "热度")
+-        if any(token in key_text for token in vote_keys):
+-            return ("vote", 4)
+-        if any(token in key_text for token in claim_keys):
+-            return ("claim", 5)
+-        if any(token in key_text for token in threat_keys):
+-            return ("threat", 4)
+-        if any(token in key_text for token in pressure_keys):
+-            return ("pressure", 3)
+-        if any(token in key_text for token in exposure_keys):
+-            return ("exposure", 2)
+-        return None
++        # Kept for callers of the old helper, but exact names prevent arbitrary
++        # recursive key matching from manufacturing signals.
++        return {
++            "recent_threat_ids": ("recent_threat", 1),
++            "wolf_attack_candidates": ("recent_threat", 1),
++            "sheriff_id": ("sheriff_or_badge", 1),
++            "badge_holder_id": ("sheriff_or_badge", 1),
++            "confirmed_good_ids": ("confirmed_good", 1),
++            "suspect_ids": ("pressure", 1),
++            "vote_targets": ("vote", 1),
++        }.get(key_text)
+ 
+     def _is_guard_signal_container_key(self, key_text: str) -> bool:
+-        return key_text in {
+-            "players",
+-            "player_list",
+-            "events",
+-            "history",
+-            "rounds",
+-            "records",
+-            "logs",
+-            "entries",
+-            "dialogue_list",
+-            "dialogue_entries",
+-            "dialogues",
+-            "chat",
+-            "speech",
+-            "speeches",
+-            "transcript",
+-        }
++        return key_text in {"public_state", "current_round_dialogue", "dialogue"}
+ 
+     def _ingest_dialogue_entries(self, dialogue: Any, round_no: int | None) -> None:
+         entries = dialogue if isinstance(dialogue, list) else [dialogue]
+         for entry in entries:
+             speaker_id = self._dialogue_entry_speaker_id(entry)
+             text = self._dialogue_entry_text(entry)
+-            explicit_targets = self._dialogue_entry_targets(entry)
+-            mentioned_ids = set(explicit_targets)
++            targets = self._dialogue_entry_targets(entry)
+             if text:
+-                mentioned_ids.update(self._extract_player_ids(text))
++                targets.update(self._extract_player_ids(text))
+             if speaker_id:
+-                mentioned_ids.discard(speaker_id)
++                targets.discard(speaker_id)
+             signals = self._dialogue_text_signals(text)
+-            if not signals:
+-                if explicit_targets:
+-                    signals = {"pressure": 1}
+-                else:
+-                    continue
+             if speaker_id and signals.get("claim"):
+-                self._bump_player_risk(speaker_id, "claim", signals["claim"], round_no)
+-            if speaker_id and signals.get("threat"):
+-                self._bump_player_risk(speaker_id, "pressure", max(1, signals["threat"] // 2), round_no)
+-            if speaker_id and not mentioned_ids and signals.get("pressure"):
+-                self._bump_player_risk(speaker_id, "pressure", signals["pressure"], round_no)
+-                continue
+-            for player_id in mentioned_ids:
+-                for signal_name, signal_weight in signals.items():
+-                    if signal_name == "claim" and player_id == speaker_id:
+-                        continue
+-                    self._bump_player_risk(player_id, signal_name, signal_weight, round_no)
++                self._bump_player_risk(speaker_id, "trusted_claim", 1, round_no)
++            # A threat applies to the explicitly named/mentioned target, never to the
++            # speaker.  Pressure and votes remain weak auxiliary evidence.
++            for player_id in targets:
++                if signals.get("threat"):
++                    self._bump_player_risk(player_id, "recent_threat", 1, round_no)
++                if signals.get("vote"):
++                    self._bump_player_risk(player_id, "vote", 1, round_no)
++                if signals.get("pressure"):
++                    self._bump_player_risk(player_id, "pressure", 1, round_no)
++                if signals.get("exposure"):
++                    self._bump_player_risk(player_id, "exposure", 1, round_no)
+ 
+     def _dialogue_entry_text(self, entry: Any) -> str:
+         if isinstance(entry, str):
+@@ -769,8 +822,11 @@
+             return {}
+         lowered = text.lower()
+         signals: dict[str, int] = {}
+-        if any(token in lowered for token in ("claim", "报身份", "自报", "我是预言家", "我是女巫", "我是守卫", "我是猎人", "我是白痴", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神", "神职", "预言家", "女巫", "守卫", "猎人", "白痴")):
+-            signals["claim"] = 5
++        if (
++            any(token in lowered for token in ("claim", "报身份", "自报", "自称", "跳预", "跳女巫", "跳守卫", "跳猎人", "跳神"))
++            or any(token in lowered for token in ("我是预言家", "我是女巫", "我是守卫", "我是猎人", "我是白痴"))
++        ):
++            signals["claim"] = 1
+         if any(token in lowered for token in ("投票", "归票", "vote", "票型", "点名")):
+             signals["vote"] = 4
+         if any(token in lowered for token in ("夜刀", "刀口", "今晚刀", "击杀", "attack", "kill")):
+@@ -787,8 +843,10 @@
+             bucket = {
+                 "pressure": 0,
+                 "vote": 0,
+-                "claim": 0,
+-                "threat": 0,
++                "recent_threat": 0,
++                "trusted_claim": 0,
++                "confirmed_good": 0,
++                "sheriff_or_badge": 0,
+                 "exposure": 0,
+                 "last_round": -1,
+             }
+@@ -806,9 +864,18 @@
+                 return
+             seen[signal_name] = seen.get(signal_name, 0) + 1
+         bucket = self._player_risk_bucket(player_id)
+-        bucket[signal_name] = bucket.get(signal_name, 0) + max(1, int(amount))
++        canonical = {"threat": "recent_threat", "claim": "trusted_claim"}.get(signal_name, signal_name)
++        increment = max(1, min(3, int(amount)))
++        if canonical in {"trusted_claim", "confirmed_good", "sheriff_or_badge"}:
++            bucket[canonical] = min(2, bucket.get(canonical, 0) + increment)
++        else:
++            bucket[canonical] = bucket.get(canonical, 0) + increment
+         if round_no is not None:
+             bucket["last_round"] = max(bucket.get("last_round", -1), round_no)
++
++    def _first_id(self, value: Any) -> str | None:
++        ids = self._extract_player_ids(value)
++        return next(iter(ids), None)
+ 
+     def _guard_signal_round_cap(self, signal_name: str) -> int:
+         if signal_name == "threat":
+@@ -845,65 +912,47 @@
+         return None
+ 
+     def _extract_focus_ids(self, packet: Mapping[str, Any] | Any) -> set[str]:
+-        focus_ids: set[str] = set()
++        """Return only explicitly structured public focus, not arbitrary mentioned IDs."""
+         if not isinstance(packet, Mapping):
+-            return focus_ids
+-        focus_keys = {
+-            "sheriff",
+-            "sheriff_id",
+-            "sheriff_chain",
+-            "警长",
+-            "警长id",
+-            "警徽",
+-            "警徽链",
+-            "vote",
+-            "voted",
+-            "vote_target",
+-            "vote_targets",
+-            "claim",
+-            "claimed",
+-            "target",
+-            "target_id",
+-            "target_ids",
+-            "suspect",
+-            "suspected",
+-            "pressure",
+-            "point",
+-            "focus",
+-            "threat",
+-            "公开",
+-            "public",
++            return set()
++        ids: set[str] = set()
++        for key in (
++            "sheriff_id", "badge_holder_id", "警长id", "警徽持有者",
++            "public_focus_ids", "key_player_ids", "confirmed_good_ids",
++            "recent_threat_ids", "wolf_attack_candidates",
++        ):
++            ids.update(self._extract_player_ids(packet.get(key)))
++        return ids
++
++    def _guard_memory_summary(
++        self, request: Mapping[str, Any], packet: Mapping[str, Any] | None = None
++    ) -> dict[str, Any]:
++        allowed = next(
++            (item for item in request.get("allowed_actions", [])
++             if isinstance(item, Mapping) and item.get("kind") == _GUARD_ACTION_KIND),
++            None,
++        )
++        if not isinstance(allowed, Mapping):
++            return {"note": "仅公开信号；无 guard_protect 候选。"}
++        ranked = self._guard_candidate_ranking(allowed, request, packet)
++        candidates = []
++        for item in ranked:
++            candidates.append({
++                "candidate": item["candidate"],
++                "recent_threat": item["recent_threat"],
++                "trusted_claim": item["trusted_claim"],
++                "confirmed_good": item["confirmed_good"],
++                "sheriff_or_badge": item["sheriff_or_badge"],
++                "recent_pressure": item["pressure"],
++                "recent_vote": item["vote"],
++                "heat_auxiliary": item["public_pressure"],
++            })
++        return {
++            "note": "仅为最近公开信号的分层摘要，不是身份事实；守护成功也不构成确认。",
++            "priority": "可信公开核心/确认好人、近期明确威胁 > 普通压力/投票/热度",
++            "candidates": candidates,
++            "last_protected": self.last_protected_id,
+         }
+-        container_keys = {
+-            "players",
+-            "player_list",
+-            "events",
+-            "history",
+-            "rounds",
+-            "records",
+-            "logs",
+-            "entries",
+-            "dialogue",
+-            "dialogues",
+-            "chat",
+-            "speech",
+-            "speeches",
+-            "transcript",
+-        }
+-        for key, value in packet.items():
+-            key_text = str(key).lower()
+-            if key_text in focus_keys or any(token in key_text for token in ("sheriff", "警长", "警徽", "vote", "claim", "target", "suspect", "pressure", "focus", "threat", "公开", "public")):
+-                focus_ids.update(self._extract_player_ids(value))
+-                continue
+-            if key_text in container_keys:
+-                if isinstance(value, Mapping):
+-                    focus_ids.update(self._extract_focus_ids(value))
+-                elif isinstance(value, list):
+-                    for item in value:
+-                        focus_ids.update(self._extract_player_ids(item))
+-                        if isinstance(item, Mapping):
+-                            focus_ids.update(self._extract_focus_ids(item))
+-        return focus_ids
+ 
+     def _extract_ids_by_keys(self, packet: Mapping[str, Any], keys: tuple[str, ...]) -> set[str]:
+         values: set[str] = set()
+--- guard-n00037/task.md
++++ guard-n00099/task.md
+@@ -1,8 +1,8 @@
+ # 守卫操作规程
+ 
+-- 先看当前 `target_ids`，只能从里面选。
+-- 先判断今晚最可能被狼刀的好人，再排序。
+-- 第二层再看公开神职、警徽链、被多人压票/点名者，以及最近两轮的关键信息节点。
+-- 话多不等于高风险；不要把公开热度当成刀口概率。
+-- 只有没有更好目标时才考虑自守；若规则不允许连守，默认不要重复同一人。
+-- 不要把“守护成功”当作已确认结果；发言只围绕公开矛盾、票型压力和可见信息展开。
++- 先读取当前 `target_ids`，最终只能从其中选择；非法或缺失的 `target_id` 才由协议兜底修复。
++- **第一阶段：核心保护。** 先判断近期最可能被狼刀的可信好人：公开且暂无对跳的神职声明、已确认好人、当前警长/警徽链核心，以及有明确近期刀口威胁的目标。它们是公开信号，不是身份事实，仍需结合当前局面判断真假。
++- **第二阶段：辅助判断。** 再看最近一轮的票型、多人明确施压和公开热度。被怀疑、被点名、发言多或处于中心，只能辅助预测狼刀，不能等同于“会被刀”，也不能让旧轮次压力长期主导排序。
++- 优先使用当前轮和最近 1 至 2 轮信息；不把任意记录字段中出现的 `target`、`claim`、`public` 或玩家编号当作证据。守护成功/平安夜不代表已确认守中。
++- 合法模型选择不得仅因本地画像分数、话多、被点名或热度高而被自动替换。默认避免上一夜目标；只有引擎明确禁止连续守护时才是硬限制。若规则允许且没有明显更好的外部目标，可以考虑自守。
++- 不主动公开守卫身份、具体守护对象，或把平安夜当作守中证明；正常发言仍按当前发言契约完成。

@@ -1,0 +1,108 @@
+你正在修改狼人杀角色 hunter 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "hunter-n00008 已经基本修复了 schema/重试类问题，但整体胜率仍只有 35%。主要瓶颈不是“会不会合法行动”，而是“能不能把公开票型、身份声明、改口和死亡链条整理成可用证据”，尤其在猎人反应时常把本该开枪的局面压成了跳过。",
+  "evidence": [
+    {
+      "fact": "评测汇总显示 20 局中 7 胜 13 负，invalid_decision_count=0，fallback_count=0。",
+      "implication": "当前节点的失败主要不是行动格式错误，而是策略判断质量不足。"
+    },
+    {
+      "fact": "回放中第 5 轮 p7 被刀后，hunter_reaction 选择了 pass；随后局面继续恶化，最终狼人获胜。",
+      "implication": "猎人反应阶段存在明显的‘该出手却跳过’问题。"
+    },
+    {
+      "fact": "当前代码里 `_score_hunter_target()` 只对 recent_memory 中直接提到 target_id 的文本打分，而且 recent_memory 只保留 5 条，_public_memory 只保留 12 条压缩事件。",
+      "implication": "未被近期文本反复点名的合法目标会天然得分很低，容易错过真实高危目标。"
+    },
+    {
+      "fact": "回放中的关键证据是票型/身份冲突：p4 先报 p7 金水，后验 p5 为狼；p5 对跳 p4；p11/p12 长期跟随狼队叙事并在后期形成稳定共推链。",
+      "implication": "这些证据需要结构化整理，而不是靠最近几条发言关键词命中。"
+    },
+    {
+      "fact": "当前 `_decision_brief()` 在 speak/last_words/hunter_reaction 三种模式下都只给了简短 recent_signals 和 dialogue_preview，没有 per-player 证据账本。",
+      "implication": "模型缺少稳定的‘谁支持谁、谁改口、谁的票型和身份声明不一致’视图。"
+    },
+    {
+      "fact": "另一分支 hunter-n00040 仍是 pending 且没有新 patch。",
+      "implication": "没有可直接借用的替代实现，问题应在当前代码里做定向增强。"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "证据压缩过度，丢失了跨轮次的票型和声明轨迹。",
+      "evidence": "observe 只维护 12 条压缩事件，决策时再截取最近 5 条；没有玩家级历史账本。",
+      "impact": "到中后期只剩零散文本片段，无法可靠识别狼队协同与身份冲突。"
+    },
+    {
+      "cause": "猎人反应排序是‘提到目标才加分’的文本检索式，而不是‘目标是否被多源证据指向’的结构化推断。",
+      "evidence": "_score_hunter_target 依赖 target_id 是否出现在 recent_memory，且关键词加权只作用于命中的行。",
+      "impact": "合法目标即使在公开票型上最可疑，只要近期没被点名，也可能排不到前面。"
+    },
+    {
+      "cause": "跳过阈值过于粗糙。",
+      "evidence": "_hunter_target_ranking 在 best_score < 1.0 时倾向直接 pass。",
+      "impact": "在信息稀疏但已存在明显票型冲突的局面里，模型会过早放弃开枪机会。"
+    },
+    {
+      "cause": "发言/遗言模式没有把角色任务真正落到‘证据链比较’上。",
+      "evidence": "decision_brief 里 speak/last_words 的 focus 仍是泛化的“回应争议”“收束票型”，没有结构化对照对象。",
+      "impact": "公开发言不能有效积累后续猎人反应所需的证据。"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个轻量的玩家证据账本，例如 `self._player_notes` 或 `self._public_facts`，在 `observe()` / `_extract_public_events()` 中持续更新每个玩家的发言摘要、投票历史、身份声明、被点名对象、死亡/出局状态和已公开角色。",
+      "rationale": "把分散的公开事件转成可检索的结构化状态，避免依赖最近几条文本碰运气。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 `_score_hunter_target()`：不再只看最近文本里是否出现 target_id，而是综合‘投票是否集中在目标身上’、‘目标是否参与过改口/对跳/互保’、‘目标是否被已公开神职点名’、‘目标是否与死亡链条冲突’等多个维度打分。",
+      "rationale": "让猎人反应真正比较合法 target_ids 的公开证据强弱，而不是比较最近谁被提到得更多。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "调整 `_hunter_target_ranking()` 的跳过逻辑：只有当所有合法目标都没有多源证据、且不存在明显冲突时才允许 pass；否则即使分数不高也要给出最弱风险目标而不是直接跳过。",
+      "rationale": "减少“该开枪却 pass”的损失，尤其是在中后期残局。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "扩展 `_decision_brief()`：在 hunter_reaction / speak / last_words 中加入一个极简的结构化摘要，例如 top contradictions、top vote pressure、claimed roles、hard clears，保持短但稳定。",
+      "rationale": "把模型提示词从‘最近几条话’升级为‘可直接用于比较的证据表’，但仍控制在预算内。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把 `_recent_memory()` 的默认窗口从只看极少数事件，改为结合最近轮次的聚合摘要，例如每轮一个压缩条目，必要时保留更长的回合跨度。",
+      "rationale": "避免中期以后关键证据被过早挤掉，特别是 sheriff、对跳、验人和票型转折。"
+    },
+    {
+      "file": "task.md",
+      "change": "把 hunter 任务说明补成明确的证据优先级：先看票型和身份声明是否一致，再看改口和死亡链条，最后才是主观像狼；猎人反应只有在合法目标中确实存在多源冲突时才开枪，且要明确写出跳过条件。",
+      "rationale": "让 prompt 与代码的新结构对齐，减少模型把‘最像狼’当默认模板。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "更强的结构化记忆可能增加 prompt 长度，接近 12000 字符上限。",
+      "mitigation": "只保留每名玩家的短账本和每轮压缩摘要，不保留全文历史。"
+    },
+    {
+      "risk": "更激进的开枪策略可能误伤高价值好人。",
+      "mitigation": "保留 hard clear 保护位，只有多源证据同时指向时才升高开枪优先级。"
+    },
+    {
+      "risk": "事件解析如果过于依赖具体字段名，可能被不同回放 schema 变体打断。",
+      "mitigation": "沿用当前宽松的 Mapping/关键词扫描方式，但把结果汇总到结构化账本中。"
+    },
+    {
+      "risk": "过度强调票型会让模型在隐蔽狼局里变得机械。",
+      "mitigation": "在 task.md 中保留‘证据不足可跳过’的出口，但限定为真正缺少多源证据时才跳。"
+    }
+  ],
+  "code_agent_brief": "请在 hunter-n00008 的下一代 Task-Agent 中，把 hunter 决策从“最近文本关键词检索”改成“结构化公开证据账本 + 多源证据打分”。重点改 task_agent.py：新增每个玩家的短账本，持续记录发言、投票、身份声明、对跳、被点名对象和死亡/出局；重写 hunter_reaction 评分，不要只看 target_id 是否出现在最近记忆里，而要综合票型、改口、身份冲突和死亡链条；把 pass 只保留给真正没有明显证据差异的局面。再同步修改 task.md，把 hunter 的证据优先级和跳过条件写得更明确，但不要改 Game Engine、规则、schema、工具或预算。"
+}

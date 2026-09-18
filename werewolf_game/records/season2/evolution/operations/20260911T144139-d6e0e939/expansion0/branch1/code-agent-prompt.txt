@@ -1,0 +1,97 @@
+你正在修改狼人杀角色 seer 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "seer-n00066 已通过保留筛选，但 20 局仅 6 胜、胜率 0.30，主要问题不是行动协议、工具预算或非法输出，而是预言家信息的连续性管理和死亡前公共交接不足。当前实现已经能记录查验、公开声明、票型和对跳摘要，也能在部分对跳局中形成有效归票；下一代应在不强制改写合法行动的前提下，增加“查验时间线—当前生存状态—死亡风险—警徽/发言交接”的结构化决策层。重点不是让模型泛泛地多说，而是让模型在自己可能被击杀、持有警徽或已有多条查杀时，优先留下可由好人继续执行的单一证据链。",
+  "evidence": [
+    "当前节点评测为 20 局全部完成、6 胜 14 负、胜率 0.30；focus_role_only 下没有焦点角色的 fallback、非法行动或错误，说明主要短板不是 schema 遵守或工具失败。",
+    "当前代码已经具备 SeerMemory、查验记录、公开声明、被质疑对象、警长候选、票型摘要、对话摘要和风险模式等能力，说明 n00066 相比基线已经解决了“完全没有跨回合记忆”的问题，但这些信息仍主要以字符串列表呈现。",
+    "随机回放 game13 中，p6 预言家首夜验 p3=wolf、次夜验 p2=wolf、第三夜验 p4=village，且竞选警长后成功推动 p3、p2 出局；这证明当前 agent 在直接查杀和早期归票上可以有效工作。",
+    "同一回放中 p6 在第三夜被狼人击杀，第三夜刚得到的 p4=village 没有机会公开；p6 的警徽转给 p4 后，p4 错误地自称女巫并被放逐，之后好人失去信息中心，最终狼胜。这表明当前系统缺少“高死亡风险时提前公开完整查验链和可信交接对象”的连续性协议。",
+    "game13 中 p6 第二天公开报出 p2=wolf，但没有在存活期间把“已验 p3=wolf、p2=wolf、p4=village”整理成明确的存活链和警徽交接建议。已有的 _public_plan_summary 会优先排序查杀，但没有结合预言家死亡风险生成交接计划。",
+    "当前 _rank_inspect_targets 主要基于警长候选、对跳、公开声明、近期票型和发言密度静态打分，缺少对“尚未解决的对跳”“当前最可能被狼人击杀的预言家位”“新查验能否形成可执行公共链”的显式区分。",
+    "当前 _turn_instruction 虽然按 night_inspect、竞选发言、白天发言和投票区分模式，但没有强制要求在高死亡风险下输出完整的最小交接集，也没有把“当前唯一票口、存活金水、查验顺序、警徽建议”作为独立字段提供给模型。",
+    "seer-n00067 的方向值得部分吸收：它放宽了风险发言中对查验链的压缩，并改善了投票信息提取和警长候选字段兼容；但不能直接照搬 seer-n00068 的策略强制逻辑。n00068 因 fallback_rate=0.3714、invalid_decisions=65 被丢弃，说明通过后处理改写模型目标或加入过强策略校验会破坏行动合法性和稳定性。",
+    "祖先 n00025 已加入座位到 player_id 的解析，减少了公开座位引用无法关联玩家的问题；下一代应在此基础上扩展决策状态，而不是重新引入更激进的动作重写或完整历史自动拼接。"
+  ],
+  "root_causes": [
+    "查验记忆是“事实列表”而不是可执行状态机。inspected 能保存结果，但没有稳定区分查验顺序、目标是否存活、是否已公开、是否仍需要交接，以及每条事实对当前票型的作用。",
+    "风险模式定义偏粗。_self_is_under_pressure 会把竞选阶段、被质疑、声明数量等信号合并成高风险，但没有单独表示“预言家可能在下一夜死亡”或“当前已有足够信息必须立即公开交接”。",
+    "公共计划缺少死亡连续性。_public_plan_summary 主要生成查验链、未公开查杀和查验归票，没有生成存活金水清单、警徽继承优先级、死亡前必须公开的最小事实集。",
+    "对跳分析仍依赖模型从摘要字符串中自行重建顺序。declared_claims 和 dialogue_digest 没有稳定保存 round、phase、首次声明者、声明目标、反驳关系和当前是否已解决，因此复杂对跳局容易出现重复、互相矛盾或把旧事实当成新事实。",
+    "夜验目标排序缺少“公共转化价值”与“存活风险”维度。当前启发式能找到警长候选和对跳，但不能明确优先验证会决定下一轮归票的关键位，也不能在多狼已被查杀后优先验证可信交接人。",
+    "模型提示同时要求短发言、保留信息、比较对跳和处理票型，但没有把这些目标组织成固定的最小输出骨架，导致不同回合可能出现事实分散、只报最新查杀、遗漏旧查验或没有留下后续行动建议。",
+    "当前代码没有必要的确定性策略保护：它没有把查验目标强行改写，这保持了稳定性；但也因此需要更好的 brief 和提示结构来引导模型，而不是依赖 post-normalization 修正模型动作。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "扩展 SeerMemory，新增轻量且有上限的结构化字段：inspection_timeline、claim_timeline、vote_timeline、public_inspection_signatures、current_pressure_target、death_risk_level、handoff_target、handoff_reason。每条查验记录至少保存 round、target、result、alive、announced；每条身份声明至少保存 round、phase、speaker、claim_text、claimed_targets；每条投票记录至少保存 round、phase、voter、target。",
+      "rationale": "把当前的字符串摘要升级为可比较的决策状态，支持查验顺序、公开状态、票型演变和交接对象的稳定推理；字段应限制数量并去重，避免完整历史自动注入和 prompt 膨胀。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _update_claims_from_dialogue、_update_claims_and_challenges_from_packet 和票型解析路径中，记录当前 round/phase，并为声明和投票做去重。保留现有 declared_claims、recent_vote_summary 等兼容字段，不要删除已有字段或改变外部接口。",
+      "rationale": "n00067 已显示票型和候选人路径兼容性有价值；结构化增量记录应兼容现有调用，避免类似 n00068 的大范围替换引发运行风险。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "新增一个只读的 _continuity_plan_summary 或等价函数，输出有限字段：alive_wolves_from_inspection、alive_villages_from_inspection、unannounced_wolf_result、latest_inspection、current_vote_target、handoff_target、handoff_reason、must_publish_before_death。handoff_target 优先从仍存活且已验为 village 的目标中选择，再结合其公开站边、票型一致性和是否有明显对跳；若没有可靠对象则返回空，不要臆造。",
+      "rationale": "game13 的关键损失发生在 p6 死亡后新查验无法公开。预言家需要在高风险时明确谁是可继续执行查验链的可信好人，而不是只看到一串查验结果。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "改造 _risk_mode_summary 和 _self_risk_summary，增加明确的 death_risk_level：normal、exposed、critical。critical 仅在有公开预言家身份、持警徽、已有未公开查杀、狼人明显围绕自己集火或夜间死亡风险显著时触发；不要仅因为处于竞选阶段就强制 critical。",
+      "rationale": "当前风险判断过于混合。将“竞选发言风险”和“必须完成信息交接的死亡风险”分开，能减少过度压缩，也能在真正危险时触发交接协议。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _build_seer_brief 的 public_plan 部分，固定提供四个有限列表或字符串：fact_chain、today_vote、protected_villagers、handoff_instruction。fact_chain 按查验时间顺序展示，查杀优先但不能丢失仍存活金水；today_vote 只选择一个合法且仍存活的事实目标；handoff_instruction 只在 death_risk_level 为 exposed/critical 时出现。",
+      "rationale": "避免模型从 inspected 的排序结果自行猜测发言优先级，直接把事实、当前票口、可信好人和交接动作分离，减少“多个互斥票口”与旧事实遗漏。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 _turn_instruction 的公开发言提示：在 sheriff_election_speech 和 day_speech 中使用固定骨架“已知查验链 -> 当前唯一矛盾/对跳 -> 今日唯一归票”；在 critical 模式追加“若有未公开查杀先报查杀；随后报仍存活金水；最后给出警徽/信息交接对象”。发言压缩只压缩推理，不压缩未公开查杀和必要交接事实。",
+      "rationale": "这与角色任务中“先说事实、查杀必须先公开”的要求一致，并直接解决 game13 中第三夜新查验无法交接的问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "修改 night_inspect 的提示和 _rank_inspect_targets，但保持 advisory-only：新增评分维度“未解决对跳目标”“当前主压目标”“能决定今日唯一票口”“存活且可能成为信息继承人”；只影响 preferred_targets 和解释，不在模型返回后强制替换 target_id。",
+      "rationale": "吸收 n00067 的信息转化方向，同时避免 n00068 的动作后处理风险。合法目标仍由行动包决定，模型仍需从 allowed target_ids 中选择。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增强 _compact_seer_memory，仅注入受限的最新查验链、存活查验结果、当前对跳摘要、当前投票摘要和 continuity plan；严格限制每类最多 4 到 6 项，并优先保留当前轮、仍存活目标、未公开查杀和交接信息。",
+      "rationale": "在 12000 字符和单次模型预算下提高有效信息密度，避免把完整历史拼接进 prompt，同时防止关键的旧查验因 inspected[-6:] 或简单排序被截断。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "不要新增 _apply_inspect_target_bias、强制策略错误或其他会改写合法模型动作的 post-validation。保留现有 normalize_decision 和 decision_error，仅把新增策略用于提示和 brief；如需校验，只校验内部字段是否存在，不把策略偏好当作 RuleViolationError。",
+      "rationale": "seer-n00068 已因 fallback_rate 和 invalid_decisions 严重超标而 discarded。下一代必须优先保持零焦点非法行动和低 fallback，再通过输入结构提升质量。"
+    },
+    {
+      "file": "task.md",
+      "change": "将角色任务补充为“信息连续性协议”：预言家持警徽、已公开身份或有未公开查杀时，公开发言必须按查验时间线报告；若判断下一夜高概率死亡，必须在同一发言中公开所有仍有公共价值的未报查杀、仍存活金水和可信交接/警徽建议；不得把死亡目标、旧查验或推测当作新查验。",
+      "rationale": "让模型层和代码层使用同一套优先级，减少代码 brief 与角色 task 的冲突，并把 game13 暴露的死亡后信息断层转化为明确行为要求。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充固定发言格式：竞选或正常白天为“事实链；唯一矛盾；今日归票”；critical 为“未公开查杀；存活金水；交接对象；今日归票”。投票时仍遵循查验事实优先，不因为怀疑交接对象而改投无事实支撑的目标。",
+      "rationale": "减少模型在高压局面下同时输出多个互斥怀疑，并确保最小发言仍能留下可复盘、可执行的公共信息。"
+    }
+  ],
+  "risks": [
+    "增加结构化字段和 brief 可能扩大 prompt；必须严格限制每类条目数量，并优先保留未公开查杀、存活目标和当前轮信息，否则可能抵消收益。",
+    "过早触发 critical 模式会让预言家过度暴露或反复报验；因此 death_risk_level 应与公开身份、持警徽、未公开查杀和实际集火信号绑定，不能仅依据竞选阶段。",
+    "自动选择 handoff_target 可能把狼伪装的高票好人或不稳定站边者当作交接对象；应把它作为建议而不是硬动作，且优先使用已验为 village 的存活目标。",
+    "完整查验链公开可能提高狼人夜刀优先级；这是预言家信息转化的必要代价，但应通过“只在高风险或有查杀时完整公开、平时保留部分推理”控制暴露。",
+    "查验结果、声明和投票的解析字段在不同 packet 形状下可能不一致；实现应复用现有 _first_present、_extract_player_ids、_compact_value 和现有兼容路径，不依赖隐藏事件或引擎修改。",
+    "如果把策略建议错误地实现为动作后处理，可能重现 seer-n00068 的大量非法行动和 fallback；所有新策略应只影响模型输入、brief 或提示，不改变行动 schema、候选目标过滤和外部校验。",
+    "单个回放 game13 不能证明所有败局都由交接问题造成；评测只有 20 局且 focus_role_only 汇总无法单独归因。因此下一代应同时保留当前已验证的直接查杀和归票能力，不做激进的完全重写。",
+    "在预言家没有公开身份、没有查杀或死亡风险低时，强制完整报验链可能降低生存率和话术可信度；应让 continuity plan 在条件满足时才进入提示。"
+  ],
+  "code_agent_brief": "请在当前 seer-n00066 工作区中只修改 task_agent.py 和 task.md，保留 TaskAgent 类、构造接口、现有行动 JSON 契约、工具接口和所有外部预算。目标是设计下一代预言家 Task-Agent：在不通过 post-processing 强行改写模型动作的情况下，把查验、声明、票型和死亡风险组织成有限的结构化 brief。具体实现要求：1）扩展 SeerMemory，增加带 round/phase/alive/announced 信息的查验、声明、投票时间线，以及 current_pressure_target、death_risk_level、handoff_target 等字段；2）在现有 packet 解析基础上记录并去重，不读取隐藏状态、不访问文件/网络/环境/进程；3）实现有限长度的 continuity/public plan，明确 fact_chain、today_vote、protected_villagers、handoff_instruction 和 must_publish_before_death；4）把 _turn_instruction 改成事实链 -> 唯一矛盾 -> 唯一归票的骨架，高死亡风险时追加未公开查杀、存活金水和交接建议；5）夜验目标只做 advisory ranking，不能新增强制 target 改写、策略 RuleViolationError 或其他动作后处理；6）compact memory 必须有严格条目上限，不能自动拼接完整历史；7）task.md 同步加入信息连续性协议和 critical 发言格式。请自行检查 Python 语法，重点避免 n00068 的 invalid_decisions/fallback_rate 回归，并保持现有合法行动路径不变。"
+}

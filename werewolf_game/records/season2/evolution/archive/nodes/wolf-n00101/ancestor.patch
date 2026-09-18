@@ -1,0 +1,415 @@
+--- wolf-n00019/task_agent.py
++++ wolf-n00101/task_agent.py
+@@ -214,6 +214,33 @@
+         self._self_history: list[dict[str, Any]] = []
+         self._recent_public_texts: list[str] = []
+         self._recent_self_texts: list[str] = []
++        # 这些账本只保存可公开观察到的短摘要，不保存完整历史或隐藏状态。
++        self._public_claims: dict[str, dict[str, Any]] = {}
++        self._public_vote_ledger: list[dict[str, Any]] = []
++        self._night_outcomes: list[dict[str, Any]] = []
++        self._self_claim_state: dict[str, Any] = {}
++        self._wolf_plan_cache: dict[str, Any] = {}
++
++    def _record_night_outcome_from_observe(self, summary: Mapping[str, Any]) -> None:
++        previous_phase = str(self._game_memory.get("phase") or "").lower()
++        current_phase = str(summary.get("phase") or "").lower()
++        was_night = "night" in previous_phase or "夜" in previous_phase
++        is_day = any(token in current_phase for token in ("day", "dawn", "昼", "白天"))
++        if not (was_night and is_day):
++            return
++        plan = self._wolf_plan_cache
++        primary = plan.get("primary_target") if isinstance(plan, Mapping) else None
++        if not primary:
++            return
++        old_dead = {str(item) for item in (self._game_memory.get("dead_players") or [])}
++        new_dead = [str(item) for item in (summary.get("dead_players") or []) if str(item) not in old_dead]
++        outcome = "success" if str(primary) in new_dead else "no_death"
++        self._night_outcomes.append({
++            "round": self._game_memory.get("round"),
++            "target": str(primary),
++            "outcome": outcome,
++        })
++        self._night_outcomes = self._night_outcomes[-6:]
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+         """接收公开同步并压缩成轻量记忆。"""
+@@ -221,6 +248,12 @@
+         summary = self._summarize_sync_packet(sync_packet)
+         if not summary:
+             return
++        self._record_night_outcome_from_observe(summary)
++        self._update_public_claims_from_summary(sync_packet, summary)
++        for vote in summary.get("vote_records") or []:
++            if isinstance(vote, Mapping):
++                self._public_vote_ledger.append(dict(vote))
++        self._public_vote_ledger = self._public_vote_ledger[-8:]
+ 
+         for key in ("round", "phase", "sheriff_id"):
+             value = summary.get(key)
+@@ -409,10 +442,26 @@
+             summary["text"] = clipped
+             self._recent_self_texts.append(clipped)
+             self._recent_self_texts = self._recent_self_texts[-_MAX_HISTORY_ITEMS:]
++            claimed_role = self._claimed_role_from_text(text)
++            if claimed_role:
++                previous = self._self_claim_state.get("claimed_role")
++                self._self_claim_state = {
++                    "claimed_role": claimed_role,
++                    "round": summary["round"],
++                    "text_snippet": clipped,
++                    "hard_claim": self._is_hard_claim(text),
++                    "previous_claimed_role": previous,
++                    "consistency_warning": bool(previous and previous != claimed_role),
++                }
+         self._self_history.append(summary)
+         self._self_history = self._self_history[-_MAX_HISTORY_ITEMS:]
+ 
+     def _memory_snapshot(self) -> dict[str, Any]:
++        claim_items = list(self._public_claims.values())
++        claim_items.sort(key=lambda item: (
++            item.get("claimed_role") not in {"seer", "guard", "witch", "hunter"},
++            -(self._nonnegative_int(item.get("claim_round", item.get("round")), fallback=0) or 0),
++        ))
+         return {
+             "game": {
+                 key: self._game_memory.get(key)
+@@ -420,6 +469,10 @@
+             },
+             "recent_public_history": self._public_history[-3:],
+             "recent_vote_summary": self._game_memory.get("recent_votes", [])[-2:],
++            "public_claims": claim_items[:6],
++            "public_vote_ledger": self._public_vote_ledger[-6:],
++            "self_claim_state": dict(self._self_claim_state),
++            "recent_night_outcomes": self._night_outcomes[-4:],
+         }
+ 
+     def _build_compact_turn_prompt(
+@@ -481,7 +534,10 @@
+         )
+         private_information = self._compact_snapshot(
+             turn_packet.get("private_information"),
+-            preferred_keys=("role", "team", "identity", "faction", "ability"),
++            preferred_keys=(
++                "role", "team", "identity", "faction", "ability",
++                "wolf_ids", "alive_wolf_ids", "teammates", "wolf_team", "known_wolves",
++            ),
+         )
+         wolf_strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
+         return {
+@@ -516,9 +572,21 @@
+         recent_vote_summary = memory_snapshot.get("recent_vote_summary") or []
+         dialogue_slice = current_dialogue[-3:]
+         if is_night and target_actions:
++            target_ids = sorted({str(target) for item in target_actions for target in item.get("target_ids") or []})
++            signature = f"{memory_snapshot.get('game', {}).get('round')}:{phase}:{','.join(target_ids)}"
++            cached = self._wolf_plan_cache if self._wolf_plan_cache.get("signature") == signature else {}
+             ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions)
+-            primary = ranked_targets[0] if ranked_targets else None
+-            backup = self._pick_backup_target(ranked_targets)
++            primary = next((item for item in ranked_targets if item.get("player_id") == cached.get("primary_target")), None)
++            backup = next((item for item in ranked_targets if item.get("player_id") == cached.get("backup_target")), None)
++            if primary is None:
++                primary = ranked_targets[0] if ranked_targets else None
++            if backup is None:
++                backup = self._pick_backup_target(ranked_targets)
++            self._wolf_plan_cache = {
++                "signature": signature,
++                "primary_target": primary.get("player_id") if primary else None,
++                "backup_target": backup.get("player_id") if backup else None,
++            }
+             return {
+                 "stage": "night",
+                 "phase_bucket": self._night_stage(memory_snapshot),
+@@ -530,8 +598,9 @@
+                 "recent_vote_summary": recent_vote_summary,
+                 "current_round_dialogue": dialogue_slice,
+                 "notes": self._night_notes(memory_snapshot, current_dialogue),
++                "night_outcomes": memory_snapshot.get("recent_night_outcomes", []),
+             }
+-        if speech_actions:
++        if speech_actions or target_actions:
+             focus_target = self._pick_day_focus_target(memory_snapshot, current_dialogue)
+             focus_reason = self._day_focus_reason(focus_target, recent_vote_summary, dialogue_slice)
+             return {
+@@ -539,7 +608,16 @@
+                 "phase_bucket": self._night_stage(memory_snapshot),
+                 "objective": "围绕当前争议对象持续修正叙事",
+                 "focus_target": focus_target,
++                "day_focus": {
++                    "object": focus_target,
++                    "evidence": focus_reason,
++                    "suggested_action": f"压 {focus_target}" if focus_target else "先锁定本轮争议对象",
++                },
+                 "focus_reason": focus_reason,
++                "self_narrative": dict(self._self_claim_state),
++                "consistency_warning": self._self_consistency_warning(),
++                "vote_intent": self._day_vote_intent(focus_target, memory_snapshot, turn_packet),
++                "speech_skeleton": self._speech_skeleton(focus_target, focus_reason),
+                 "narrative_contract": {
+                     "object": "必须点名一个具体对象",
+                     "reason": "必须引用 recent_vote_summary 或 current_round_dialogue 中的具体票型/发言",
+@@ -584,6 +662,26 @@
+         layer = 1
+         if target_id == self.player_id:
+             return {"score": -100, "layer": 0, "reason": "自己不能作为刀口"}
++        known_wolves = {str(item) for item in memory_snapshot.get("known_wolf_ids", [])}
++        if target_id in known_wolves:
++            score -= 60
++            reasons.append("队友，非牺牲局不刀")
++            layer = 0
++        claims = memory_snapshot.get("public_claims") or []
++        claim = next((item for item in claims if str(item.get("player_id")) == target_id), {})
++        claimed_role = str(claim.get("claimed_role") or "")
++        if claimed_role in {"seer", "guard", "witch", "hunter"}:
++            role_scores = {"seer": 30, "guard": 25, "witch": 22, "hunter": 16}
++            score += role_scores[claimed_role]
++            reasons.append(f"长期公开{claimed_role}身份")
++            layer = max(layer, 5 if claimed_role == "seer" else 4)
++            if claim.get("checked_targets") or claim.get("accused_targets"):
++                score += 14 if claimed_role == "seer" else 5
++                reasons.append("带验人/查杀链")
++        for outcome in memory_snapshot.get("recent_night_outcomes") or []:
++            if outcome.get("outcome") == "no_death" and str(outcome.get("target")) == target_id:
++                score -= 12
++                reasons.append("上一夜疑似被守/被救，暂不重复刀")
+         if record:
+             alive_state = self._is_alive_record(record)
+             if alive_state is False:
+@@ -596,6 +694,7 @@
+                     record.get("public_role"),
+                     record.get("claim"),
+                     record.get("claimed_role"),
++                    claim.get("claim_text"),
+                 )
+                 if item
+             )
+@@ -660,6 +759,8 @@
+     ) -> list[dict[str, Any]]:
+         public_state = turn_packet.get("public_state")
+         players = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
++        scoring_memory = dict(memory_snapshot)
++        scoring_memory["known_wolf_ids"] = self._known_wolf_ids(turn_packet)
+         candidates: list[dict[str, Any]] = []
+         seen: set[str] = set()
+         for action in target_actions:
+@@ -669,7 +770,7 @@
+                     continue
+                 seen.add(target)
+                 record = players.get(target, {})
+-                profile = self._target_threat_profile(target, record, memory_snapshot)
++                profile = self._target_threat_profile(target, record, scoring_memory)
+                 candidates.append(
+                     {
+                         "player_id": target,
+@@ -811,6 +912,133 @@
+             return 0
+         return corpus.count(str(target_id))
+ 
++    def _known_wolf_ids(self, turn_packet: Mapping[str, Any]) -> list[str]:
++        private = turn_packet.get("private_information")
++        if not isinstance(private, Mapping):
++            return []
++        known: list[str] = []
++        for key in ("alive_wolf_ids", "wolf_ids", "teammates", "known_wolves", "wolf_team"):
++            value = private.get(key)
++            if isinstance(value, Mapping):
++                value = list(value.keys())
++            if isinstance(value, (list, tuple, set)):
++                for item in value:
++                    normalized = self._normalize_player_ref(item)
++                    if normalized != self.player_id and normalized not in known:
++                        known.append(normalized)
++        return known
++
++    def _claimed_role_from_text(self, text: str) -> str | None:
++        role_patterns = (
++            ("seer", r"(?:我是|我才是|跳|自称)\s*(?:真|真正的)?\s*(?:预言家|预言|seer)"),
++            ("guard", r"(?:我是|我才是|跳|自称)\s*(?:真|真正的)?\s*(?:守卫|护卫|guard)"),
++            ("witch", r"(?:我是|我才是|跳|自称)\s*(?:真|真正的)?\s*(?:女巫|witch)"),
++            ("hunter", r"(?:我是|我才是|跳|自称)\s*(?:真|真正的)?\s*(?:猎人|hunter)"),
++            ("villager", r"(?:我是|我才是)\s*(?:真|真正的)?\s*(?:平民|村民|villager)"),
++        )
++        for role, pattern in role_patterns:
++            if re.search(pattern, text, re.IGNORECASE):
++                return role
++        return None
++
++    @staticmethod
++    def _is_hard_claim(text: str) -> bool:
++        return bool(re.search(r"(?:我是|我才是|我跳|明确跳|硬跳|自称)\s*(?:真|真正的)?\s*(?:预言家|守卫|女巫|猎人|平民|村民)", text, re.IGNORECASE))
++
++    def _normalize_player_ref(self, value: Any) -> str:
++        raw = str(value).strip().lower()
++        if raw.endswith("号") and raw[:-1].isdigit():
++            return "p" + raw[:-1]
++        if raw.isdigit():
++            return "p" + raw
++        return raw
++
++    def _normalize_mentioned_ids(self, text: str) -> list[str]:
++        found = re.findall(r"p\d+|(?:\d+)号", text, re.IGNORECASE)
++        result: list[str] = []
++        for value in found:
++            value = value.lower()
++            normalized = value if value.startswith("p") else "p" + value[:-1]
++            if normalized not in result:
++                result.append(normalized)
++        return result[:6]
++
++    def _update_public_claims_from_summary(
++        self, sync_packet: Mapping[str, Any], summary: Mapping[str, Any]
++    ) -> None:
++        entries = summary.get("public_entries") or self._extract_public_entries(sync_packet)
++        round_value = summary.get("round")
++        for entry in entries:
++            if not isinstance(entry, Mapping):
++                continue
++            speaker = entry.get("speaker") or entry.get("player_id")
++            text = str(entry.get("text") or "").strip()
++            if speaker is None or not text:
++                continue
++            role = self._claimed_role_from_text(text)
++            ids = self._normalize_mentioned_ids(text)
++            check_words = ("查验", "验人", "验了", "查杀", "金水", "银水")
++            badge_words = ("警徽", "警长", "归票", "接警")
++            if not (role or any(word in text for word in check_words + badge_words)):
++                continue
++            pid = self._normalize_player_ref(speaker)
++            record = self._public_claims.setdefault(pid, {"player_id": pid})
++            if role:
++                record.update({"claimed_role": role, "claim_round": round_value, "claim_text": self._clip_text(text, 80)})
++                record["confidence"] = "high" if self._is_hard_claim(text) else "medium"
++            if any(word in text for word in check_words):
++                record["checked_targets"] = ids
++                if "查杀" in text:
++                    record["accused_targets"] = ids
++            if any(word in text for word in badge_words):
++                record["badge_signal"] = True
++            if role and role != "villager":
++                record["is_counterclaim_candidate"] = True
++        if len(self._public_claims) > 8:
++            ranked = sorted(self._public_claims.items(), key=lambda item: (
++                item[1].get("claimed_role") not in {"seer", "guard", "witch", "hunter"},
++                -(self._nonnegative_int(item[1].get("claim_round"), fallback=0) or 0),
++            ))
++            self._public_claims = dict(ranked[:8])
++
++    def _extract_public_entries(self, value: Any) -> list[dict[str, str]]:
++        entries: list[dict[str, str]] = []
++        def walk(node: Any) -> None:
++            if isinstance(node, Mapping):
++                text = self._first_value(node, ("text", "content", "utterance", "speech", "message"))
++                speaker = self._first_value(node, ("speaker", "speaker_id", "player_id", "from", "by"))
++                if text is not None and speaker is not None:
++                    entries.append({"speaker": str(speaker), "text": str(text)})
++                for key in ("dialogue", "public_dialogue", "events", "history"):
++                    if key in node:
++                        walk(node[key])
++            elif isinstance(node, list):
++                for item in node[-8:]:
++                    walk(item)
++        walk(value)
++        return entries[-8:]
++
++    def _self_consistency_warning(self) -> str:
++        state = self._self_claim_state
++        if not state or not state.get("hard_claim"):
++            return "无硬性身份宣称；如需退水必须明确解释"
++        if state.get("consistency_warning"):
++            return "身份宣称曾变化：后续必须维持当前口径，或明确解释退水/诈身份，禁止无解释改口"
++        return f"已硬跳 {state.get('claimed_role')}：后续发言维持该身份，除非明确解释退水/诈身份"
++
++    def _day_vote_intent(
++        self,
++        focus_target: str | None,
++        memory_snapshot: Mapping[str, Any],
++        turn_packet: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        avoid = self._known_wolf_ids(turn_packet)
++        return {"preferred_vote_target": focus_target, "avoid_vote_targets": avoid, "override": "仅在明确自刀/牺牲战术时覆盖"}
++
++    def _speech_skeleton(self, focus_target: str | None, reason: str) -> str:
++        target = focus_target or "当前争议位"
++        return self._clip_text(f"我重点看{target}，理由是{reason}；下一步建议围绕{target}投票并听取其解释。", 120)
++
+     def _has_counterclaim_signal(self, target_id: str, claim_text: str, corpus: str) -> bool:
+         haystack = f"{target_id} {claim_text} {corpus}"
+         keywords = ("对跳", "验人", "查杀", "预言家", "女巫", "猎人", "守卫")
+@@ -861,7 +1089,8 @@
+                 counts[target] += 2
+         for item in current_dialogue[-3:]:
+             text = str(item.get("text") or item.get("content") or item.get("message") or "")
+-            for target in re.findall(r"p\d+", text):
++            for raw_target in re.findall(r"p\d+|\d+号", text, re.IGNORECASE):
++                target = raw_target.lower() if raw_target.lower().startswith("p") else "p" + raw_target[:-1]
+                 if target != self_id and (not alive_players or target in alive_players):
+                     counts[target] += 1
+         if not counts:
+@@ -935,6 +1164,12 @@
+         texts = self._extract_text_snippets(sync_packet)
+         if texts:
+             summary["public_texts"] = texts
++        entries = self._extract_public_entries(sync_packet)
++        if entries:
++            summary["public_entries"] = entries
++        vote_records = self._extract_vote_records(combined)
++        if vote_records:
++            summary["vote_records"] = vote_records
+         if not summary:
+             summary["round"] = self._safe_get(game, "round") or self._safe_get(public_state, "round")
+             summary["phase"] = self._safe_get(game, "phase") or self._safe_get(public_state, "phase")
+@@ -1012,6 +1247,21 @@
+         elif isinstance(value, str):
+             snippets.append(self._clip_text(value, _MAX_SNIPPET_LENGTH))
+         return snippets[-_MAX_HISTORY_ITEMS:]
++
++    def _extract_vote_records(self, value: Mapping[str, Any]) -> list[dict[str, str]]:
++        votes = value.get("votes") or value.get("vote_history")
++        records: list[dict[str, str]] = []
++        if isinstance(votes, Mapping):
++            for voter, target in votes.items():
++                records.append({"voter": str(voter), "target": str(target)})
++        elif isinstance(votes, list):
++            for entry in votes[-8:]:
++                if isinstance(entry, Mapping):
++                    voter = self._first_value(entry, ("voter", "from", "player_id"))
++                    target = self._first_value(entry, ("target", "target_id", "to"))
++                    if voter is not None and target is not None:
++                        records.append({"voter": str(voter), "target": str(target)})
++        return records[-8:]
+ 
+     def _summarize_votes(self, value: Mapping[str, Any]) -> list[str]:
+         votes = value.get("votes") or value.get("vote_history")
+--- wolf-n00019/task.md
++++ wolf-n00101/task.md
+@@ -2,17 +2,25 @@
+ 
+ 你的任务是帮助狼人阵营获胜，同时让公开发言像一个真实、会根据局势持续修正判断的玩家。
+ 
++## 长期公开信息与叙事
++- 早期公开跳神、对跳、查验链、查杀/金水、警徽与归票信息都要长期记账；不要因为发言滑出当前窗口就当作不存在。
++- 你公开硬跳过某身份后，后续必须维持该口径；若退水、诈身份或改变策略，必须明确解释原因，不能无解释地从预言家改口平民再改回神职。
++- 白天发言要绑定具体对象、具体证据和下一步动作；发言和随后投票尽量一致。
++
+ ## 夜间
+-- 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标。
+-- 先按阶段分层：首夜更重公开跳身份、对跳和验人链；中后期更重警徽位与票型核心；残局更重票型锁位与收口。
+-- 如果有人已经明显暴露身份、对跳、被查杀、串起验人链或成为票型焦点，优先把这些信息纳入刀口判断。
++- 先收敛到一个主刀和一个备选刀，不要同时摇摆多个目标；同一夜重试或队伍讨论时优先沿用这两个目标。
++- 先按阶段分层：首夜更重公开跳身份、对跳和验人链；中后期更重仍存活的真神职、警徽位与票型核心；残局更重票型锁位与收口。
++- 如果有人已经明显暴露预言家、守卫、女巫或猎人身份，或串起查验链、成为警徽/票型核心，优先把这些长期公开信息纳入刀口判断。
++- 上一夜无死亡时，暂时降低疑似被守/被救目标的重复刀优先级，转向其他暴露神职或女巫等可能的保护核心；但保留备选刀，避免机械连刀。
++- 狼队友默认不是刀口，除非明确为了自刀战术或牺牲叙事；允许牺牲队友不等于默认选择队友。
+ - 队友意见不一致时，按“真神职暴露/对跳/验人链 > 警长与票型核心 > 难解释的公共威胁 > 固定座位/最后一致目标”收敛。
+ 
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序再表态，不要只讲泛泛原则。
+ - 每次公开发言都必须绑定一个具体对象、一个具体局势理由、一个下一步动作；优先直接引用本轮争议对象、最近票型和当前发言。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+-- 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
++- 如果队友被强压，可以牺牲一人换叙事，但后续发言必须围绕票型自然解释这一步，不能前后失去依据。
++- 日投票时给出明确候选；避免无理由投队友。若采取牺牲战术，确保发言、票型和后续身份叙事能互相解释。
+ 
+ ## 发言约束
+ - 每次公开发言都要包含：一个具体对象、一个具体理由、一个下一步动作。

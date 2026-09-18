@@ -1,0 +1,2845 @@
+{
+  "schema_version": 1,
+  "record_type": "public",
+  "record_id": "round0-game0",
+  "created_at": "2026-09-07T05:47:15.570229+00:00",
+  "updated_at": "2026-09-07T05:54:28.210069+00:00",
+  "metadata": {
+    "game_id": "s2-seer-n00051-game0",
+    "players": [
+      {
+        "id": "p1",
+        "name": "Player 1",
+        "seat": 1
+      },
+      {
+        "id": "p2",
+        "name": "Player 2",
+        "seat": 2
+      },
+      {
+        "id": "p3",
+        "name": "Player 3",
+        "seat": 3
+      },
+      {
+        "id": "p4",
+        "name": "Player 4",
+        "seat": 4
+      },
+      {
+        "id": "p5",
+        "name": "Player 5",
+        "seat": 5
+      },
+      {
+        "id": "p6",
+        "name": "Player 6",
+        "seat": 6
+      },
+      {
+        "id": "p7",
+        "name": "Player 7",
+        "seat": 7
+      },
+      {
+        "id": "p8",
+        "name": "Player 8",
+        "seat": 8
+      },
+      {
+        "id": "p9",
+        "name": "Player 9",
+        "seat": 9
+      },
+      {
+        "id": "p10",
+        "name": "Player 10",
+        "seat": 10
+      },
+      {
+        "id": "p11",
+        "name": "Player 11",
+        "seat": 11
+      },
+      {
+        "id": "p12",
+        "name": "Player 12",
+        "seat": 12
+      }
+    ],
+    "round": 0,
+    "game_index": 0
+  },
+  "events": [
+    {
+      "seq": 1,
+      "type": "GAME_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "game_id": "s2-seer-n00051-game0",
+        "players": [
+          {
+            "id": "p1",
+            "name": "Player 1",
+            "seat": 1
+          },
+          {
+            "id": "p2",
+            "name": "Player 2",
+            "seat": 2
+          },
+          {
+            "id": "p3",
+            "name": "Player 3",
+            "seat": 3
+          },
+          {
+            "id": "p4",
+            "name": "Player 4",
+            "seat": 4
+          },
+          {
+            "id": "p5",
+            "name": "Player 5",
+            "seat": 5
+          },
+          {
+            "id": "p6",
+            "name": "Player 6",
+            "seat": 6
+          },
+          {
+            "id": "p7",
+            "name": "Player 7",
+            "seat": 7
+          },
+          {
+            "id": "p8",
+            "name": "Player 8",
+            "seat": 8
+          },
+          {
+            "id": "p9",
+            "name": "Player 9",
+            "seat": 9
+          },
+          {
+            "id": "p10",
+            "name": "Player 10",
+            "seat": 10
+          },
+          {
+            "id": "p11",
+            "name": "Player 11",
+            "seat": 11
+          },
+          {
+            "id": "p12",
+            "name": "Player 12",
+            "seat": 12
+          }
+        ],
+        "round": 1,
+        "public_rules": {
+          "role_counts": {
+            "wolf": 4,
+            "seer": 1,
+            "witch": 1,
+            "guard": 1,
+            "hunter": 1,
+            "villager": 4
+          },
+          "implemented_roles": [
+            "guard",
+            "hunter",
+            "seer",
+            "villager",
+            "witch",
+            "wolf"
+          ],
+          "night_order": [
+            "guard",
+            "wolf",
+            "seer",
+            "witch"
+          ],
+          "reveal_role_on_death": false,
+          "reveal_all_roles_at_end": true,
+          "wolf_win_condition": "slaughter_side",
+          "wolves_can_target_wolves": true,
+          "public_speech_can_be_deceptive": true,
+          "last_words": {
+            "eligible_death_count": 3,
+            "eligibility": "day_elimination_only",
+            "night_deaths_eligible": false,
+            "max_chars": 200,
+            "visibility": "public"
+          },
+          "sheriff": {
+            "enabled": true,
+            "election_before_first_dawn": true,
+            "first_night_dead_can_participate": true,
+            "vote_weight": 1.5,
+            "tie_policy": "runoff_once_then_no_sheriff",
+            "badge_on_death": "transfer_or_destroy"
+          },
+          "day_speech_order": {
+            "normal_start": "after_largest_seat_among_dawn_deaths",
+            "no_dawn_death_start_seat": 1,
+            "sheriff_may_reverse": true
+          },
+          "special_role_rules": {
+            "guard_can_protect_self": true,
+            "guard_can_repeat_protect": false,
+            "idiot_survives_first_day_elimination": true,
+            "idiot_can_vote_after_reveal": false
+          }
+        }
+      }
+    },
+    {
+      "seq": 16,
+      "type": "NIGHT_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 1
+      }
+    },
+    {
+      "seq": 45,
+      "type": "SHERIFF_ELECTION_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 1,
+        "speaking_order": "seat_ascending"
+      }
+    },
+    {
+      "seq": 59,
+      "type": "SHERIFF_CANDIDATES_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "candidate_ids": [
+          "p1",
+          "p2",
+          "p4",
+          "p7"
+        ]
+      }
+    },
+    {
+      "seq": 62,
+      "type": "SHERIFF_ELECTION_SPEECHES_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "candidate_ids": [
+          "p1",
+          "p2",
+          "p4",
+          "p7"
+        ],
+        "runoff": false,
+        "speaking_order": "seat_ascending"
+      }
+    },
+    {
+      "seq": 63,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p1",
+        "stage": "sheriff_election",
+        "text": "我上警是想抢警徽，第一晚信息少，我想靠发言找狼。目前场上没人报硬信息，那我先立个态度：谁在警下划水、不表态的，我会重点怀疑。p2刚才被提到一次但没解释清楚，我建议你下来第一个说清自己站边和理由。我若当选，警徽流先走查杀位，不会乱传。"
+      }
+    },
+    {
+      "seq": 64,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p2",
+        "stage": "sheriff_election",
+        "text": "我是预言家。事实：昨晚我验了1号，查杀，他是狼。刚才那位喊话让我表态的，正好撞枪口——你要警徽流走查杀位，那我现在就把1号这个查杀交出来。主矛盾就一个：1号是不是狼。我的带队票向很明确，今天全票出1号。约束：我不乱咬人，谁对跳报假查验，下一晚我就去验他。"
+      }
+    },
+    {
+      "seq": 65,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p4",
+        "stage": "sheriff_election",
+        "text": "p2直接查杀p1，这信息量太大了。但我提醒一句：首夜预言家验到查杀的概率并不比验到好人低多少，悍跳发查杀是最常见的开局套路。p1既然敢上警抢徽，又提前放话要压划水位，我倒觉得不像裸狼。我现在不急着站边，想听p2把警徽流说清楚——下一验打算给谁，为什么。报不出完整警徽流的，我优先怀疑。"
+      }
+    },
+    {
+      "seq": 66,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "sheriff_election",
+        "text": "p2查杀p1，我倾向信这条线。p4那句“悍跳发查杀很常见”听着中立，实际是在给p1松绑，他自己却没报任何验人信息。p1要么当场对跳预言家、给出警徽流，要么就认下这个查杀位被票走。我下一步会盯紧p4的站边理由，别让他用一句概率话混过第一轮。"
+      }
+    },
+    {
+      "seq": 68,
+      "type": "SHERIFF_ELECTION_VOTE_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "candidate_ids": [
+          "p1",
+          "p2",
+          "p4",
+          "p7"
+        ],
+        "runoff": false
+      }
+    },
+    {
+      "seq": 81,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p1",
+        "target_id": "p4"
+      }
+    },
+    {
+      "seq": 82,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p2",
+        "target_id": null
+      }
+    },
+    {
+      "seq": 83,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p3",
+        "target_id": "p1"
+      }
+    },
+    {
+      "seq": 84,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p4",
+        "target_id": "p1"
+      }
+    },
+    {
+      "seq": 85,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p5",
+        "target_id": "p2"
+      }
+    },
+    {
+      "seq": 86,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p6",
+        "target_id": "p2"
+      }
+    },
+    {
+      "seq": 87,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p1"
+      }
+    },
+    {
+      "seq": 88,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p8",
+        "target_id": "p2"
+      }
+    },
+    {
+      "seq": 89,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p2"
+      }
+    },
+    {
+      "seq": 90,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": "p2"
+      }
+    },
+    {
+      "seq": 91,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": "p2"
+      }
+    },
+    {
+      "seq": 92,
+      "type": "SHERIFF_VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": "p2"
+      }
+    },
+    {
+      "seq": 94,
+      "type": "SHERIFF_ELECTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p2",
+        "vote_weight": 1.5
+      }
+    },
+    {
+      "seq": 96,
+      "type": "DAWN_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 1,
+        "dead_player_ids": []
+      }
+    },
+    {
+      "seq": 97,
+      "type": "NO_ONE_DIED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 1
+      }
+    },
+    {
+      "seq": 98,
+      "type": "DAY_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 1
+      }
+    },
+    {
+      "seq": 102,
+      "type": "DAY_SPEECH_ORDER_SET",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 1,
+        "reference_seat": 1,
+        "reference_is_dawn_death": false,
+        "direction": "next",
+        "speaker_ids": [
+          "p1",
+          "p2",
+          "p3",
+          "p4",
+          "p5",
+          "p6",
+          "p7",
+          "p8",
+          "p9",
+          "p10",
+          "p11",
+          "p12"
+        ],
+        "sheriff_id": "p2"
+      }
+    },
+    {
+      "seq": 104,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p1",
+        "stage": "day_discussion",
+        "text": "换个角度说：p2既然站了警长位，就该给个明确查杀或金水方向，现在只靠别人提他、自己不报信息，这个姿态不像真预言家。我倾向于今天先压p2的发言质量，而不是急着信他。下一步我建议让p2在剩余发言里补一条具体逻辑链，说不通就进我的票圈。"
+      }
+    },
+    {
+      "seq": 105,
+      "type": "PLAYER_PASSED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p2",
+        "stage": "day_discussion"
+      }
+    },
+    {
+      "seq": 106,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p3",
+        "stage": "day_discussion",
+        "text": "p1这句问得对，但我觉得重点不是压p2发言质量。真预言家被质疑时通常会直接报查验来正名，p2到现在没接话才是最大问题。我建议下一轮给p2一次定点追问机会：要么报查杀金水，要么承认站错位置。相比之下p5只是被动提及，先别分散火力。"
+      }
+    },
+    {
+      "seq": 107,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p4",
+        "stage": "day_discussion",
+        "text": "p3这个追问方向我认可，但顺序得反过来。p1刚才主动把矛头对准警长位，还替大家总结“姿态不像真预言家”，这本身就是抢节奏。p2没接话可以质疑，可p1一个非警长的人先下场定性，更像在带票。我建议下一轮先让p1解释他凭什么判断p2的查验真假，再问p2报不报信息。"
+      }
+    },
+    {
+      "seq": 108,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p5",
+        "stage": "day_discussion",
+        "text": "我坐这儿听了一圈，p1、p3、p4都在纠结警长位报不报信息，这方向没错。但提醒一句：现在第一天，谁都没死，查杀金水都还没落地，急着给p2定性容易带偏票。我个人建议今天别硬出，先让p2把话说完，其他人也各自交一下站边逻辑。我p5暂时中立看票型，谁发言划水我记着。"
+      }
+    },
+    {
+      "seq": 109,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p6",
+        "stage": "day_discussion",
+        "text": "听了一圈，p5说得挺中肯：第一天没死人就急着定性确实容易带偏。不过我也好奇p2，警长位拿着1.5票权重，到现在不报查验信息，是查杀不敢说还是根本没验？建议p2接下来明确表态，否则今天这票真不好给。"
+      }
+    },
+    {
+      "seq": 110,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "day_discussion",
+        "text": "p6这句“拿着1.5票权重不报信息”戳到点子上了。p2，警徽是你自己争来的，现在全场都在等你落地：要么报查验给个方向，要么承认没验、把票权让出来重选。别用“第一天不急”当挡箭牌，那话适合平民说，不适合警长说。我下一轮就看你这条线怎么收。"
+      }
+    },
+    {
+      "seq": 111,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p8",
+        "stage": "day_discussion",
+        "text": "p5那句“第一天别硬出”我部分同意，但票还是要给个方向。目前最让我关注的是p1：非警长却第一个跳出来替全场定性p2“不像真预言家”，还指定下一步让p2补逻辑链，这个带节奏的姿态比p2沉默更可疑。p4也点了p1抢节奏，我和他看法接近。暂不投的人里算p3，他只是顺着追问，没主动扣帽子。今天我先盯p1的站边逻辑。"
+      }
+    },
+    {
+      "seq": 112,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p9",
+        "stage": "day_discussion",
+        "text": "我也觉得第一天没必要急着把p2打死，但p2作为警长确实该给点东西，哪怕一句模糊的方向也行，现在完全沉默太反常了。我p9今天先听票型，谁带节奏最凶、又不肯交逻辑的，我就盯着谁。另外提醒一句，别互相泼脏水泼得太顺，狼就爱看好人内耗。"
+      }
+    },
+    {
+      "seq": 113,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p10",
+        "stage": "day_discussion",
+        "text": "第一天没死信息，我倾向别急着挂票。目前关注p2：拿了警长位却迟迟不报查验逻辑，要么补一条清晰链，要么今天进候选。暂不投p5，发言中立、没带节奏。也提醒p1、p4互相咬得凶，狼队最爱看好人互泼，先听后面人站边再定票。"
+      }
+    },
+    {
+      "seq": 114,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p11",
+        "stage": "day_discussion",
+        "text": "我p11平民视角说点实在的：第一天平安夜，谁都没死，说明守卫或女巫大概率动过手，但结果没落地。现在场上最该被追问的还是p2——你拿了警长位又不报查验，要么是真预言家谨慎，要么是狼混警徽，这两者今天必须给个说法。我关注p4，他主动替p2找补、还反过来给p1扣抢节奏帽子，这个站边有点早。暂不投p5，他发言中立、没带票动作。建议今天优先逼p2交信息，说不通就从他和护他的人里出。"
+      }
+    },
+    {
+      "seq": 115,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p12",
+        "stage": "day_discussion",
+        "text": "我补一句：第一天平安夜，说明守卫或女巫大概率动过手，狼队首刀没成，这本身就是信息。现在p1、p3、p4围着警长位打转，我觉得方向没错但太早。p2既然拿了警徽又不报查验，要么是狼混警徽在拖，要么是真预言家被压得不敢开口，先别急着定死。我更关注p1，第一个跳出来给警长定性、还替全场总结“姿态不对”，这种抢节奏的行为狼最爱干。暂时不投p5，他至少承认中立看票型，没乱带。"
+      }
+    },
+    {
+      "seq": 129,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p1",
+        "target_id": "p2",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 130,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p2",
+        "target_id": null,
+        "weight": 1.5
+      }
+    },
+    {
+      "seq": 131,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p3",
+        "target_id": "p2",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 132,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p4",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 133,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p5",
+        "target_id": "p2",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 134,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p6",
+        "target_id": "p2",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 135,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p2",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 136,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p8",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 137,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 138,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 139,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 140,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 144,
+      "type": "PLAYER_ELIMINATED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p2"
+      }
+    },
+    {
+      "seq": 147,
+      "type": "SHERIFF_BADGE_TRANSFERRED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "from_player_id": "p2",
+        "to_player_id": "p1",
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 151,
+      "type": "PLAYER_LAST_WORDS_SKIPPED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p2",
+        "death_index": 1,
+        "eligible_death_index": 1,
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 153,
+      "type": "NIGHT_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 2
+      }
+    },
+    {
+      "seq": 178,
+      "type": "DAWN_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 2,
+        "dead_player_ids": []
+      }
+    },
+    {
+      "seq": 179,
+      "type": "NO_ONE_DIED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 2
+      }
+    },
+    {
+      "seq": 180,
+      "type": "DAY_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 2
+      }
+    },
+    {
+      "seq": 184,
+      "type": "DAY_SPEECH_ORDER_SET",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 2,
+        "reference_seat": 1,
+        "reference_is_dawn_death": false,
+        "direction": "next",
+        "speaker_ids": [
+          "p1",
+          "p3",
+          "p4",
+          "p5",
+          "p6",
+          "p7",
+          "p8",
+          "p9",
+          "p10",
+          "p11",
+          "p12"
+        ],
+        "sheriff_id": "p1"
+      }
+    },
+    {
+      "seq": 186,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p1",
+        "stage": "day_discussion",
+        "text": "警徽在我手上，那今天票型就由我来收。p2从昨晚到现在没报过任何查验信息，却一直被大家点名，这本身就是异常。真预言家不会把查杀和金水都藏着等别人替他说话。我提议今天先让p2完整交代立场和理由，如果继续空转，我就默认他是有问题的一方，直接归票给他。"
+      }
+    },
+    {
+      "seq": 187,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p3",
+        "stage": "day_discussion",
+        "text": "警徽刚落到p1手上，他第一句话就是收票、点p2，这个节奏太顺了。我提醒一句：上轮p2被点名最多却没自证，恰恰可能是有人故意把火力引过去。今天我不跟p1的票型走，先让p2完整报一轮查验再定。如果p2确实报不出东西，我第一个改口投他；但p1现在这种急着锁票的姿态，我得保留怀疑。"
+      }
+    },
+    {
+      "seq": 188,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p4",
+        "stage": "day_discussion",
+        "text": "警徽这轮才第一次落到p1手上，之前没有传递链，等于凭空坐实。他开口就定调“p2藏着查验”，可p2没报查杀也可能是真被压着不敢说。p3直接拒绝跟票型，这个反应比p1的总结更自然。我今天不急着出p2，先让p1把昨晚到现在的信息顺序讲清楚，讲不顺再谈票。"
+      }
+    },
+    {
+      "seq": 189,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p5",
+        "stage": "day_discussion",
+        "text": "我站p3、p4这边，今天先别急着锁p2。p1拿着警徽第一动作就是归票，节奏确实太赶，而且他对p2“藏着查验”的判断没有公开依据支撑。我的建议是：让p2完整报一轮，同时p1也把自己昨晚到现在的信息链讲清楚，谁的逻辑先崩就出谁。票型等两边都说完再定，不要现在被带节奏。"
+      }
+    },
+    {
+      "seq": 190,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p6",
+        "stage": "day_discussion",
+        "text": "我也觉得今天别急着锁票。p1手握警徽上来就归p2，理由只是“没报查验”，这个推断站不住——被压着不敢说是常见情况。p3、p4、p5都要求先听完双方陈述，这本身就是对警长节奏的制衡。我倾向让p2完整讲一轮，p1也把自己信息链摊开，谁逻辑崩了出谁。现在投票太早。"
+      }
+    },
+    {
+      "seq": 191,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "day_discussion",
+        "text": "p5和p6都质疑p1刚拿警徽就归票的合理性，这很关键。但注意p3也站了p4这边，等于狼队里有人想浑水摸鱼保p2。我建议今天不锁p2，让p1先说清楚为什么凭空拿到警徽、以及他到底验没验过谁。如果p1给不出查验链，明天优先处理这个“无根警长”。"
+      }
+    },
+    {
+      "seq": 192,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p8",
+        "stage": "day_discussion",
+        "text": "目前看下来，p1作为警长确实有点急于归票给p2，缺乏足够的公开查验信息支撑。我比较关注p3和p4的发言，他们敢于质疑警长的归票逻辑，反应比较自然。今天我暂不投p3，先听听p2自己怎么交代昨晚的情况。"
+      }
+    },
+    {
+      "seq": 193,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p9",
+        "stage": "day_discussion",
+        "text": "我也倾向先别锁p2。p1拿警徽第一动作就归票，确实有点赶，但反过来想，p2从上轮到现在一直不报信息，这个沉默本身比p1的急躁更可疑。我的建议：p2现在就完整交代，查验、立场、为什么之前不说，一次讲完；p1也把你判断p2藏信息的依据摊开。谁含糊谁吃票，我按这个走。"
+      }
+    },
+    {
+      "seq": 194,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p10",
+        "stage": "day_discussion",
+        "text": "我同意先别锁票。p1拿着警徽一上来就归p2，但他自己也没报出任何具体信息链，只是说“p2没报查验就是异常”，这个逻辑站不住。我关注p1和p3这两个带节奏的人，暂不投p2，让他先完整交代立场。如果p2真报不出东西再议。"
+      }
+    },
+    {
+      "seq": 195,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p11",
+        "stage": "day_discussion",
+        "text": "我是闭眼民，只能看票型和发言。目前公开信息里没有任何一条真实查验链落地：p1说p2藏着查杀，是推测不是事实；p2到现在也没开口自证，这两点都成立。我暂不投p1，他至少把归票理由讲出来了，且警徽是选举结果，先给他一轮解释机会。我更关注p2：如果今天仍然全程沉默、既不报验也不反驳，那这份沉默本身就是最大异常，我会倾向出他。也提醒p3 p4别只顾顶p1，挡刀挡得太整齐同样可疑。"
+      }
+    },
+    {
+      "seq": 196,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p12",
+        "stage": "day_discussion",
+        "text": "p1一上来就归票，确实有点急。我比较关注p3，他直接拒绝跟票型并要求让p2自证，这个反应很自然。另外，我暂不投p4，他的发言逻辑清晰且与当前局势相符。希望今天能多听各方声音再做决定。"
+      }
+    },
+    {
+      "seq": 209,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p1",
+        "target_id": "p3",
+        "weight": 1.5
+      }
+    },
+    {
+      "seq": 210,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p3",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 211,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p4",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 212,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p5",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 213,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p6",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 214,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p3",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 215,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p8",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 216,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 217,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 218,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 219,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": "p1",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 223,
+      "type": "PLAYER_ELIMINATED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p1"
+      }
+    },
+    {
+      "seq": 226,
+      "type": "SHERIFF_BADGE_TRANSFERRED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "from_player_id": "p1",
+        "to_player_id": "p3",
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 230,
+      "type": "PLAYER_LAST_WORDS",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p1",
+        "text": "我走了，警徽飞给p3。他昨晚是被大家点过名的位置，如果他是狼，这票就白送；但我赌他是民。今天别急着出p2，先听p3验谁、报什么，再决定票型。",
+        "death_index": 2,
+        "eligible_death_index": 2,
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 232,
+      "type": "NIGHT_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 3
+      }
+    },
+    {
+      "seq": 255,
+      "type": "DAWN_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 3,
+        "dead_player_ids": []
+      }
+    },
+    {
+      "seq": 256,
+      "type": "NO_ONE_DIED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 3
+      }
+    },
+    {
+      "seq": 257,
+      "type": "DAY_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 3
+      }
+    },
+    {
+      "seq": 261,
+      "type": "DAY_SPEECH_ORDER_SET",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 3,
+        "reference_seat": 1,
+        "reference_is_dawn_death": false,
+        "direction": "next",
+        "speaker_ids": [
+          "p3",
+          "p4",
+          "p5",
+          "p6",
+          "p7",
+          "p8",
+          "p9",
+          "p10",
+          "p11",
+          "p12"
+        ],
+        "sheriff_id": "p3"
+      }
+    },
+    {
+      "seq": 263,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p3",
+        "stage": "day_discussion",
+        "text": "警徽传到我手上，我先说清楚：p1主动让权不是认怂，是他判断票型会往他身上集中。现在反过来想——上轮死的是谁？如果刀口一直躲着神职走，那p2被点名却活到现在就太可疑了。我倾向今天先把p2过一遍麦，看他能不能报出硬信息，别急着投票。"
+      }
+    },
+    {
+      "seq": 264,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p4",
+        "stage": "day_discussion",
+        "text": "p3别急着把p1让权说成“判断票型”。上轮p2被点名却没死，刀口躲着走这事你比我清楚。现在警徽刚转手，你就顺势把话题引向p2藏着查验——这链条太顺了，顺得像提前排好的。我建议本轮先把焦点放回死亡顺序本身：谁没被刀、谁被保，比谁拿警徽更能说明问题。"
+      }
+    },
+    {
+      "seq": 265,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p5",
+        "stage": "day_discussion",
+        "text": "我补一句死亡顺序：p1、p2都是白天走的，夜里刀口其实一直没落在他们身上。现在活着的人里，发言最实的是p4，他敢直接顶警徽的话。p3刚拿徽章就把矛头往p2引，节奏太赶。我建议今天别急着定票，先听p6到p12谁还能给出新信息，避免被带成单点冲票。"
+      }
+    },
+    {
+      "seq": 266,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p6",
+        "stage": "day_discussion",
+        "text": "我同意p5说的，别被单点冲票带走。现在公开信息其实很薄：两个走的都是白天出局，夜里刀口没落在他们身上，这本身就说明狼在藏节奏。p3拿徽后第一句就锁定p2，p4立刻顶回去，两边都有道理，我暂时不站死。我想听后面几位给点新东西，尤其是上轮票型里谁跟谁绑在一起投的，这个比口头互咬更实在。"
+      }
+    },
+    {
+      "seq": 267,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "day_discussion",
+        "text": "警徽从p1转到p3这一步，我得挑明：上轮p1还在归票位，本轮突然让权给p3，中间没有任何公开理由。p3拿徽第一句就咬p2藏信息，这节奏太顺了。我反而怀疑是狼在借警徽转移视线。今天先别急着定票，让p3解释清楚这次交接是谁提的、票怎么走的。"
+      }
+    },
+    {
+      "seq": 268,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p8",
+        "stage": "day_discussion",
+        "text": "我是闭眼民，只能看公开链。目前p3拿徽后第一句就锁p2，p4、p5、p6都在提醒别单点冲票，这个节奏确实太顺。我更关注p3：刚接徽就有明确归票方向，要么是信息硬，要么是借刀。暂不投p4，他敢正面顶警徽且逻辑落在死亡顺序上，没毛病。建议先让p7到p12把上轮票型说清，谁跟谁绑票比互咬有用。"
+      }
+    },
+    {
+      "seq": 269,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p9",
+        "stage": "day_discussion",
+        "text": "p3刚拿警徽就急着冲p2，确实有点刻意。不过p4说得太顺了，好像早就知道一样。我持保留态度，等后面的人说完再判断。"
+      }
+    },
+    {
+      "seq": 270,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p10",
+        "stage": "day_discussion",
+        "text": "先说清：我手里没查验，纯闭眼村民。但有两点公开事实值得盯——p1、p2都是白天出局的，夜里刀一直没碰他们，说明狼在刻意避开某些人。第二，警徽从p1转到p3这个动作本身要复盘：p1上轮还在归票位，为什么突然让权？我比较关注p3，他拿徽第一句就锁p2，节奏太顺，像提前排好的剧本。暂时不投p4，他敢当面顶警徽的话，发言有内容不是和稀泥。等后面几位报完信息再定票。"
+      }
+    },
+    {
+      "seq": 271,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p11",
+        "stage": "day_discussion",
+        "text": "我理一下公开事实：p1、p2都是白天出局，夜里刀没落在他们身上，这点p5、p6都点到了。警徽从p1转到p3是系统事件，但p3上任第一句就锁p2，p4立刻顶回来说链条太顺——这两次发言质量都比其他人高，我不轻易站死任何一边。我目前关注p3：他拿徽后节奏太赶，急着把焦点单点化，像在用警徽权重压票。暂不投的是p4，他敢正面质疑警徽逻辑，且没有自爆式矛盾。想听p8到p12给新信息，别被带成冲票。"
+      }
+    },
+    {
+      "seq": 272,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p12",
+        "stage": "day_discussion",
+        "text": "我捋一下公开事实：p1、p2都是白天出局的，夜里刀没落在他们身上，这点p4、p5都点过。p3拿徽后第一动作是锁p2，但p2已经走了，这个归票方向本身就不成立，说明他要么在试探要么在带节奏。p4敢当面顶警徽、且逻辑落点在死亡顺序上，我暂时不投他。我更关注p7，他刚开口就被截断的话里想把p1转p3这步挑明，我想听完整版本——如果他能讲清徽章流转里的疑点，价值比现在互咬大。今天先别急着单点冲票。"
+      }
+    },
+    {
+      "seq": 284,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p3",
+        "target_id": "p11",
+        "weight": 1.5
+      }
+    },
+    {
+      "seq": 285,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p4",
+        "target_id": "p5",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 286,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p5",
+        "target_id": "p3",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 287,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p6",
+        "target_id": "p3",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 288,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p12",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 289,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p8",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 290,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 291,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 292,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": "p3",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 293,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 297,
+      "type": "PLAYER_ELIMINATED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p3"
+      }
+    },
+    {
+      "seq": 300,
+      "type": "SHERIFF_BADGE_TRANSFERRED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "from_player_id": "p3",
+        "to_player_id": "p4",
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 304,
+      "type": "PLAYER_LAST_WORDS",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p3",
+        "text": "p12说归票方向不成立，我认。但我想问在座一句：p4从头到尾没被任何人查杀过，却稳坐警长位，这合理吗？夜里刀躲着谁走，白天票就压谁，这个模式你们真没看出来？我死之前只留这一句，剩下的交给活人判断。",
+        "death_index": 3,
+        "eligible_death_index": 3,
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 306,
+      "type": "NIGHT_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 4
+      }
+    },
+    {
+      "seq": 327,
+      "type": "DAWN_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 4,
+        "dead_player_ids": []
+      }
+    },
+    {
+      "seq": 328,
+      "type": "NO_ONE_DIED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 4
+      }
+    },
+    {
+      "seq": 329,
+      "type": "DAY_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 4
+      }
+    },
+    {
+      "seq": 333,
+      "type": "DAY_SPEECH_ORDER_SET",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 4,
+        "reference_seat": 1,
+        "reference_is_dawn_death": false,
+        "direction": "next",
+        "speaker_ids": [
+          "p4",
+          "p5",
+          "p6",
+          "p7",
+          "p8",
+          "p9",
+          "p10",
+          "p11",
+          "p12"
+        ],
+        "sheriff_id": "p4"
+      }
+    },
+    {
+      "seq": 335,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p4",
+        "stage": "day_discussion",
+        "text": "警徽现在在我手上，先说清楚：p3从p1手里接过来又转给我，这条链我认。但p2连续三轮被点名却一次没倒，这不像运气好，更像有人刻意保他。今天我不绕弯，票压p2，谁替他挡票，下一轮警徽我就让给谁去验。"
+      }
+    },
+    {
+      "seq": 336,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p5",
+        "stage": "day_discussion",
+        "text": "目前存活6人，狼队还有4个位置没清完，压力很大。我倾向于先听警长p4的安排，不要乱抱团票错。大家把上轮谁保谁、谁站边讲清楚一点，逻辑链断得最明显的那个就是我要看的点。"
+      }
+    },
+    {
+      "seq": 337,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p6",
+        "stage": "day_discussion",
+        "text": "p4这个抓法我不反对，p2三轮被点不倒确实扎眼。但提醒一句：狼队还剩不少，别把票全押在一个人身上导致空刀反噬。我这边看发言，p5刚才那句“听警长安排”太滑，既不表态也不给逻辑，像在留后路。今天我跟p4走，但下一轮谁再这么骑墙，我先挂他。"
+      }
+    },
+    {
+      "seq": 338,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "day_discussion",
+        "text": "p4接徽后第一句要解释：p3为何主动让位？上轮p3拿徽时咬p2，本轮却把刀柄交给你，这不像神职的正常交接。我倾向认为警徽链里有狼在配合走票。下一步我建议别急着定p2，先把p3让徽的理由问透，谁答不上来谁先出局。"
+      }
+    },
+    {
+      "seq": 339,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p8",
+        "stage": "day_discussion",
+        "text": "先说事实：p2已经死了，是昨晚走的，不是今天被票的。所以p4压票p2、p6跟票p2，这条线本身就有问题——死人怎么投票？要么你们没看清状态，要么在故意带节奏。p7质疑警徽链我认可一部分，但p3让徽给p4这事无法验证。我现在更关注p4和p6：一个警长公开要票已死之人，一个立刻附和还顺手踩p5骑墙。p5那句虽然滑但至少没指错目标，暂不投。今天我想听p4解释清楚，为什么把票压在p2身上。"
+      }
+    },
+    {
+      "seq": 340,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p9",
+        "stage": "day_discussion",
+        "text": "p8说得对，我刚才也在奇怪这票型。p2昨晚已经走了，p4还压票p2、p6跟着喊要挂p5骑墙，一个死人一个活人混着说，这不是状态不清就是故意搅局。p4作为警长连存活名单都报错，我对这条警徽链也打问号。今天先别急着出票，把昨晚到底谁死的、p3为什么让徽讲清楚，谁在混乱里塞私货，下一轮我就盯谁。"
+      }
+    },
+    {
+      "seq": 341,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p10",
+        "stage": "day_discussion",
+        "text": "p8说得对，p2已经倒牌了，今天票压死人等于空刀，p4和p6这条线直接作废。我现在最关注p7：他先质疑警徽链、又主张别急着定p2，看似理性，实则把场上唯一明确目标拆掉后不给新锚点，很符合狼带节奏的拖法。暂不投p5，他虽然滑但没主动搅局。建议p4重新给一个活人查杀或金水，否则今天优先出p7。"
+      }
+    },
+    {
+      "seq": 342,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p11",
+        "stage": "day_discussion",
+        "text": "先对齐事实：p2已出局，p4压票、p6跟票都打在死人身上，这条线直接作废，说明他们要么没看状态，要么故意带节奏。我关注p4和p6这一组；暂不投p7，他质疑警徽链至少指向可验证的问题。"
+      }
+    },
+    {
+      "seq": 343,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p12",
+        "stage": "day_discussion",
+        "text": "先纠正一个硬伤：p2昨晚已经倒牌，今天再压票p2、跟票p2都是空转，p4和p6这条线直接作废，得解释为什么盯着死人带节奏。我目前更关注p7：他抓住警徽链疑点没问题，但只问理由不给替代方案，像在拖时间搅浑水。暂不投的是p5，发言虽滑但没踩错事实。今天建议别浪费票，先把p4、p6对死人投票的解释听完再定。"
+      }
+    },
+    {
+      "seq": 354,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p4",
+        "target_id": "p11",
+        "weight": 1.5
+      }
+    },
+    {
+      "seq": 355,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p5",
+        "target_id": "p7",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 356,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p6",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 357,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p12",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 358,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p8",
+        "target_id": "p6",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 359,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p6",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 360,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 361,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": "p6",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 362,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 364,
+      "type": "VOTE_TIE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "tied_target_ids": [
+          "p4",
+          "p6"
+        ]
+      }
+    },
+    {
+      "seq": 365,
+      "type": "NIGHT_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 5
+      }
+    },
+    {
+      "seq": 386,
+      "type": "DAWN_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 5,
+        "dead_player_ids": []
+      }
+    },
+    {
+      "seq": 387,
+      "type": "NO_ONE_DIED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 5
+      }
+    },
+    {
+      "seq": 388,
+      "type": "DAY_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 5
+      }
+    },
+    {
+      "seq": 392,
+      "type": "DAY_SPEECH_ORDER_SET",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 5,
+        "reference_seat": 1,
+        "reference_is_dawn_death": false,
+        "direction": "next",
+        "speaker_ids": [
+          "p4",
+          "p5",
+          "p6",
+          "p7",
+          "p8",
+          "p9",
+          "p10",
+          "p11",
+          "p12"
+        ],
+        "sheriff_id": "p4"
+      }
+    },
+    {
+      "seq": 394,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p4",
+        "stage": "day_discussion",
+        "text": "换个角度说：p1当初把警徽交给p3，p3又立刻转手给我，两次传递都指向同一个结论——他们心里清楚谁最该拿票权。我坐上这个位置不是白捡的，是p1、p3主动让的。今天我想问p2一句：你被点了三轮还稳坐钓鱼台，谁在替你挡刀？p5、p6别沉默，把你们看到的票型异动讲出来，今天先定p2。"
+      }
+    },
+    {
+      "seq": 395,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p5",
+        "stage": "day_discussion",
+        "text": "p4你这话有点意思，上来就定p2，还催我和p6表态。我昨晚守的就是7号位，今天想听7自己说说情况。另外你说警徽传递指向结论，可p1p3都走了，死无对证，这种说法谁都能编。我不反对查p2，但别急着把票锁死，先让场上其他人把逻辑摆完，尤其9到12这几位还没开过口。"
+      }
+    },
+    {
+      "seq": 396,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p6",
+        "stage": "day_discussion",
+        "text": "既然警长点名让我表态，那我说两句。p4的逻辑确实有漏洞，死无对证的东西不能作为定论。不过p2三轮被点都不急，这心态要么是真神职不怕死，要么是狼人有恃无恐。我倾向于先听9到12号位发言，别急着锁票，万一误推好人就亏大了。"
+      }
+    },
+    {
+      "seq": 397,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "day_discussion",
+        "text": "p5守我7号位这事我先记下，但今天焦点不在我。p4拿徽后第一刀指向p2，而p3让徽前咬的也是p2——两个警长连续锁同一人，这不叫共识，叫走票剧本。死无对证确实不能定论，可活人的行为链摆着：p1传p3、p3传p4，每一步都刚好把质疑引向同一个方向。我建议今天先不动p2，反过来压一压这条传递链本身，p6你说呢？"
+      }
+    },
+    {
+      "seq": 398,
+      "type": "PLAYER_PASSED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p8",
+        "stage": "day_discussion"
+      }
+    },
+    {
+      "seq": 399,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p9",
+        "stage": "day_discussion",
+        "text": "听完一圈，我说点实在的。p4拿徽就锁p2，p7反过来咬传递链是剧本，两边都在拿“别人没开口”当挡箭牌。我9号现在表态：我不信死无对证的让徽说法能定谁是狼，也不信仅凭三轮被点就判p2铁狼。今天场上活着的还有五六个没查透，与其在p2和p4里二选一赌错，不如把票给到发言最滑、两头下注的人。我先盯着p7，他一句“压传递链”把自己摘得干干净净，谁替他挡刀他自己心里清楚。"
+      }
+    },
+    {
+      "seq": 400,
+      "type": "PLAYER_PASSED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p10",
+        "stage": "day_discussion"
+      }
+    },
+    {
+      "seq": 401,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p11",
+        "stage": "day_discussion",
+        "text": "我先把账摆清楚：p2已经出局了，p4还拿它当今日焦点，这本身就说明他在用死无对证的信息带票。p7抓传递链的思路我认可，但p1传p3、p3传p4是公开事件，不能直接等同于狼队剧本。我现在更关注p8和p10：到现在没见你们对警徽链或票型表过态，沉默本身就是站位。暂不投p5，他至少报了守人动作且愿意接质疑。今天别跟着一个已死的人走票。"
+      }
+    },
+    {
+      "seq": 402,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p12",
+        "stage": "day_discussion",
+        "text": "我先说清楚：我是闭眼村民，没有任何夜间信息。现在存活9人，狼还有4只的可能没清完，票不能乱。我关注p2这条线：连续三轮被点却不动，确实反常，但p7的反向逻辑也有道理——传徽链把质疑都引向同一人，可能是做局。所以我暂不投p2，也不跟p4锁票。我更想听10、11、12这几位还没表态的人，谁先急着定结论，谁的票型就值得怀疑。今天宁可慢一步，别误推。"
+      }
+    },
+    {
+      "seq": 413,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p4",
+        "target_id": "p11",
+        "weight": 1.5
+      }
+    },
+    {
+      "seq": 414,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p5",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 415,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p6",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 416,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p11",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 417,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p8",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 418,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 419,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 420,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": "p4",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 421,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 424,
+      "type": "PLAYER_ELIMINATED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p4"
+      }
+    },
+    {
+      "seq": 427,
+      "type": "SHERIFF_BADGE_TRANSFERRED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "from_player_id": "p4",
+        "to_player_id": "p7",
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 429,
+      "type": "NIGHT_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 6
+      }
+    },
+    {
+      "seq": 448,
+      "type": "DAWN_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 6,
+        "dead_player_ids": [
+          "p5"
+        ]
+      }
+    },
+    {
+      "seq": 449,
+      "type": "PLAYER_DIED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p5"
+      }
+    },
+    {
+      "seq": 450,
+      "type": "DAY_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 6
+      }
+    },
+    {
+      "seq": 454,
+      "type": "DAY_SPEECH_ORDER_SET",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 6,
+        "reference_seat": 5,
+        "reference_is_dawn_death": true,
+        "direction": "next",
+        "speaker_ids": [
+          "p6",
+          "p7",
+          "p8",
+          "p9",
+          "p10",
+          "p11",
+          "p12"
+        ],
+        "sheriff_id": "p7"
+      }
+    },
+    {
+      "seq": 456,
+      "type": "PLAYER_PASSED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p6",
+        "stage": "day_discussion"
+      }
+    },
+    {
+      "seq": 457,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "day_discussion",
+        "text": "刚接警徽，先把话摆明：p3让徽前、p4拿徽后连续两轮都咬p2，这种接力式锁定太整齐了。今天我不急着定死，但p2必须把昨晚的行踪和为什么两次被同一链条点出来讲清楚，讲不圆票就压他。其他人别跟票，先听。"
+      }
+    },
+    {
+      "seq": 458,
+      "type": "PLAYER_PASSED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p8",
+        "stage": "day_discussion"
+      }
+    },
+    {
+      "seq": 459,
+      "type": "PLAYER_PASSED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p9",
+        "stage": "day_discussion"
+      }
+    },
+    {
+      "seq": 460,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p10",
+        "stage": "day_discussion",
+        "text": "先说事实：p1到p5全没了，现在活着6个，狼队最多还剩4个，局势很紧。p7刚接徽这话我不反对，但有个疑点：p3、p4都已经死了，死无对证的情况下把票压给p2，等于用两条不能开口的链定一个活人的罪，这个成本太低了。我暂不投p2，他可以把话说完再判断。我更关注p8和p9，前几轮你们俩的站边和投票轨迹我还没看出明确问题，但也正因为没信息才该重点听。今天出谁必须建立在活人能验证的逻辑上，不能只靠死者接力。"
+      }
+    },
+    {
+      "seq": 461,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p11",
+        "stage": "day_discussion",
+        "text": "我补一个事实：p1到p5全没了，夜里刀和白天放逐都算过账，现在6人局狼最多还剩4，容错极低。我不跟p7压p2那条死者接力链，正如p10说的，死无对证定活人罪成本太低。我更关注p8、p9，你俩前几轮几乎没留下可验证的站边轨迹，今天必须给明确判断而不是含糊话。暂不投的是p10，他这段发言是按存活名单和票型讲逻辑的，没急着甩锅。"
+      }
+    },
+    {
+      "seq": 462,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p12",
+        "stage": "day_discussion",
+        "text": "我补一句：p7用死者接力压p2确实证据薄，p10、p11都点出了这个逻辑问题，我认同先听p2把话说完。但我同样关注p8、p9，你俩到现在没给任何可验证的判断，六人局狼最多四只，沉默本身就是成本。我自己是闭眼民，没有查验能背书，所以只看发言质量。今天暂不投p2和p10，先看p8、p9能不能给出明确站边，给不出就他们两个里出一个。"
+      }
+    },
+    {
+      "seq": 471,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p6",
+        "target_id": "p8",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 472,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p8",
+        "weight": 1.5
+      }
+    },
+    {
+      "seq": 473,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p8",
+        "target_id": "p10",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 474,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p6",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 475,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": "p8",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 476,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": "p8",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 477,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": "p8",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 479,
+      "type": "PLAYER_ELIMINATED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p8"
+      }
+    },
+    {
+      "seq": 480,
+      "type": "NIGHT_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 7
+      }
+    },
+    {
+      "seq": 497,
+      "type": "DAWN_ANNOUNCED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 7,
+        "dead_player_ids": [
+          "p6"
+        ]
+      }
+    },
+    {
+      "seq": 498,
+      "type": "PLAYER_DIED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p6"
+      }
+    },
+    {
+      "seq": 499,
+      "type": "DAY_STARTED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 7
+      }
+    },
+    {
+      "seq": 503,
+      "type": "DAY_SPEECH_ORDER_SET",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "round": 7,
+        "reference_seat": 6,
+        "reference_is_dawn_death": true,
+        "direction": "next",
+        "speaker_ids": [
+          "p7",
+          "p9",
+          "p10",
+          "p11",
+          "p12"
+        ],
+        "sheriff_id": "p7"
+      }
+    },
+    {
+      "seq": 505,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7",
+        "stage": "day_discussion",
+        "text": "换个角度说：警徽从我手里过，我最清楚这条链是谁递的。p3把徽让给p4，p4又转给我，全程没人质疑这个交接，反而都在顺着咬p2——这种默契不像好人阵营该有的混乱。今天我先不投p2，改看p3和p4谁在回避解释自己那一段的刀口选择。"
+      }
+    },
+    {
+      "seq": 506,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p9",
+        "stage": "day_discussion",
+        "text": "p7你这话有点站不住脚：警徽链是p3→p4→你，这段交接当时确实没人跳出来质疑，你现在拿这个当证据，等于把你也算进这条链里了。你要查刀口选择可以，但先把自己那一段说清楚，别只挑死人身上找默契。场上活人就我们五个，p10、p11、p12谁跟p3p4走得最近，今天该给个说法。"
+      }
+    },
+    {
+      "seq": 507,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p10",
+        "stage": "day_discussion",
+        "text": "我是平民，没信息只能盘逻辑。p7说查刀口却把自己也算进链里，确实该先自证；p9点我、p11、p12要说法，那我先表态：我和p3p4没有任何私下互动记录可查，纯靠发言判断。我现在更关注p7，他拿着警徽却把矛头引向死人，活人里谁站边他最积极？暂不投p9，他至少敢质疑警徽链本身。"
+      }
+    },
+    {
+      "seq": 508,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p11",
+        "stage": "day_discussion",
+        "text": "我也是平民，闭眼玩家只能盘公开信息。活人就五个：p7、p9、p10、p12和我。p7持警徽却把火力引向已死的p3p4，这条链确实绕不开他自己，我同意p9和p10的质疑方向。但反过来看，p9连续两轮主攻警徽链，话说得太顺也可能是狼在带节奏踩神职。暂不投p10，他表态最保守没毛病；今天我重点听p12怎么站边，他到现在还没开口，沉默本身比发言更值得警惕。"
+      }
+    },
+    {
+      "seq": 509,
+      "type": "PLAYER_SPOKE",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p12",
+        "stage": "day_discussion",
+        "text": "我确实是平民，闭眼到现在。p11点我沉默，那我直说：我不站任何人的边，只盘票型。p7拿警徽却把火力引向已死的p3p4，这条链他自己也在里面，回避不了；但p9两轮死咬警徽链，节奏也太整齐了。暂不投p10，他表态最保守没毛病。今天我关注p7，请他明确给出今天想推谁、依据哪条活人证据，别再绕死人。"
+      }
+    },
+    {
+      "seq": 516,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p7",
+        "target_id": "p9",
+        "weight": 1.5
+      }
+    },
+    {
+      "seq": 517,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p9",
+        "target_id": "p7",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 518,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p10",
+        "target_id": null,
+        "weight": 1
+      }
+    },
+    {
+      "seq": 519,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p11",
+        "target_id": "p7",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 520,
+      "type": "VOTE_CAST",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "voter_id": "p12",
+        "target_id": "p7",
+        "weight": 1
+      }
+    },
+    {
+      "seq": 523,
+      "type": "PLAYER_ELIMINATED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "player_id": "p7"
+      }
+    },
+    {
+      "seq": 526,
+      "type": "SHERIFF_BADGE_TRANSFERRED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "from_player_id": "p7",
+        "to_player_id": "p9",
+        "trigger_phase": "day_vote"
+      }
+    },
+    {
+      "seq": 528,
+      "type": "GAME_FINISHED",
+      "visibility": "public",
+      "channel": "public",
+      "recipients": [],
+      "payload": {
+        "winner": "village",
+        "round": 7,
+        "roles": {
+          "p1": "wolf",
+          "p2": "seer",
+          "p3": "wolf",
+          "p4": "wolf",
+          "p5": "guard",
+          "p6": "witch",
+          "p7": "wolf",
+          "p8": "villager",
+          "p9": "hunter",
+          "p10": "villager",
+          "p11": "villager",
+          "p12": "villager"
+        }
+      }
+    }
+  ],
+  "latest_snapshot": {
+    "latest_event_seq": 529,
+    "public_state": {
+      "game_id": "s2-seer-n00051-game0",
+      "status": "finished",
+      "round": 7,
+      "phase": "finished",
+      "winner": "village",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1",
+          "seat": 1,
+          "alive": false
+        },
+        {
+          "id": "p2",
+          "name": "Player 2",
+          "seat": 2,
+          "alive": false
+        },
+        {
+          "id": "p3",
+          "name": "Player 3",
+          "seat": 3,
+          "alive": false
+        },
+        {
+          "id": "p4",
+          "name": "Player 4",
+          "seat": 4,
+          "alive": false
+        },
+        {
+          "id": "p5",
+          "name": "Player 5",
+          "seat": 5,
+          "alive": false
+        },
+        {
+          "id": "p6",
+          "name": "Player 6",
+          "seat": 6,
+          "alive": false
+        },
+        {
+          "id": "p7",
+          "name": "Player 7",
+          "seat": 7,
+          "alive": false
+        },
+        {
+          "id": "p8",
+          "name": "Player 8",
+          "seat": 8,
+          "alive": false
+        },
+        {
+          "id": "p9",
+          "name": "Player 9",
+          "seat": 9,
+          "alive": true
+        },
+        {
+          "id": "p10",
+          "name": "Player 10",
+          "seat": 10,
+          "alive": true
+        },
+        {
+          "id": "p11",
+          "name": "Player 11",
+          "seat": 11,
+          "alive": true
+        },
+        {
+          "id": "p12",
+          "name": "Player 12",
+          "seat": 12,
+          "alive": true
+        }
+      ],
+      "sheriff": {
+        "player_id": "p9",
+        "name": "Player 9",
+        "seat": 9,
+        "alive": true,
+        "vote_weight": 1.5
+      },
+      "sheriff_election_status": "elected",
+      "day_speech_order": {
+        "reference_seat": 6,
+        "direction": "next"
+      },
+      "roles_revealed": {
+        "p1": "wolf",
+        "p2": "seer",
+        "p3": "wolf",
+        "p4": "wolf",
+        "p5": "guard",
+        "p6": "witch",
+        "p7": "wolf",
+        "p8": "villager",
+        "p9": "hunter",
+        "p10": "villager",
+        "p11": "villager",
+        "p12": "villager"
+      }
+    }
+  },
+  "final_snapshot": {
+    "latest_event_seq": 529,
+    "public_state": {
+      "game_id": "s2-seer-n00051-game0",
+      "status": "finished",
+      "round": 7,
+      "phase": "finished",
+      "winner": "village",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1",
+          "seat": 1,
+          "alive": false
+        },
+        {
+          "id": "p2",
+          "name": "Player 2",
+          "seat": 2,
+          "alive": false
+        },
+        {
+          "id": "p3",
+          "name": "Player 3",
+          "seat": 3,
+          "alive": false
+        },
+        {
+          "id": "p4",
+          "name": "Player 4",
+          "seat": 4,
+          "alive": false
+        },
+        {
+          "id": "p5",
+          "name": "Player 5",
+          "seat": 5,
+          "alive": false
+        },
+        {
+          "id": "p6",
+          "name": "Player 6",
+          "seat": 6,
+          "alive": false
+        },
+        {
+          "id": "p7",
+          "name": "Player 7",
+          "seat": 7,
+          "alive": false
+        },
+        {
+          "id": "p8",
+          "name": "Player 8",
+          "seat": 8,
+          "alive": false
+        },
+        {
+          "id": "p9",
+          "name": "Player 9",
+          "seat": 9,
+          "alive": true
+        },
+        {
+          "id": "p10",
+          "name": "Player 10",
+          "seat": 10,
+          "alive": true
+        },
+        {
+          "id": "p11",
+          "name": "Player 11",
+          "seat": 11,
+          "alive": true
+        },
+        {
+          "id": "p12",
+          "name": "Player 12",
+          "seat": 12,
+          "alive": true
+        }
+      ],
+      "sheriff": {
+        "player_id": "p9",
+        "name": "Player 9",
+        "seat": 9,
+        "alive": true,
+        "vote_weight": 1.5
+      },
+      "sheriff_election_status": "elected",
+      "day_speech_order": {
+        "reference_seat": 6,
+        "direction": "next"
+      },
+      "roles_revealed": {
+        "p1": "wolf",
+        "p2": "seer",
+        "p3": "wolf",
+        "p4": "wolf",
+        "p5": "guard",
+        "p6": "witch",
+        "p7": "wolf",
+        "p8": "villager",
+        "p9": "hunter",
+        "p10": "villager",
+        "p11": "villager",
+        "p12": "villager"
+      }
+    }
+  }
+}

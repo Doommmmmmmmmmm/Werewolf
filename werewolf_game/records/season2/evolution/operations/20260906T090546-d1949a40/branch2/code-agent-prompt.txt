@@ -1,0 +1,54 @@
+你正在修改狼人杀角色 villager 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager-n00011 的问题不是动作 schema，而是“公开信息压缩方式”和“投票/发言决策链”都偏弱。它在 20 局里只赢 2 局，且 focus-role 没有非法行动或 fallback，说明失败主要是策略表达与记忆组织，而不是格式错误。回放里它经常跟着最新话题走，缺少稳定的嫌疑账本和阶段化归纳，导致中后期无法把已确认链路持续转化为投票优势。",
+  "evidence": [
+    "evaluation_summary 显示 villager-n00011：game_count=20，win_count=2，loss_count=18，win_rate=0.1；focus_role 的 invalid_decision_count=0、fallback_count=0，说明主要问题不在 schema 兼容。",
+    "random_game_replay 中，day1 先误出 p3；day2 p8 以警长/预言家姿态带节奏并给 p1 金水；day3 p8 公开报 p11 为狼并成功放逐 p11；但随后狼在 day4 刀掉 p2 获胜。村民侧没有把“已爆出的 p11 + 剩余狼坑”稳定沉淀成后续归票链。",
+    "current_agent.py 的 _update_working_memory 会递归扫描整个 sync_packet，把所有包含 role/claim/vote/reveal 等键的内容都压成文本，并在每次 observe 时更新 suspicion_scores；这很容易把同一份快照或无关字段重复计分。",
+    "current_agent.py 的 _update_suspicion_scores 只根据“是否出现角色相关词”和“vote target”加分，没有区分系统事实、玩家声明和可验证矛盾，也没有记录 speaker-target 对应关系，因此容易把讨论热度误当成狼信号。",
+    "current_agent.py 的决策输入包含较大的 decision_aid JSON 和较长的平民政策块，但没有把这些信息进一步收敛成“候选 1/候选 2/最终票”的稳定模板；这与回放中反复出现的‘先听、没信息、跟票’式行为一致。",
+    "对比其他分支，n00012 已经把平民任务改成更短、更阶段化的 checklist，且评价 win_rate 为 0.3，高于 n00011 的 0.1；这提示 n00011 的更重工作记忆与更长提示并没有带来更好的实战表现。"
+  ],
+  "root_causes": [
+    "工作记忆是“整包重扫 + 朴素加分”，没有事件级去重，导致 suspicion_scores 更像快照噪声聚合，而不是可用的嫌疑账本。",
+    "嫌疑打分规则过于粗糙：把角色词、投票目标、公开声明混为一类，没有把“谁说了什么”“是否前后矛盾”“是否被后续事实验证”区分开。",
+    "决策提示缺少阶段化约束，虽然要求比较两个候选，但没有把“发言/投票/警徽/遗言”分别转成不同的固定输出骨架，导致模型容易回到空泛描述。",
+    "task.md 与代码实现的对齐度不够：文档强调小型怀疑列表、后期核算和具体人具体理由，但代码只暴露了最近文本和排序后的 suspicion_order，没有明确的 confirmed_good / confirmed_bad / unresolved 结构。",
+    "prompt 体量偏大，且信息组织方式不够紧凑；在 12 人局里，模型更需要短而稳定的证据链，而不是更长的自然语言政策段。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "把 _update_working_memory 从“递归扫描整个 sync_packet”改成“只处理规范化后的新增公开事件”，并为每类事件增加去重键（例如 round/phase/type/player_id/target_id/text 的稳定组合）；同时给 suspicion_scores 加上 seen_fact_keys，避免同一条公开信息在多次 observe 中重复计分。",
+      "rationale": "消除重复计分和快照噪声，让嫌疑列表只反映新出现的公共事实，而不是同步包结构本身。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写 _update_suspicion_scores：不要再用 contains_role_like_word 作为主加分条件；改为维护结构化 ledger（claim_log、vote_log、sheriff_chain、confirmed_like、unresolved），并只对明确的公开矛盾、被多方持续指向、或与既有链路冲突的对象小幅加权。",
+      "rationale": "把“讨论热度”与“可验证矛盾”分开，提升村民在 day2/day3 的归票稳定性和 endgame 核算能力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "压缩 _build_decision_aid 和 _turn_instruction 的输出，加入阶段化模板：发言时强制输出“系统事实 / 玩家声明 / 我的推测 / 当前两候选”；投票时强制输出“候选 A、候选 B、为什么选 A”；警徽或遗言阶段则优先复述票型、查验链和死亡链。",
+      "rationale": "减少冗长自然语言提示带来的漂移，把模型输出收束到可执行的比较式决策框架。"
+    },
+    {
+      "file": "task.md",
+      "change": "将平民任务改写为更短的操作型说明，明确要求维护三个区块（已确认好人、重点怀疑、待观察），并在投票前比较至少两个候选、在后期复盘存活名单/死亡名单/查验链/灰区名单。",
+      "rationale": "让文档与代码中的结构化记忆一致，避免 task.md 继续停留在通用策略层面。"
+    }
+  ],
+  "risks": [
+    "如果去重键设计不稳，可能把真正重复出现但语义不同的事件误合并，导致信息损失。",
+    "把嫌疑打分收得太紧，可能降低对真实跳神、真假查验冲突的敏感度。",
+    "阶段化模板过强时，模型可能变得更机械，社交博弈的灵活性下降。",
+    "task_agent.py 若引入更明确的结构化 ledger，需要确认现有 turn_packet / sync_packet 的字段形状足够稳定，否则会出现解析适配成本。",
+    "这些修改只能改善村民侧的决策组织，不保证单独把 win_rate 拉高到稳定优势；部分低胜率也来自对局随机性和狼队配合质量。"
+  ],
+  "code_agent_brief": "请在 villager-n00011 的下一代 Task-Agent 中做一次“减噪 + 结构化记忆 + 阶段化提示”的重构。核心目标不是增加更多策略文案，而是修复当前实现里对公开快照的重复计分、角色词误加权和过长提示导致的决策漂移。具体要做：1) 在 task_agent.py 里把 observe/_update_working_memory 改成事件级去重，避免同一份公开信息在多个 sync 中重复进入 suspicion_scores；2) 把嫌疑结构从纯文本列表升级成结构化 ledger（claim_log、vote_log、sheriff_chain、confirmed_like、unresolved），并只基于明确公开矛盾和投票链更新；3) 把 turn_instruction 压缩成阶段化模板，强制发言/投票都先比较至少两个候选，再给出当前票或当前观察点；4) 在 task.md 里同步改成更短的操作型村民清单，和代码中的 ledger 对齐。不要改 Game Engine、规则、schema、工具或预算。"
+}

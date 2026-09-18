@@ -1,0 +1,629 @@
+--- hunter-n00007/task_agent.py
++++ hunter-n00032/task_agent.py
+@@ -32,6 +32,10 @@
+ # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。
+ DEFAULT_MAX_DECISION_RETRIES = 2
+ _SPEECH_ACTION_KINDS = frozenset({"speak", "last_words"})
++_PASS_KIND_ALIASES = frozenset({"pass", "skip", "wait", "noop", "none", "hold"})
++_PUBLIC_MEMORY_MAX_ROUNDS = 8
++_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY = 4
++_PUBLIC_MEMORY_MAX_SCAN_DEPTH = 3
+ 
+ _MEMORY_KEYS = {
+     "round",
+@@ -149,7 +153,7 @@
+     action = {
+         "request_id": request["request_id"],
+         "player_id": request["player_id"],
+-        "kind": str(source.get("kind", source.get("action", ""))),
++        "kind": _normalize_action_kind(str(source.get("kind", source.get("action", ""))), request),
+     }
+     target_id = source.get("target_id", source.get("targetId"))
+     if target_id:
+@@ -157,6 +161,47 @@
+     if isinstance(source.get("text"), str):
+         action["text"] = source["text"]
+     return action
++
++
++def _normalize_action_kind(kind: str, request: Mapping[str, Any]) -> str:
++    normalized = str(kind or "").strip()
++    if not normalized:
++        return ""
++    lower = normalized.lower()
++    raw_actions = request.get("allowed_actions")
++    if not isinstance(raw_actions, list):
++        return normalized
++
++    allowed_kinds: list[str] = []
++    targetless_kinds: list[str] = []
++    for allowed in raw_actions:
++        if not isinstance(allowed, Mapping):
++            continue
++        allowed_kind = str(allowed.get("kind") or "").strip()
++        if not allowed_kind:
++            continue
++        allowed_kinds.append(allowed_kind)
++        if not allowed.get("target_ids") and allowed_kind.lower() not in _SPEECH_ACTION_KINDS:
++            targetless_kinds.append(allowed_kind)
++
++    if lower in _PASS_KIND_ALIASES:
++        for allowed_kind in allowed_kinds:
++            if allowed_kind.lower() in _PASS_KIND_ALIASES:
++                return allowed_kind
++        if targetless_kinds:
++            return targetless_kinds[0]
++        if len(allowed_kinds) == 1 and allowed_kinds[0].lower() in _PASS_KIND_ALIASES:
++            return allowed_kinds[0]
++    return normalized
++
++
++def _text_mentions_token(text: Any, token: Any) -> bool:
++    text_str = str(text or "")
++    token_str = str(token or "").strip()
++    if not text_str or not token_str:
++        return False
++    pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(token_str)}(?![A-Za-z0-9_])", re.IGNORECASE)
++    return bool(pattern.search(text_str))
+ 
+ 
+ def decision_error(action: dict[str, Any], request: dict[str, Any]) -> str | None:
+@@ -222,14 +267,20 @@
+             "output_tokens": 0,
+             "total_tokens": 0,
+         }
+-        self._recent_public_events: deque[str] = deque(maxlen=10)
++        self._recent_public_events: deque[dict[str, Any]] = deque(maxlen=_PUBLIC_MEMORY_MAX_ROUNDS)
+ 
+     async def observe(self, sync_packet: dict[str, Any]) -> None:
+-        """接收公开同步，并压缩保存为短记忆。"""
+-
+-        for line in self._extract_memory_lines(sync_packet):
+-            if line:
+-                self._recent_public_events.append(line)
++        """接收公开同步，并压缩保存为按轮次组织的短记忆。"""
++
++        entry = self._build_public_memory_entry(sync_packet)
++        if entry is None:
++            return
++        if self._recent_public_events:
++            last = self._recent_public_events[-1]
++            if self._public_memory_key(last) == self._public_memory_key(entry):
++                self._merge_public_memory_entry(last, entry)
++                return
++        self._recent_public_events.append(entry)
+ 
+     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:
+         if turn_packet["self"]["player_id"] != self.player_id:
+@@ -394,58 +445,177 @@
+             return ""
+         request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
+         public_state = turn_packet.get("public_state") if isinstance(turn_packet.get("public_state"), Mapping) else {}
+-        ranking = self._rank_hunter_targets(request, public_state, list(self._recent_public_events))
++        memory_entries = list(self._recent_public_events)
++        ranking = self._rank_hunter_targets(request, public_state, memory_entries)
+         phase = str(
+             turn_packet.get("game", {}).get(
+                 "public_phase",
+                 turn_packet.get("game", {}).get("phase", request.get("phase", "unknown")),
+             )
+         )
+-        lines = [f"阶段：{phase}"]
+-        legal_targets = ranking.get("legal_targets") or []
+-        if legal_targets:
+-            lines.append("合法目标：" + "、".join(legal_targets[:8]))
+-        recent = ranking.get("recent_memory") or []
+-        if recent:
+-            lines.append("最近公开记忆：" + " | ".join(recent[-3:]))
++        mode = self._infer_hunter_decision_mode(request, phase)
++        pressure = self._rank_public_pressure(memory_entries, public_state)
++        dialogue_preview = self._summarize_current_dialogue(turn_packet.get("tool_context"))
++
++        lines = [f"模式：{mode}；阶段：{phase}"]
++        recent_memory = ranking.get("recent_memory") or []
++        if recent_memory:
++            lines.append("最近公开记忆：" + " | ".join(recent_memory[-3:]))
++        if pressure.get("conflicts"):
++            lines.append("最近争议：" + "；".join(pressure["conflicts"][:2]))
++        if pressure.get("vote_chain"):
++            lines.append("票链：" + pressure["vote_chain"])
++        if pressure.get("top_evidence"):
++            lines.append("证据：" + "；".join(pressure["top_evidence"][:2]))
++        if dialogue_preview:
++            lines.append("当前对话：" + dialogue_preview)
++
+         ordered = ranking.get("target_ranking") or []
+-        if ordered:
+-            top_bits = []
+-            for item in ordered[:3]:
+-                reason = str(item.get("reason") or "")[:32]
+-                top_bits.append(f"{item.get('target_id')}({item.get('score')}:{reason})")
+-            lines.append("目标排序：" + " > ".join(top_bits))
+-        if ranking.get("pass_recommended"):
+-            lines.append("倾向：证据不足或连锁风险高时可跳过")
+-        elif ranking.get("best_target"):
+-            lines.append(f"倾向：优先开枪 {ranking['best_target']}")
++        if mode == "hunter_reaction":
++            legal_targets = ranking.get("legal_targets") or []
++            if legal_targets:
++                lines.append("合法目标：" + "、".join(legal_targets[:6]))
++            if ordered:
++                top_bits = []
++                for item in ordered[:3]:
++                    reason = str(item.get("reason") or "")[:28]
++                    top_bits.append(f"{item.get('target_id')}({item.get('score')}:{reason})")
++                lines.append("目标排序：" + " > ".join(top_bits))
++            if ranking.get("pass_recommended"):
++                lines.append("证据不足或连锁风险高时优先跳过")
++            elif ranking.get("best_target"):
++                lines.append(f"优先目标：{ranking['best_target']}")
++        elif mode == "day_vote":
++            if pressure.get("top_names"):
++                lines.append("重点怀疑：" + "、".join(pressure["top_names"]))
++            if ordered:
++                top_bits = []
++                for item in ordered[:2]:
++                    reason = str(item.get("reason") or "")[:24]
++                    top_bits.append(f"{item.get('target_id')}({item.get('score')}:{reason})")
++                lines.append("若需跟票优先看：" + " > ".join(top_bits))
++            lines.append("发言时要点出当前票型与具体冲突，不要只说泛化站边。")
++        else:
++            if pressure.get("top_names"):
++                lines.append("重点人名：" + "、".join(pressure["top_names"]))
++            lines.append("发言要求：必须引用最近1-2条公开证据，点名1个具体玩家，并给出1个具体理由；优先说票型、对跳、金水/查杀冲突，不要空泛套话。")
+         return self._truncate_text("\n".join(lines), 900)
++
++    def _infer_hunter_decision_mode(self, request: Mapping[str, Any], phase: str) -> str:
++        raw_actions = request.get("allowed_actions") if isinstance(request.get("allowed_actions"), list) else []
++        kinds = [str(item.get("kind") or "").lower() for item in raw_actions if isinstance(item, Mapping)]
++        if any(kind in _SPEECH_ACTION_KINDS for kind in kinds):
++            return "speak"
++        phase_text = f"{phase} {request.get('phase', '')}".lower()
++        if any(token in phase_text for token in ("hunter", "last_words", "遗言", "反应", "开枪", "被击杀", "被刀", "death")):
++            return "hunter_reaction"
++        return "day_vote"
++
++    def _summarize_current_dialogue(self, tool_context: Any) -> str:
++        if not isinstance(tool_context, Mapping):
++            return ""
++        dialogue = tool_context.get("current_round_dialogue")
++        if not isinstance(dialogue, list):
++            return ""
++        bits: list[str] = []
++        for item in dialogue[-3:]:
++            if isinstance(item, Mapping):
++                speaker = self._first_compact(item, ("speaker", "speaker_id", "player", "player_id", "name"))
++                text = self._first_compact(item, ("text", "message", "content", "reason"))
++                if speaker and text:
++                    bits.append(self._truncate_text(f"{speaker}:{text}", 72))
++                elif text:
++                    bits.append(self._truncate_text(text, 72))
++                elif speaker:
++                    bits.append(self._truncate_text(speaker, 24))
++            elif isinstance(item, str):
++                compact = self._truncate_text(self._compact_text(item, 72), 72)
++                if compact:
++                    bits.append(compact)
++        return " | ".join(bits[:3])
++
++    def _rank_public_pressure(self, memory_entries: list[dict[str, Any]], public_state: Mapping[str, Any]) -> dict[str, Any]:
++        candidate_scores: dict[str, dict[str, Any]] = {}
++        conflicts: list[str] = []
++        vote_chain: list[str] = []
++        for entry in memory_entries[-6:]:
++            entry_label = self._public_memory_label(entry)
++            records = entry.get("records") if isinstance(entry.get("records"), list) else []
++            for record in records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY]:
++                record_text = self._public_record_text(record)
++                lower = record_text.lower()
++                speaker = self._first_compact(record, ("speaker", "voter", "player"))
++                target = self._first_compact(record, ("target", "vote"))
++                claim = self._first_compact(record, ("claim",))
++                if speaker and target:
++                    vote_chain.append(self._truncate_text(f"{speaker}->{target}", 28))
++                if record_text and any(word in lower for word in ("查杀", "对跳", "假", "伪", "冲票", "带票", "带节奏", "矛盾", "反水", "狼", "wolf")):
++                    conflicts.append(self._truncate_text(f"{entry_label} {record_text}", 86))
++                for role, name in (("speaker", speaker), ("target", target), ("claim", claim)):
++                    if not name:
++                        continue
++                    delta = 0
++                    if role == "target":
++                        if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "冲票", "带票", "矛盾", "反水")):
++                            delta += 3
++                        elif any(word in lower for word in ("票", "vote", "投", "怀疑", "死亡", "身份")):
++                            delta += 1
++                        if any(word in lower for word in ("金水", "可信", "好人", "站边", "支持", "清白")):
++                            delta -= 2
++                    elif role == "speaker":
++                        if any(word in lower for word in ("查杀", "对跳", "冲票", "带票", "矛盾", "狼", "wolf")):
++                            delta += 1
++                        if any(word in lower for word in ("金水", "可信", "好人", "站边")):
++                            delta -= 1
++                    elif role == "claim" and any(word in lower for word in ("对跳", "假", "伪", "查杀", "狼")):
++                        delta += 1
++                    if not delta:
++                        continue
++                    bucket = candidate_scores.setdefault(name, {"score": 0, "evidence": []})
++                    bucket["score"] += delta
++                    if len(bucket["evidence"]) < 2:
++                        bucket["evidence"].append(self._truncate_text(f"{entry_label} {record_text}", 78))
++        try:
++            public_blob = json.dumps(public_state, ensure_ascii=False, separators=(",", ":"))
++        except TypeError:
++            public_blob = repr(public_state)
++        public_blob = self._truncate_text(public_blob, 1000)
++        for name, bucket in candidate_scores.items():
++            if name and _text_mentions_token(public_blob, name):
++                bucket["score"] += 1
++                if len(bucket["evidence"]) < 2:
++                    bucket["evidence"].append(f"public_state提及{name}")
++        top = sorted(candidate_scores.items(), key=lambda item: (-int(item[1]["score"]), str(item[0])))
++        return {
++            "conflicts": self._dedupe_preserve_order(conflicts)[:2],
++            "vote_chain": "；".join(self._dedupe_preserve_order(vote_chain)[:3]),
++            "top_names": [name for name, bucket in top[:2] if int(bucket["score"]) > 0],
++            "top_evidence": [f"{name}:{' / '.join(bucket['evidence'][:2])}" for name, bucket in top[:2] if int(bucket["score"]) > 0],
++        }
+ 
+     def _rank_hunter_targets(
+         self,
+         request: Mapping[str, Any],
+         public_state: Mapping[str, Any],
+-        memory_lines: list[str],
++        memory_entries: list[dict[str, Any]],
+     ) -> dict[str, Any]:
+         legal_targets = self._collect_target_ids(request)
++        recent_memory = [
++            self._truncate_text(str(entry.get("summary") or self._public_memory_label(entry)), 140)
++            for entry in memory_entries[-4:]
++        ]
+         if not legal_targets:
+             return {
+                 "legal_targets": [],
+-                "recent_memory": memory_lines[-6:],
++                "recent_memory": recent_memory,
+                 "target_ranking": [],
+                 "pass_recommended": True,
+                 "best_target": None,
+             }
+ 
+-        memory_blob = "\n".join(memory_lines[-8:])
+-        try:
+-            public_blob_raw = json.dumps(public_state, ensure_ascii=False, separators=(",", ":"))
+-        except TypeError:
+-            public_blob_raw = repr(public_state)
+-        public_blob = self._truncate_text(public_blob_raw, 1200)
+         target_ranking: list[dict[str, Any]] = []
+         for target_id in legal_targets:
+-            score, reasons = self._score_hunter_target(target_id, memory_blob, public_blob)
++            score, reasons = self._score_hunter_target(target_id, memory_entries, public_state)
+             target_ranking.append(
+                 {
+                     "target_id": target_id,
+@@ -455,58 +625,264 @@
+             )
+         target_ranking.sort(key=lambda item: (-int(item["score"]), str(item["target_id"])))
+         best = target_ranking[0] if target_ranking else None
+-        pass_recommended = best is None or int(best["score"]) < 3
+-        if len(target_ranking) > 1:
+-            second = target_ranking[1]
+-            if int(best["score"]) - int(second["score"]) < 2 and int(best["score"]) < 5:
+-                pass_recommended = True
+-        if best is not None and int(best["score"]) >= 5:
+-            pass_recommended = False
++        second = target_ranking[1] if len(target_ranking) > 1 else None
++        best_score = int(best["score"]) if best else 0
++        second_score = int(second["score"]) if second else 0
++        pass_recommended = best is None or best_score < 4 or (best_score - second_score < 2 and best_score < 6)
+         return {
+             "legal_targets": legal_targets,
+-            "recent_memory": memory_lines[-6:],
++            "recent_memory": recent_memory,
+             "target_ranking": target_ranking,
+             "pass_recommended": pass_recommended,
+             "best_target": best["target_id"] if best and not pass_recommended else None,
+         }
+ 
+-    def _score_hunter_target(self, target_id: str, memory_blob: str, public_blob: str) -> tuple[int, list[str]]:
++    def _score_hunter_target(self, target_id: str, memory_entries: list[dict[str, Any]], public_state: Mapping[str, Any]) -> tuple[int, list[str]]:
++        target_token = self._compact_text(target_id, 32)
++        if not target_token:
++            return 0, ["证据不足"]
++        target_lower = target_token.lower()
+         score = 0
+         reasons: list[str] = []
+-        target_token = str(target_id)
+-        token_lower = target_token.lower()
+-        search_space = f"{memory_blob}\n{public_blob}"
+-        lines = [line for line in search_space.splitlines() if target_token in line or token_lower in line.lower()]
+-        if not lines and target_token in search_space:
+-            lines = [search_space]
+-        for line in lines[:6]:
+-            line_lower = line.lower()
+-            line_score = 0
+-            if any(word in line_lower for word in ("狼", "wolf", "查杀", "对跳", "假", "伪", "冲票", "带票", "带节奏", "矛盾")):
+-                line_score += 3
+-                reasons.append(self._truncate_text(line, 40))
+-            elif any(word in line_lower for word in ("怀疑", "票", "vote", "claim", "身份", "死亡", "night", "夜", "发言")):
+-                line_score += 1
+-                reasons.append(self._truncate_text(line, 40))
+-            if any(word in line_lower for word in ("好人", "金水", "可信", "站边", "支持")):
+-                line_score -= 1
+-            score += line_score
+-
+-        target_mentions = search_space.count(target_token)
+-        if target_mentions:
+-            score += min(2, target_mentions)
+-        if target_token in public_blob:
++        seen_rounds: set[str] = set()
++        public_blob = ""
++        try:
++            public_blob = json.dumps(public_state, ensure_ascii=False, separators=(",", ":"))
++        except TypeError:
++            public_blob = repr(public_state)
++        public_blob = self._truncate_text(public_blob, 1000)
++
++        for entry in memory_entries[-8:]:
++            entry_label = self._public_memory_label(entry)
++            if entry_label in seen_rounds:
++                continue
++            records = entry.get("records") if isinstance(entry.get("records"), list) else []
++            matched_this_entry = False
++            for record in records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY]:
++                record_text = self._public_record_text(record)
++                if not record_text:
++                    continue
++                lower = record_text.lower()
++                speaker = self._first_compact(record, ("speaker", "voter", "player"))
++                target = self._first_compact(record, ("target", "vote"))
++                claim = self._first_compact(record, ("claim",))
++                hit = _text_mentions_token(record_text, target_token) or any(
++                    _text_mentions_token(candidate, target_token) or _text_mentions_token(target_token, candidate)
++                    for candidate in (speaker, target, claim)
++                    if candidate
++                )
++                if not hit:
++                    continue
++                matched_this_entry = True
++                delta = 0
++                if target and target_lower in target.lower():
++                    if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "冲票", "带票", "矛盾", "反水", "带节奏")):
++                        delta += 4
++                    elif any(word in lower for word in ("票", "vote", "投", "怀疑", "身份", "死亡", "出局")):
++                        delta += 2
++                    if any(word in lower for word in ("金水", "可信", "好人", "站边", "支持", "清白")):
++                        delta -= 3
++                elif speaker and target_token in speaker.lower():
++                    if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "矛盾")):
++                        delta += 2
++                elif claim and target_token in claim.lower():
++                    if any(word in lower for word in ("对跳", "查杀", "狼", "wolf")):
++                        delta += 2
++                elif target_token in lower:
++                    if any(word in lower for word in ("查杀", "狼", "wolf", "对跳", "假", "伪", "冲票", "带票", "矛盾")):
++                        delta += 1
++                    if any(word in lower for word in ("金水", "可信", "好人", "站边", "支持")):
++                        delta -= 1
++                if not delta:
++                    continue
++                score += delta
++                if len(reasons) < 3:
++                    reasons.append(self._truncate_text(f"{entry_label} {record_text}", 72))
++            if matched_this_entry:
++                seen_rounds.add(entry_label)
++                score += 1
++        if _text_mentions_token(public_blob, target_token):
+             score += 1
+-
+-        if any(word in search_space for word in ("高票", "最高票", "票王", "带票", "冲票", "对跳", "查杀", "狼链", "连锁", "连带")) and target_token in search_space:
+-            score += 2
+-        if any(word in search_space for word in ("已死好人", "好人链", "公认好人", "公开好人", "金水", "可信")) and target_token in search_space:
+-            score -= 1
+-
++            if len(reasons) < 3:
++                reasons.append("public_state出现该目标")
++        if _text_mentions_token(" ".join(self._public_memory_label(entry) for entry in memory_entries), target_token):
++            score += 1
+         score = max(score, 0)
+         if not reasons:
+             reasons.append("公开记忆里缺少强关联")
+         return score, reasons[:3]
++
++    def _build_public_memory_entry(self, value: Any) -> dict[str, Any] | None:
++        if not isinstance(value, Mapping):
++            return None
++        records: list[dict[str, Any]] = []
++        self._extract_public_records(value, records, depth=0, seen=set())
++        round_part, phase_part = self._public_memory_key(value)
++        summary = self._format_public_memory_entry(round_part, phase_part, records, value)
++        if not summary:
++            return None
++        return {
++            "round": round_part,
++            "phase": phase_part,
++            "records": records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY],
++            "summary": summary,
++        }
++
++    def _merge_public_memory_entry(self, base: dict[str, Any], incoming: dict[str, Any]) -> None:
++        base_records = base.setdefault("records", [])
++        incoming_records = incoming.get("records") if isinstance(incoming.get("records"), list) else []
++        base_records.extend(incoming_records)
++        deduped: list[dict[str, Any]] = []
++        seen: set[tuple[str, ...]] = set()
++        for record in base_records:
++            if not isinstance(record, Mapping):
++                continue
++            signature = tuple(
++                self._first_compact(record, (key,)) for key in ("speaker", "voter", "player", "target", "vote", "claim", "death", "kind", "text")
++            )
++            if signature in seen:
++                continue
++            seen.add(signature)
++            deduped.append(dict(record))
++        base["records"] = deduped[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY]
++        base["summary"] = self._format_public_memory_entry(
++            base.get("round", ""),
++            base.get("phase", ""),
++            base["records"],
++            base,
++        )
++
++    def _public_memory_key(self, value: Mapping[str, Any]) -> tuple[str, str]:
++        round_part = self._first_compact(value, ("round", "day", "night", "turn"))
++        phase_part = self._first_compact(value, ("phase", "public_phase"))
++        return round_part, phase_part
++
++    def _public_memory_label(self, entry: Mapping[str, Any]) -> str:
++        if not isinstance(entry, Mapping):
++            return self._truncate_text(str(entry), 80)
++        round_part = self._compact_text(str(entry.get("round") or ""), 12)
++        phase_part = self._compact_text(str(entry.get("phase") or ""), 16)
++        bits: list[str] = []
++        if round_part:
++            bits.append(f"R{round_part}" if round_part.isdigit() else round_part)
++        if phase_part:
++            bits.append(phase_part)
++        if bits:
++            return " ".join(bits)
++        summary = self._compact_text(str(entry.get("summary") or ""), 80)
++        return summary or "sync"
++
++    def _format_public_memory_entry(
++        self,
++        round_part: str,
++        phase_part: str,
++        records: list[dict[str, Any]],
++        value: Any,
++    ) -> str:
++        header_bits: list[str] = []
++        if round_part:
++            header_bits.append(f"R{round_part}" if round_part.isdigit() else round_part)
++        if phase_part:
++            header_bits.append(phase_part)
++        header = " ".join(header_bits) or "sync"
++        segments: list[str] = []
++        for record in records[:_PUBLIC_MEMORY_MAX_RECORDS_PER_ENTRY]:
++            text = self._public_record_text(record)
++            if text:
++                segments.append(text)
++        if not segments:
++            fallback = self._public_record_text(value)
++            if fallback:
++                segments.append(fallback)
++        if not segments:
++            return ""
++        return self._truncate_text(f"{header}: " + " | ".join(segments), 220)
++
++    def _extract_public_records(self, value: Any, records: list[dict[str, Any]], *, depth: int, seen: set[tuple[str, ...]]) -> None:
++        if len(records) >= 12 or depth > _PUBLIC_MEMORY_MAX_SCAN_DEPTH:
++            return
++        if isinstance(value, Mapping):
++            record = self._mapping_to_public_record(value)
++            if record:
++                signature = tuple(
++                    record.get(key, "") for key in ("speaker", "voter", "player", "target", "vote", "claim", "death", "kind", "text")
++                )
++                if signature not in seen:
++                    seen.add(signature)
++                    records.append(record)
++            for item in value.values():
++                if len(records) >= 12:
++                    return
++                if isinstance(item, (Mapping, list, tuple)):
++                    self._extract_public_records(item, records, depth=depth + 1, seen=seen)
++            return
++        if isinstance(value, (list, tuple)):
++            for item in value[:6]:
++                self._extract_public_records(item, records, depth=depth + 1, seen=seen)
++                if len(records) >= 12:
++                    return
++            return
++        if isinstance(value, str):
++            text = self._compact_text(value, 160)
++            if text and self._is_signal_text(text):
++                signature = ("text", text)
++                if signature not in seen:
++                    seen.add(signature)
++                    records.append({"text": text})
++
++    def _mapping_to_public_record(self, value: Mapping[str, Any]) -> dict[str, Any] | None:
++        record: dict[str, Any] = {}
++        field_map = {
++            "speaker": ("speaker", "speaker_id", "player", "player_id", "name"),
++            "voter": ("voter", "voter_id"),
++            "target": ("target", "target_id", "vote_target", "accused"),
++            "vote": ("vote", "votes", "voted_for", "vote_for"),
++            "claim": ("claim", "public_role", "role", "identity"),
++            "death": ("death", "dead", "result", "status"),
++            "kind": ("kind", "action", "event"),
++            "text": ("text", "message", "reason"),
++        }
++        for field, keys in field_map.items():
++            compact = self._first_compact(value, keys)
++            if compact:
++                record[field] = compact
++        if not record:
++            return None
++        return record
++
++    def _public_record_text(self, value: Any) -> str:
++        if isinstance(value, Mapping):
++            parts: list[str] = []
++            for key in ("speaker", "voter", "player", "target", "vote", "claim", "death", "kind", "text"):
++                compact = self._first_compact(value, (key,))
++                if compact:
++                    if key == "text" and parts:
++                        parts.append(f"text={compact}")
++                    else:
++                        parts.append(f"{key}={compact}")
++            return self._compact_text(" ".join(parts), 160)
++        if isinstance(value, str):
++            return self._compact_text(value, 160)
++        return self._compact_text(self._compact_value(value), 160)
++
++    @staticmethod
++    def _dedupe_preserve_order(items: list[str]) -> list[str]:
++        deduped: list[str] = []
++        seen: set[str] = set()
++        for item in items:
++            if item and item not in seen:
++                seen.add(item)
++                deduped.append(item)
++        return deduped
++
++    def _first_compact(self, value: Mapping[str, Any], keys: tuple[str, ...]) -> str:
++        for key in keys:
++            if key not in value:
++                continue
++            compact = self._compact_value(value.get(key))
++            if compact:
++                return compact
++        return ""
+ 
+     def _collect_target_ids(self, request: Mapping[str, Any]) -> list[str]:
+         target_ids: list[str] = []
+--- hunter-n00007/task.md
++++ hunter-n00032/task.md
+@@ -4,13 +4,14 @@
+ 
+ ## 决策 checklist
+ 1. 先确认当前阶段是否真的到了猎人反应；只在行动包明确允许时开枪或跳过。
+-2. 列出当前合法目标，绝不使用行动包外的目标，也不要把尚未发生的猎人反应当作事实。
+-3. 结合最近 1~2 轮公开发言、票型、死亡链和公开身份跳点，优先找：高票、带节奏、与已公开好人链冲突、前后说法不一致的玩家。
+-4. 对每个合法目标按顺序比较：身份可信度、票型一致性、连锁风险。
+-5. 证据足够且目标明显可疑时，选择开枪；证据不足、风险偏高或无法分辨时，允许并优先跳过。
++2. 先列出当前合法目标，绝不使用行动包外的目标，也不要把尚未发生的猎人反应当作事实。
++3. 猎人反应阶段必须先比较合法目标，再按“身份可信度 / 票型一致性 / 连锁风险”三项判断；证据不足时优先跳过。
++4. 结合最近 1~2 轮公开发言、票型、死亡链和公开身份跳点，优先找：高票、带节奏、与已公开好人链冲突、前后说法不一致的玩家。
++5. 活着时的发言必须引用最近 1~2 条公开证据，至少带 1 个具体人名和 1 个具体理由；不要用空泛套话代替判断。
+ 
+ ## 公开发言规则
+-- 活着时保持自然的好人视角，回应当下争议，尽量引用最近一条或两条公开证据。
+-- 不必急于自证身份；如果需要表态，用简短、可信、基于公开信息的话说明立场。
+-- 避免每次都重复“带走最像狼的人”这类固定句式，要针对本轮争议给出具体回应。
+-- 不要把没有发生的猎人反应、开枪结果或身份结论写成系统事实。+- 活着时保持自然的好人视角，回应当下争议，但必须落到具体人名、具体票型或具体身份冲突上。
++- 不必急于自证身份；如果需要表态，用简短、可信、基于公开信息的话说明立场，并点出你在看谁、为什么。
++- 禁止把“先听一圈”“普通牌”“没什么花活”“看情况再说”这类空话当作常规发言；它们只能作为过渡，不能作为主要内容。
++- 猎人反应阶段先列合法目标，再按“身份可信度 / 票型一致性 / 连锁风险”比较；证据不足优先 pass / skip / wait。
++- 不要把没有发生的猎人反应、开枪结果或身份结论写成系统事实。

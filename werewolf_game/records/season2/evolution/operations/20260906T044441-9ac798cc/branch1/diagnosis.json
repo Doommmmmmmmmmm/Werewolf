@@ -1,0 +1,2894 @@
+{
+  "node_id": "hunter-n00008",
+  "role": "hunter",
+  "attempt": 1,
+  "required_resources": [
+    "task",
+    "boundaries",
+    "current_agent",
+    "random_game_replay"
+  ],
+  "required_replay_game_index": 6,
+  "tool_trace": [
+    {
+      "tool": "list_resources",
+      "arguments": {},
+      "result": {
+        "required_resources": [
+          "task",
+          "boundaries",
+          "current_agent",
+          "random_game_replay"
+        ],
+        "external_knowledge": {
+          "description": "进化前冻结的狼人杀 Skill 卡片；通过 list_skills/read_skill 按需读取，不直接注入 Task-Agent",
+          "tool": "list_skills/read_skill"
+        },
+        "tools": [
+          {
+            "name": "list_resources",
+            "description": "列出本次诊断可用的只读资料及参数。"
+          },
+          {
+            "name": "read_current_agent",
+            "description": "读取当前节点的 task_agent.py 或 task.md。"
+          },
+          {
+            "name": "read_evolution_path",
+            "description": "读取 base 到当前节点的节点信息和祖先 patch。"
+          },
+          {
+            "name": "read_evolution_tree",
+            "description": "读取当前角色完整进化树索引。"
+          },
+          {
+            "name": "read_evolution_contract",
+            "description": "按需读取本次实验的进化状态机、预算和节点筛选规则。"
+          },
+          {
+            "name": "read_evaluation_summary",
+            "description": "读取当前节点最近一次评测汇总。"
+          },
+          {
+            "name": "read_game_replay",
+            "description": "分页读取当前节点评测中的一局完整审计回放。"
+          },
+          {
+            "name": "read_other_branch",
+            "description": "读取同角色另一节点的 patch、状态和胜负摘要。"
+          },
+          {
+            "name": "read_previous_diagnosis",
+            "description": "读取同角色某节点关联的历史诊断。"
+          },
+          {
+            "name": "list_skills",
+            "description": "列出所有可用 Skill 的名称和短描述，不返回完整攻略。"
+          },
+          {
+            "name": "read_skill",
+            "description": "读取指定 Skill 的完整内容，包括短描述和长描述。"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evaluation_summary",
+      "arguments": {},
+      "result": {
+        "node_id": "hunter-n00008",
+        "role": "hunter",
+        "team": "village",
+        "game_count": 20,
+        "complete_game_count": 20,
+        "failed_game_count": 0,
+        "win_count": 7,
+        "loss_count": 13,
+        "win_rate": 0.35,
+        "decision_count": 230,
+        "fallback_count": 0,
+        "fallback_rate": 0.0,
+        "invalid_decision_count": 0,
+        "quality_scope": "focus_role_only",
+        "total_decision_count": 3412,
+        "total_fallback_count": 6,
+        "total_invalid_decision_count": 6,
+        "recommended_status": "retained",
+        "status_reasons": [
+          "passed_broad_filter"
+        ],
+        "results": [
+          {
+            "game_index": 0,
+            "game_id": "s2-hunter-n00008-game0",
+            "seed": "season2-evolution:15372e3968a612b2:game0",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "0b4e7d426079225d6061d71b7f003603544ab8a3a2dec9f5cc32a9e1763e591a",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 167,
+            "fallback_count": 1,
+            "fallback_rate": 0.005988023952095809,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p10",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p6"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 171,
+              "api_attempt_count": 295,
+              "reported_usage_response_count": 171,
+              "input_tokens": 753837,
+              "output_tokens": 9244,
+              "total_tokens": 763081,
+              "unreported_api_attempt_count": 124
+            }
+          },
+          {
+            "game_index": 1,
+            "game_id": "s2-hunter-n00008-game1",
+            "seed": "season2-evolution:21496aa36529c3aa:game1",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "26b17f9e4c0533c740bf46eaddd4136d52d37cd046762905454d602d4aee956a",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 188,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 195,
+              "api_attempt_count": 296,
+              "reported_usage_response_count": 195,
+              "input_tokens": 840173,
+              "output_tokens": 10597,
+              "total_tokens": 850770,
+              "unreported_api_attempt_count": 101
+            }
+          },
+          {
+            "game_index": 2,
+            "game_id": "s2-hunter-n00008-game2",
+            "seed": "season2-evolution:b95fb3ec97aa9e08:game2",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "e15897a9bcfd933988e2778b1391457c86459be64d274c84ca7b074c2d763206",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 163,
+            "fallback_count": 3,
+            "fallback_rate": 0.018404907975460124,
+            "error_counts": {
+              "participant_error": 3
+            },
+            "errors": [
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              },
+              {
+                "player_id": "p12",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p7"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 10,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 171,
+              "api_attempt_count": 287,
+              "reported_usage_response_count": 171,
+              "input_tokens": 735876,
+              "output_tokens": 8539,
+              "total_tokens": 744415,
+              "unreported_api_attempt_count": 116
+            }
+          },
+          {
+            "game_index": 3,
+            "game_id": "s2-hunter-n00008-game3",
+            "seed": "season2-evolution:f0da52003285f72f:game3",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "ce9abe82699aab670bd708a0af66c73d4da688ee3eeb4c9cc19306d534ece34d",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 177,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p3"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 183,
+              "api_attempt_count": 271,
+              "reported_usage_response_count": 183,
+              "input_tokens": 768731,
+              "output_tokens": 10272,
+              "total_tokens": 779003,
+              "unreported_api_attempt_count": 88
+            }
+          },
+          {
+            "game_index": 4,
+            "game_id": "s2-hunter-n00008-game4",
+            "seed": "season2-evolution:c256dd03739cae6d:game4",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "e7613f5910f5b0bbb6d61e1b442047ee3ca4191845bdfa30562c972aad8f494b",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 167,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p5"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 168,
+              "api_attempt_count": 282,
+              "reported_usage_response_count": 168,
+              "input_tokens": 752818,
+              "output_tokens": 8816,
+              "total_tokens": 761634,
+              "unreported_api_attempt_count": 114
+            }
+          },
+          {
+            "game_index": 5,
+            "game_id": "s2-hunter-n00008-game5",
+            "seed": "season2-evolution:243024bd5f908b3b:game5",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "49726eb0d7b290dd1667d9caa9f32447d30df995834341caf26bf261603d5522",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 198,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 11,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 203,
+              "api_attempt_count": 358,
+              "reported_usage_response_count": 203,
+              "input_tokens": 943675,
+              "output_tokens": 11059,
+              "total_tokens": 954734,
+              "unreported_api_attempt_count": 155
+            }
+          },
+          {
+            "game_index": 6,
+            "game_id": "s2-hunter-n00008-game6",
+            "seed": "season2-evolution:cacf2f771b66d435:game6",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "d02f6f046a39d33dfd940c075488e4f9ccc2d3877791f4515f781da3d173d0a5",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 185,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 16,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 189,
+              "api_attempt_count": 326,
+              "reported_usage_response_count": 189,
+              "input_tokens": 883401,
+              "output_tokens": 10696,
+              "total_tokens": 894097,
+              "unreported_api_attempt_count": 137
+            }
+          },
+          {
+            "game_index": 7,
+            "game_id": "s2-hunter-n00008-game7",
+            "seed": "season2-evolution:1e2e067e76dc959c:game7",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "bd49f7d5f3e9a5d8f15f9d51734536ca908adf5432a8c767a719382fd1bb2339",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 197,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p9"
+            ],
+            "focus_decision_count": 11,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 204,
+              "api_attempt_count": 347,
+              "reported_usage_response_count": 204,
+              "input_tokens": 944085,
+              "output_tokens": 12138,
+              "total_tokens": 956223,
+              "unreported_api_attempt_count": 143
+            }
+          },
+          {
+            "game_index": 8,
+            "game_id": "s2-hunter-n00008-game8",
+            "seed": "season2-evolution:289ab68c2ea1d714:game8",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "34d4f4856bfc3b96cccc5b59b5bfa457b578ddbfe9011ed491359530bb1b24be",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 159,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p12"
+            ],
+            "focus_decision_count": 11,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 161,
+              "api_attempt_count": 274,
+              "reported_usage_response_count": 161,
+              "input_tokens": 712039,
+              "output_tokens": 8143,
+              "total_tokens": 720182,
+              "unreported_api_attempt_count": 113
+            }
+          },
+          {
+            "game_index": 9,
+            "game_id": "s2-hunter-n00008-game9",
+            "seed": "season2-evolution:ffe7a4e08948ae4c:game9",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "b48f5e36511e65ce7a16e5a970d88ee587c8d44e855f8108bc8fc0a6be84c523",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 164,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p11"
+            ],
+            "focus_decision_count": 11,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round0/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 169,
+              "api_attempt_count": 285,
+              "reported_usage_response_count": 169,
+              "input_tokens": 743942,
+              "output_tokens": 9558,
+              "total_tokens": 753500,
+              "unreported_api_attempt_count": 116
+            }
+          },
+          {
+            "game_index": 10,
+            "game_id": "s2-hunter-n00008-game10",
+            "seed": "season2-evolution:6338bcb8029adf90:game10",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "245f46cef93fc2f18fda156ac96152cd107badf9d39ce3dc31780b5c5c898359",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 201,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 12,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game0.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 204,
+              "api_attempt_count": 361,
+              "reported_usage_response_count": 204,
+              "input_tokens": 918485,
+              "output_tokens": 11200,
+              "total_tokens": 929685,
+              "unreported_api_attempt_count": 157
+            }
+          },
+          {
+            "game_index": 11,
+            "game_id": "s2-hunter-n00008-game11",
+            "seed": "season2-evolution:5da22f881c28c619:game11",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "381cd94755782d9c8d394bd0dab660bf22deec6dce1e4cb4338baeb643a17efe",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 146,
+            "fallback_count": 1,
+            "fallback_rate": 0.00684931506849315,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p5",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "guard_protect",
+                  "target_id": "p8"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p1"
+            ],
+            "focus_decision_count": 9,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game1.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 155,
+              "api_attempt_count": 237,
+              "reported_usage_response_count": 155,
+              "input_tokens": 659557,
+              "output_tokens": 8753,
+              "total_tokens": 668310,
+              "unreported_api_attempt_count": 82
+            }
+          },
+          {
+            "game_index": 12,
+            "game_id": "s2-hunter-n00008-game12",
+            "seed": "season2-evolution:bce173b122c358fb:game12",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "b7705a2171ca6c65aa985ebe1530069c778552cf8a74aca64f1b6779f8f3712d",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 150,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game2.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 158,
+              "api_attempt_count": 225,
+              "reported_usage_response_count": 158,
+              "input_tokens": 625496,
+              "output_tokens": 8477,
+              "total_tokens": 633973,
+              "unreported_api_attempt_count": 67
+            }
+          },
+          {
+            "game_index": 13,
+            "game_id": "s2-hunter-n00008-game13",
+            "seed": "season2-evolution:4ba26d0f6c268e38:game13",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "2da9005bbf2b45926a7091042347937f648b5da46e880e3e48af334bd2635662",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 174,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 11,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game3.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 177,
+              "api_attempt_count": 310,
+              "reported_usage_response_count": 177,
+              "input_tokens": 780082,
+              "output_tokens": 9826,
+              "total_tokens": 789908,
+              "unreported_api_attempt_count": 133
+            }
+          },
+          {
+            "game_index": 14,
+            "game_id": "s2-hunter-n00008-game14",
+            "seed": "season2-evolution:c256dd03739cae6d:game14",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "84bfc69216d20fdce49225c85dd044f5752aaec71ce974c9bdc5a89e3dffc3c2",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 182,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p7"
+            ],
+            "focus_decision_count": 14,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game4.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 186,
+              "api_attempt_count": 318,
+              "reported_usage_response_count": 186,
+              "input_tokens": 831863,
+              "output_tokens": 9670,
+              "total_tokens": 841533,
+              "unreported_api_attempt_count": 132
+            }
+          },
+          {
+            "game_index": 15,
+            "game_id": "s2-hunter-n00008-game15",
+            "seed": "season2-evolution:49c80b5117800441:game15",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-base",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-base",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "fbc90e75b458fbfbc34e556322db86e69e3a98bbf4f824739a8c5dde9fde5dc6",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 149,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p1"
+            ],
+            "focus_decision_count": 8,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game5.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 151,
+              "api_attempt_count": 232,
+              "reported_usage_response_count": 151,
+              "input_tokens": 591002,
+              "output_tokens": 7475,
+              "total_tokens": 598477,
+              "unreported_api_attempt_count": 81
+            }
+          },
+          {
+            "game_index": 16,
+            "game_id": "s2-hunter-n00008-game16",
+            "seed": "season2-evolution:5777fe549edc746f:game16",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-base",
+              "seer": "seer-n00013",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "728a94480d77ecb4142235a0aa2538b6e5d72afc0f7793b0d56e55c5364f2594",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 166,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 10,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game6.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 167,
+              "api_attempt_count": 294,
+              "reported_usage_response_count": 167,
+              "input_tokens": 786077,
+              "output_tokens": 9310,
+              "total_tokens": 795387,
+              "unreported_api_attempt_count": 127
+            }
+          },
+          {
+            "game_index": 17,
+            "game_id": "s2-hunter-n00008-game17",
+            "seed": "season2-evolution:aac540143bff921e:game17",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00004",
+              "villager": "villager-n00011",
+              "seer": "seer-base",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "5ac4f0ed0c1272ee2f97f54b28fb4635240291a5cbab65cb899cdd38988489d1",
+            "complete": true,
+            "winner": "wolf",
+            "focus_won": false,
+            "decision_count": 164,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p10"
+            ],
+            "focus_decision_count": 13,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game7.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 169,
+              "api_attempt_count": 252,
+              "reported_usage_response_count": 169,
+              "input_tokens": 713193,
+              "output_tokens": 8953,
+              "total_tokens": 722146,
+              "unreported_api_attempt_count": 83
+            }
+          },
+          {
+            "game_index": 18,
+            "game_id": "s2-hunter-n00008-game18",
+            "seed": "season2-evolution:c9e9bc3fab3e141c:game18",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-n00019",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-n00001",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "0fc534a2c3324bf5aef592cd0d21cea0d797e12afd371174f2071b185c27a77b",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 159,
+            "fallback_count": 0,
+            "fallback_rate": 0.0,
+            "error_counts": {},
+            "errors": [],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 8,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game8.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 162,
+              "api_attempt_count": 247,
+              "reported_usage_response_count": 162,
+              "input_tokens": 721982,
+              "output_tokens": 8985,
+              "total_tokens": 730967,
+              "unreported_api_attempt_count": 85
+            }
+          },
+          {
+            "game_index": 19,
+            "game_id": "s2-hunter-n00008-game19",
+            "seed": "season2-evolution:1e2e067e76dc959c:game19",
+            "focus_node": "hunter-n00008",
+            "role_nodes": {
+              "wolf": "wolf-base",
+              "villager": "villager-n00011",
+              "seer": "seer-n00013",
+              "witch": "witch-base",
+              "guard": "guard-n00016",
+              "hunter": "hunter-n00008"
+            },
+            "evaluation_signature": "285d048809526f99d92c4c6563a25b935fd22420ea410bbe1ff8074af89b5093",
+            "complete": true,
+            "winner": "village",
+            "focus_won": true,
+            "decision_count": 156,
+            "fallback_count": 1,
+            "fallback_rate": 0.00641025641025641,
+            "error_counts": {
+              "participant_error": 1
+            },
+            "errors": [
+              {
+                "player_id": "p9",
+                "type": "participant_error",
+                "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                "exception_type": "RuleViolationError",
+                "attempted_action": {
+                  "kind": "seer_inspect",
+                  "target_id": "p6"
+                },
+                "validation_error": "target_id 必须是 target_ids 中的一项"
+              }
+            ],
+            "focus_player_ids": [
+              "p8"
+            ],
+            "focus_decision_count": 8,
+            "focus_fallback_count": 0,
+            "focus_fallback_rate": 0.0,
+            "focus_error_counts": {},
+            "focus_errors": [],
+            "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/games/round1/log/full-game9.json",
+            "model_token_usage": {
+              "availability": "partial",
+              "participant_count": 12,
+              "successful_response_count": 161,
+              "api_attempt_count": 263,
+              "reported_usage_response_count": 161,
+              "input_tokens": 739400,
+              "output_tokens": 9204,
+              "total_tokens": 748604,
+              "unreported_api_attempt_count": 102
+            }
+          }
+        ],
+        "model": {
+          "available": true,
+          "model": "qwen3.8-flash",
+          "protocol": "responses",
+          "reasoning_effort": "none",
+          "enable_thinking": false,
+          "max_output_tokens": 900
+        }
+      }
+    },
+    {
+      "tool": "read_evolution_path",
+      "arguments": {},
+      "result": {
+        "lineage": [
+          {
+            "node": {
+              "node_id": "hunter-base",
+              "role": "hunter",
+              "status": "retained",
+              "parent_id": null,
+              "depth": 0,
+              "children": [
+                "hunter-n00007",
+                "hunter-n00008",
+                "hunter-n00009"
+              ],
+              "created_at": "2026-09-04T05:02:49.883410+00:00",
+              "code_hash": "c0f2b19e618231270233463e90a6b67f9ddb6d073c14fadab503ae7c4eb79b50",
+              "patch_path": null,
+              "diagnosis_path": null,
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/summary.json",
+              "status_reason": "base"
+            },
+            "patch": ""
+          },
+          {
+            "node": {
+              "node_id": "hunter-n00008",
+              "role": "hunter",
+              "status": "retained",
+              "parent_id": "hunter-base",
+              "depth": 1,
+              "children": [
+                "hunter-n00040",
+                "hunter-n00041"
+              ],
+              "created_at": "2026-09-04T14:33:51.015210+00:00",
+              "code_hash": "0846261358827987a20fc607da02f9e77c22c15bcd8df801e290fad6570d08ae",
+              "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/hunter-n00008/ancestor.patch",
+              "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T134204-1376d1b4/branch1/diagnosis.json",
+              "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-n00008/summary.json",
+              "status_reason": "passed_broad_filter"
+            },
+            "patch": "--- hunter-base/task_agent.py\n+++ hunter-n00008/task_agent.py\n@@ -7,6 +7,7 @@\n from __future__ import annotations\n \n import asyncio\n+from collections import deque\n from collections.abc import Mapping\n import hashlib\n import inspect\n@@ -29,6 +30,8 @@\n # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。\n DEFAULT_MAX_DECISION_RETRIES = 2\n _SPEECH_ACTION_KINDS = frozenset({\"speak\", \"last_words\"})\n+_PASS_LIKE_ACTION_KINDS = frozenset({\"pass\", \"skip\", \"wait\", \"idle\", \"noop\", \"none\"})\n+DEFAULT_PUBLIC_MEMORY_SIZE = 12\n \n \n CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {\n@@ -179,6 +182,7 @@\n         self.max_tool_calls_per_decision = max(0, int(max_tool_calls_per_decision))\n         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))\n         self.max_prompt_chars = max(1, int(max_prompt_chars))\n+        self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)\n         self._model_token_usage: dict[str, int] = {\n             \"successful_response_count\": 0,\n             \"api_attempt_count\": 0,\n@@ -189,10 +193,359 @@\n         }\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n-        \"\"\"接收公开同步；最小基线不把它跨行动保存为模型记忆。\"\"\"\n-\n-        # 保留 Participant 接口，但刻意不维护跨行动状态。\n-        del sync_packet\n+        \"\"\"接收公开同步，并压缩成有限长的短记忆。\"\"\"\n+\n+        if not isinstance(sync_packet, Mapping):\n+            return\n+        for event in self._extract_public_events(sync_packet):\n+            if event:\n+                self._public_memory.append(event)\n+\n+    def _recent_memory(self, limit: int = 5) -> list[str]:\n+        if limit <= 0:\n+            return []\n+        return list(self._public_memory)[-limit:]\n+\n+    def _decision_brief(\n+        self,\n+        turn_packet: Mapping[str, Any],\n+        current_dialogue: list[Any],\n+    ) -> dict[str, Any]:\n+        request = turn_packet[\"request\"]\n+        allowed_actions = [\n+            item for item in request.get(\"allowed_actions\", []) if isinstance(item, Mapping)\n+        ]\n+        phase = self._request_phase_label(turn_packet, request, allowed_actions)\n+        recent_memory = self._recent_memory(5)\n+        brief: dict[str, Any] = {\n+            \"phase\": phase,\n+            \"recent_public_signals\": recent_memory,\n+            \"current_round_dialogue_preview\": self._compact_dialogue(current_dialogue, limit=3),\n+        }\n+        mode = self._request_mode(allowed_actions)\n+        if mode == \"hunter_reaction\":\n+            ranking = self._hunter_target_ranking(allowed_actions, recent_memory)\n+            brief.update(\n+                {\n+                    \"decision_mode\": \"hunter_reaction\",\n+                    \"focus\": \"先比较合法 target_ids 的票型、改口、身份声明和死亡链条；证据不足时优先跳过。\",\n+                    \"target_ranking\": ranking[\"target_ranking\"],\n+                    \"skip_option\": ranking[\"skip_option\"],\n+                    \"skip_condition\": ranking[\"skip_condition\"],\n+                }\n+            )\n+        elif mode == \"last_words\":\n+            brief.update(\n+                {\n+                    \"decision_mode\": \"last_words\",\n+                    \"focus\": \"收束到已公开的票型、身份矛盾和死亡顺序，不要泛化找狼。\",\n+                    \"current_controversy\": self._recent_controversy(recent_memory),\n+                    \"key_contradiction\": self._key_contradiction(recent_memory),\n+                }\n+            )\n+        elif mode == \"speak\":\n+            brief.update(\n+                {\n+                    \"decision_mode\": \"speak\",\n+                    \"focus\": \"回应当前争议，优先点出最近票型变化与身份声明矛盾。\",\n+                    \"current_controversy\": self._recent_controversy(recent_memory),\n+                    \"key_contradiction\": self._key_contradiction(recent_memory),\n+                }\n+            )\n+        else:\n+            brief.update(\n+                {\n+                    \"decision_mode\": mode,\n+                    \"focus\": \"遵守当前阶段的合法行动范围，并尽量保持公开信息一致。\",\n+                }\n+            )\n+        return brief\n+\n+    @staticmethod\n+    def _request_mode(allowed_actions: list[Mapping[str, Any]]) -> str:\n+        kinds = [str(item.get(\"kind\") or \"\") for item in allowed_actions if item.get(\"kind\")]\n+        if \"hunter_reaction\" in kinds:\n+            return \"hunter_reaction\"\n+        if \"last_words\" in kinds:\n+            return \"last_words\"\n+        if \"speak\" in kinds:\n+            return \"speak\"\n+        if any(item.get(\"target_ids\") for item in allowed_actions):\n+            return \"hunter_reaction\"\n+        return kinds[0] if kinds else \"unknown\"\n+\n+    def _request_phase_label(\n+        self,\n+        turn_packet: Mapping[str, Any],\n+        request: Mapping[str, Any],\n+        allowed_actions: list[Mapping[str, Any]],\n+    ) -> str:\n+        game = turn_packet.get(\"game\") or {}\n+        phase = game.get(\"public_phase\") or game.get(\"phase\")\n+        if phase:\n+            return str(phase)\n+        mode = self._request_mode(allowed_actions)\n+        request_phase = request.get(\"phase\")\n+        if request_phase:\n+            return str(request_phase)\n+        return mode\n+\n+    @staticmethod\n+    def _compact_text(value: object, limit: int = 48) -> str:\n+        text = str(value).strip()\n+        if len(text) <= limit:\n+            return text\n+        return text[: max(0, limit - 1)].rstrip() + \"…\"\n+\n+    def _compact_dialogue(self, current_dialogue: list[Any], limit: int = 3) -> list[str]:\n+        if not isinstance(current_dialogue, list) or limit <= 0:\n+            return []\n+        preview: list[str] = []\n+        for item in current_dialogue[-limit:]:\n+            if isinstance(item, Mapping):\n+                speaker = str(\n+                    item.get(\"speaker\")\n+                    or item.get(\"player_id\")\n+                    or item.get(\"from_player_id\")\n+                    or item.get(\"from\")\n+                    or item.get(\"name\")\n+                    or \"?\"\n+                )\n+                text = item.get(\"text\", item.get(\"content\", item.get(\"message\", \"\")))\n+                compact = self._compact_text(text, limit=48)\n+                if compact:\n+                    preview.append(f\"{speaker}: {compact}\")\n+            elif isinstance(item, str):\n+                compact = self._compact_text(item, limit=48)\n+                if compact:\n+                    preview.append(compact)\n+        return preview\n+\n+    def _recent_controversy(self, recent_memory: list[str]) -> str:\n+        if not recent_memory:\n+            return \"暂无足够公开记忆\"\n+        return \"；\".join(recent_memory[-3:])\n+\n+    def _key_contradiction(self, recent_memory: list[str]) -> str:\n+        for line in reversed(recent_memory):\n+            if any(keyword in line for keyword in (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"自相矛盾\", \"投票\", \"死亡\", \"警长\")):\n+                return line\n+        return recent_memory[-1] if recent_memory else \"暂无明确矛盾\"\n+\n+    def _hunter_target_ranking(\n+        self,\n+        allowed_actions: list[Mapping[str, Any]],\n+        recent_memory: list[str],\n+    ) -> dict[str, Any]:\n+        target_ids: list[str] = []\n+        for action in allowed_actions:\n+            raw_targets = action.get(\"target_ids\")\n+            if not isinstance(raw_targets, list):\n+                continue\n+            for target in raw_targets:\n+                target_id = str(target)\n+                if target_id and target_id not in target_ids:\n+                    target_ids.append(target_id)\n+        ranking: list[dict[str, Any]] = []\n+        for target_id in target_ids:\n+            score, reasons = self._score_hunter_target(target_id, recent_memory)\n+            ranking.append(\n+                {\n+                    \"target_id\": target_id,\n+                    \"score\": round(score, 2),\n+                    \"reasons\": reasons,\n+                }\n+            )\n+        ranking.sort(key=lambda item: item[\"score\"], reverse=True)\n+        skip_option = self._pass_like_action_kind(allowed_actions)\n+        best_score = ranking[0][\"score\"] if ranking else 0.0\n+        if skip_option:\n+            skip_condition = \"若没有明确矛盾、票型偏差或身份冲突，优先跳过。\"\n+        else:\n+            skip_condition = \"没有跳过动作时，只选分数最高且风险最低的目标。\"\n+        if best_score < 1.0:\n+            skip_condition = \"证据不足时直接跳过；若不能跳过，再选最弱风险目标。\"\n+        return {\n+            \"target_ranking\": ranking[:4],\n+            \"skip_option\": skip_option,\n+            \"skip_condition\": skip_condition,\n+        }\n+\n+    def _score_hunter_target(self, target_id: str, recent_memory: list[str]) -> tuple[float, list[str]]:\n+        pattern = re.compile(rf\"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])\")\n+        score = 0.0\n+        reasons: list[str] = []\n+        for line in recent_memory:\n+            if not pattern.search(line):\n+                continue\n+            line_score = 0.2\n+            if any(keyword in line for keyword in (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"带节奏\", \"卖队\", \"假\", \"骗\", \"冲票\", \"踩\", \"查杀\", \"自相矛盾\")):\n+                line_score += 1.3\n+                reasons.append(self._compact_text(line, limit=60))\n+            if any(keyword in line for keyword in (\"投票\", \"票型\", \"站边\", \"出局\", \"死亡\", \"身份\", \"警长\", \"发言\", \"表态\")):\n+                line_score += 0.4\n+            if any(keyword in line for keyword in (\"可信\", \"一致\", \"解释清楚\", \"对得上\", \"稳定\", \"金水\")):\n+                line_score -= 0.5\n+            if \"狼人\" in line:\n+                line_score += 0.8\n+            if \"好人\" in line:\n+                line_score -= 0.2\n+            score += line_score\n+        if not reasons:\n+            reasons.append(\"公开记忆里缺少直接矛盾，只能低置信度判断\")\n+        return score, reasons[:3]\n+\n+    @staticmethod\n+    def _pass_like_action_kind(allowed_actions: list[Mapping[str, Any]]) -> str:\n+        for action in allowed_actions:\n+            kind = str(action.get(\"kind\") or \"\").lower()\n+            if kind in _PASS_LIKE_ACTION_KINDS:\n+                return kind\n+        return \"\"\n+\n+    def _extract_public_events(self, sync_packet: Mapping[str, Any]) -> list[str]:\n+        events: list[str] = []\n+        seen: set[str] = set()\n+        default_round = sync_packet.get(\"round\")\n+        default_phase = sync_packet.get(\"phase\") or sync_packet.get(\"public_phase\")\n+\n+        def add_event(item: object) -> None:\n+            event = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)\n+            if not event or event in seen:\n+                return\n+            seen.add(event)\n+            events.append(event)\n+\n+        for key in (\"events\", \"public_events\", \"log\", \"logs\", \"history\", \"records\", \"timeline\"):\n+            value = sync_packet.get(key)\n+            if isinstance(value, list):\n+                for item in value:\n+                    add_event(item)\n+                    if len(events) >= 8:\n+                        return events\n+        for key in (\"public_state\", \"state\", \"game\"):\n+            value = sync_packet.get(key)\n+            if value is not None:\n+                add_event(value)\n+                if len(events) >= 8:\n+                    return events\n+\n+        def walk(item: object, depth: int) -> None:\n+            if len(events) >= 8 or depth > 2:\n+                return\n+            if isinstance(item, Mapping):\n+                if self._looks_like_public_event(item):\n+                    add_event(item)\n+                else:\n+                    for value in item.values():\n+                        if isinstance(value, (Mapping, list, tuple)):\n+                            walk(value, depth + 1)\n+                return\n+            if isinstance(item, (list, tuple)):\n+                for value in item:\n+                    walk(value, depth + 1)\n+                    if len(events) >= 8:\n+                        return\n+\n+        walk(sync_packet, 0)\n+        return events\n+\n+    @staticmethod\n+    def _looks_like_public_event(item: Mapping[str, Any]) -> bool:\n+        return any(\n+            key in item\n+            for key in (\n+                \"speaker\",\n+                \"player_id\",\n+                \"from_player_id\",\n+                \"target_id\",\n+                \"vote\",\n+                \"votes\",\n+                \"kind\",\n+                \"action\",\n+                \"type\",\n+                \"text\",\n+                \"content\",\n+                \"message\",\n+                \"role\",\n+                \"death\",\n+                \"died\",\n+                \"alive\",\n+                \"status\",\n+            )\n+        )\n+\n+    @staticmethod\n+    def _summarize_public_event(\n+        item: object,\n+        *,\n+        default_round: object = None,\n+        default_phase: object = None,\n+    ) -> str | None:\n+        if isinstance(item, str):\n+            text = item.strip()\n+            if not text:\n+                return None\n+            return TaskAgent._compact_text(text, limit=72)\n+        if not isinstance(item, Mapping):\n+            return None\n+\n+        round_value = item.get(\"round\", default_round)\n+        phase_value = item.get(\"phase\", item.get(\"public_phase\", default_phase))\n+        prefix_parts: list[str] = []\n+        if round_value is not None:\n+            prefix_parts.append(f\"r{round_value}\")\n+        if phase_value is not None:\n+            prefix_parts.append(str(phase_value))\n+        prefix = \"[\" + \"/\".join(prefix_parts) + \"] \" if prefix_parts else \"\"\n+\n+        actor = str(\n+            item.get(\"speaker\")\n+            or item.get(\"player_id\")\n+            or item.get(\"from_player_id\")\n+            or item.get(\"from\")\n+            or item.get(\"actor\")\n+            or item.get(\"source\")\n+            or \"\"\n+        ).strip()\n+        target = str(item.get(\"target_id\") or item.get(\"target\") or item.get(\"votee\") or \"\").strip()\n+        kind = str(item.get(\"kind\") or item.get(\"action\") or item.get(\"type\") or \"\").strip().lower()\n+        text = str(item.get(\"text\") or item.get(\"content\") or item.get(\"message\") or \"\").strip()\n+        role = str(item.get(\"role\") or item.get(\"revealed_role\") or item.get(\"identity\") or \"\").strip()\n+\n+        parts: list[str] = []\n+        if actor:\n+            parts.append(actor)\n+        if kind in {\"speak\", \"speech\", \"say\", \"dialogue\", \"statement\"} or text:\n+            if text:\n+                parts.append(f\"发言:{TaskAgent._compact_text(text, limit=36)}\")\n+        elif kind in {\"vote\", \"voting\"} or item.get(\"vote\") is not None:\n+            if target:\n+                parts.append(f\"投票→{target}\")\n+            elif item.get(\"vote\") is not None:\n+                parts.append(f\"投票→{TaskAgent._compact_text(item.get('vote'), limit=24)}\")\n+        elif kind in {\"death\", \"died\", \"eliminate\", \"eliminated\", \"kill\", \"killed\"} or item.get(\"death\") is not None:\n+            if target:\n+                parts.append(f\"死亡→{target}\")\n+            else:\n+                parts.append(\"发生死亡\")\n+        elif kind in {\"reveal\", \"identity\", \"open_role\", \"claim\"} or role:\n+            claim = role or text or \"身份公开\"\n+            parts.append(f\"身份:{TaskAgent._compact_text(claim, limit=28)}\")\n+        else:\n+            for key in (\"vote\", \"votes\", \"result\", \"status\", \"event\"):\n+                value = item.get(key)\n+                if value is not None:\n+                    parts.append(f\"{key}:{TaskAgent._compact_text(value, limit=28)}\")\n+                    break\n+            if not parts and text:\n+                parts.append(TaskAgent._compact_text(text, limit=36))\n+\n+        if not parts:\n+            return None\n+        if prefix:\n+            return prefix + \" \".join(parts)\n+        return \" \".join(parts)\n \n     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:\n         if turn_packet[\"self\"][\"player_id\"] != self.player_id:\n@@ -202,6 +555,9 @@\n             raise ValueError(\"Task-Agent 的角色档案与行动包身份不一致\")\n \n         system = self._system_prompt(private)\n+\n+        tool_context = turn_packet.get(\"tool_context\") or {}\n+        current_dialogue = tool_context.get(\"current_round_dialogue\") or []\n         prompt = {\n             \"game\": turn_packet[\"game\"],\n             \"public_rules\": turn_packet[\"public_rules\"],\n@@ -209,6 +565,8 @@\n             \"private_information\": private,\n             \"public_state\": turn_packet[\"public_state\"],\n             \"request\": turn_packet[\"request\"],\n+            \"memory_brief\": self._recent_memory(5),\n+            \"decision_brief\": self._decision_brief(turn_packet, current_dialogue),\n             \"history_policy\": {\n                 \"default_context\": \"current_state_only\",\n                 \"current_round_dialogue_tool\": CURRENT_ROUND_DIALOGUE_TOOL_NAME,\n@@ -216,9 +574,6 @@\n                 \"max_tool_result_tokens\": self.max_tool_result_tokens,\n             },\n         }\n-\n-        tool_context = turn_packet.get(\"tool_context\") or {}\n-        current_dialogue = tool_context.get(\"current_round_dialogue\") or []\n \n         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:\n             del arguments\n--- hunter-base/task.md\n+++ hunter-n00008/task.md\n@@ -1,8 +1,9 @@\n-# 猎人最小任务\n+# 猎人任务说明\n \n 你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。\n \n-- 活着时保持自然的好人视角，收集足够证据，不要为了证明身份而过早暴露。\n-- 被要求开枪时比较合法目标的身份线索和连锁风险；证据不足时可以选择跳过。\n-- 不要把尚未发生的猎人反应写成系统事实，也不要忽略当前行动包的目标范围。\n-- 公开发言要回应当下争议，避免每次都用相同的“带走最像狼的人”模板。\n+- 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据：发言、票型、改口、身份声明、死亡顺序。\n+- 公开发言要回应当下争议，优先比较“谁支持谁、谁反复改口、谁的票型和身份声明不一致”。\n+- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择与票型、发言和死亡链条最不一致的人。\n+- 如果公开证据不足，或目标之间没有明显差异，要明确走跳过条件；不要把“带走最像狼的人”当成固定模板。\n+- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_evolution_contract",
+      "arguments": {},
+      "result": {
+        "purpose": "Meta-Agent 为当前角色设计下一代 Task-Agent；外部状态机负责评测、建树和预算执行。",
+        "current_node": {
+          "node_id": "hunter-n00008",
+          "role": "hunter",
+          "status": "retained",
+          "depth": 1,
+          "parent_id": "hunter-base",
+          "children": [
+            "hunter-n00040",
+            "hunter-n00041"
+          ],
+          "generated_candidate_count": 8,
+          "successful_evolution_count": 3,
+          "pending_candidate_count": 2
+        },
+        "node_states": {
+          "pending": "待评估；先运行配置数量的对局，再决定 retained 或 discarded",
+          "retained": "保留在候选池中；在预算允许时可以生成子节点",
+          "discarded": "舍弃；不进入候选池，也不再生成子节点"
+        },
+        "evaluation": {
+          "games_per_pending_node": 20,
+          "player_count": 12,
+          "game_concurrency": 2,
+          "model_max_in_flight": 4,
+          "max_failed_games": 18,
+          "max_fallback_rate": 0.2,
+          "max_invalid_decisions": 10,
+          "discard_all_losses": true,
+          "focus_role_uses_current_node": true,
+          "other_roles_use_random_retained_candidates": true,
+          "quality_error_metrics_scope": "focus_role_only; aggregate game metrics are retained for diagnostics",
+          "parent_child_comparison_required": false
+        },
+        "evolution_budget": {
+          "children_per_expansion": 3,
+          "max_children_per_node": 3,
+          "max_tree_depth": 6,
+          "max_generated_candidates_per_role": 60,
+          "max_successful_evolutions_per_role": 20,
+          "role_scheduler": "least_evolved_random",
+          "candidate_pool_extra_limit": null
+        },
+        "process": [
+          "一个 step 以产生新的 retained 子节点为成功终止条件；不是生成 pending 就结束。",
+          "一个 step 可以连续处理多个节点，直到产生 retained 子节点或所有机会耗尽。",
+          "pending 节点只做评测并决定保留或舍弃。",
+          "retained 节点扩展时固定创建 children_per_expansion 个子节点。",
+          "每个子节点单独调用一次 Meta-Agent 和 Pi；一次扩展抽取不同的游戏回放。",
+          "子节点从父节点快照继承全部祖先修改；其他分支需要通过工具主动读取。",
+          "不要求子节点胜过父节点，也不保证每次修改都是真实改进。"
+        ],
+        "not_evolvable": [
+          "Game Engine",
+          "游戏规则与胜负裁决",
+          "信息可见性与行动 JSON schema",
+          "工具实现、模型网关、审计记录和所有外部预算"
+        ]
+      }
+    },
+    {
+      "tool": "read_other_branch",
+      "arguments": {
+        "node_id": "hunter-n00040"
+      },
+      "result": {
+        "node": {
+          "node_id": "hunter-n00040",
+          "role": "hunter",
+          "status": "pending",
+          "parent_id": "hunter-n00008",
+          "depth": 2,
+          "children": [],
+          "created_at": "2026-09-06T04:44:41.559435+00:00",
+          "code_hash": "31652a2b76756c331dc1766eafcb605ba465d695cee50e1c9ec911905a286497",
+          "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/hunter-n00040/ancestor.patch",
+          "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260906T044441-9ac798cc/branch0/diagnosis.json",
+          "evaluation_summary_path": null,
+          "status_reason": ""
+        },
+        "patch": "--- hunter-n00008/task_agent.py\n+++ hunter-n00040/task_agent.py\n@@ -7,7 +7,7 @@\n from __future__ import annotations\n \n import asyncio\n-from collections import deque\n+from collections import Counter, deque\n from collections.abc import Mapping\n import hashlib\n import inspect\n@@ -21,6 +21,7 @@\n \n \n _CHINESE_CHARACTER = re.compile(r\"[\\u3400-\\u9fff]\")\n+_PLAYER_ID_PATTERN = re.compile(r\"\\b[a-zA-Z]{0,4}\\d+\\b\")\n \n CURRENT_ROUND_DIALOGUE_TOOL_NAME = \"read_current_round_dialogue\"\n DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5\n@@ -31,7 +32,7 @@\n DEFAULT_MAX_DECISION_RETRIES = 2\n _SPEECH_ACTION_KINDS = frozenset({\"speak\", \"last_words\"})\n _PASS_LIKE_ACTION_KINDS = frozenset({\"pass\", \"skip\", \"wait\", \"idle\", \"noop\", \"none\"})\n-DEFAULT_PUBLIC_MEMORY_SIZE = 12\n+DEFAULT_PUBLIC_MEMORY_SIZE = 24\n \n \n CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {\n@@ -183,6 +184,8 @@\n         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))\n         self.max_prompt_chars = max(1, int(max_prompt_chars))\n         self._public_memory: deque[str] = deque(maxlen=DEFAULT_PUBLIC_MEMORY_SIZE)\n+        self._player_notes: dict[str, dict[str, Any]] = {}\n+        self._round_memory: deque[str] = deque(maxlen=10)\n         self._model_token_usage: dict[str, int] = {\n             \"successful_response_count\": 0,\n             \"api_attempt_count\": 0,\n@@ -201,10 +204,14 @@\n             if event:\n                 self._public_memory.append(event)\n \n-    def _recent_memory(self, limit: int = 5) -> list[str]:\n+    def _recent_memory(self, limit: int = 8) -> list[str]:\n         if limit <= 0:\n             return []\n-        return list(self._public_memory)[-limit:]\n+        combined = list(self._public_memory)\n+        for item in self._round_memory:\n+            if item not in combined:\n+                combined.append(item)\n+        return combined[-limit:]\n \n     def _decision_brief(\n         self,\n@@ -216,40 +223,54 @@\n             item for item in request.get(\"allowed_actions\", []) if isinstance(item, Mapping)\n         ]\n         phase = self._request_phase_label(turn_packet, request, allowed_actions)\n-        recent_memory = self._recent_memory(5)\n+        recent_memory = self._recent_memory(8)\n+        evidence_snapshot = self._evidence_snapshot(recent_memory)\n         brief: dict[str, Any] = {\n             \"phase\": phase,\n             \"recent_public_signals\": recent_memory,\n+            \"evidence_snapshot\": evidence_snapshot,\n             \"current_round_dialogue_preview\": self._compact_dialogue(current_dialogue, limit=3),\n         }\n         mode = self._request_mode(allowed_actions)\n         if mode == \"hunter_reaction\":\n-            ranking = self._hunter_target_ranking(allowed_actions, recent_memory)\n+            ranking = self._hunter_target_ranking(allowed_actions, recent_memory, turn_packet)\n             brief.update(\n                 {\n                     \"decision_mode\": \"hunter_reaction\",\n-                    \"focus\": \"先比较合法 target_ids 的票型、改口、身份声明和死亡链条；证据不足时优先跳过。\",\n+                    \"focus\": \"先比票型、改口、身份声明和死亡链条；只有多源证据都很弱时才考虑跳过。\",\n                     \"target_ranking\": ranking[\"target_ranking\"],\n                     \"skip_option\": ranking[\"skip_option\"],\n                     \"skip_condition\": ranking[\"skip_condition\"],\n+                    \"top_vote_pressure\": evidence_snapshot[\"top_vote_pressure\"],\n+                    \"top_contradictions\": evidence_snapshot[\"top_contradictions\"],\n+                    \"claimed_roles\": evidence_snapshot[\"claimed_roles\"],\n+                    \"hard_clears\": evidence_snapshot[\"hard_clears\"],\n                 }\n             )\n         elif mode == \"last_words\":\n             brief.update(\n                 {\n                     \"decision_mode\": \"last_words\",\n-                    \"focus\": \"收束到已公开的票型、身份矛盾和死亡顺序，不要泛化找狼。\",\n+                    \"focus\": \"收束到已公开的票型、身份冲突、改口与死亡顺序，先列证据再下结论。\",\n                     \"current_controversy\": self._recent_controversy(recent_memory),\n                     \"key_contradiction\": self._key_contradiction(recent_memory),\n+                    \"top_vote_pressure\": evidence_snapshot[\"top_vote_pressure\"],\n+                    \"top_contradictions\": evidence_snapshot[\"top_contradictions\"],\n+                    \"claimed_roles\": evidence_snapshot[\"claimed_roles\"],\n+                    \"hard_clears\": evidence_snapshot[\"hard_clears\"],\n                 }\n             )\n         elif mode == \"speak\":\n             brief.update(\n                 {\n                     \"decision_mode\": \"speak\",\n-                    \"focus\": \"回应当前争议，优先点出最近票型变化与身份声明矛盾。\",\n+                    \"focus\": \"回应当前争议，优先点出票型变化、身份声明矛盾和谁在保谁。\",\n                     \"current_controversy\": self._recent_controversy(recent_memory),\n                     \"key_contradiction\": self._key_contradiction(recent_memory),\n+                    \"top_vote_pressure\": evidence_snapshot[\"top_vote_pressure\"],\n+                    \"top_contradictions\": evidence_snapshot[\"top_contradictions\"],\n+                    \"claimed_roles\": evidence_snapshot[\"claimed_roles\"],\n+                    \"hard_clears\": evidence_snapshot[\"hard_clears\"],\n                 }\n             )\n         else:\n@@ -257,6 +278,7 @@\n                 {\n                     \"decision_mode\": mode,\n                     \"focus\": \"遵守当前阶段的合法行动范围，并尽量保持公开信息一致。\",\n+                    \"evidence_snapshot\": evidence_snapshot,\n                 }\n             )\n         return brief\n@@ -330,12 +352,206 @@\n         for line in reversed(recent_memory):\n             if any(keyword in line for keyword in (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"自相矛盾\", \"投票\", \"死亡\", \"警长\")):\n                 return line\n+        for player_id in reversed(list(self._player_notes.keys())):\n+            note = self._player_notes.get(player_id) or {}\n+            contradictions = list(note.get(\"contradictions\") or [])\n+            if contradictions:\n+                return f\"{player_id}:{contradictions[-1]}\"\n         return recent_memory[-1] if recent_memory else \"暂无明确矛盾\"\n+\n+    def _player_note(self, player_id: str) -> dict[str, Any]:\n+        note = self._player_notes.get(player_id)\n+        if note is None:\n+            note = {\n+                \"speeches\": deque(maxlen=4),\n+                \"claims\": deque(maxlen=4),\n+                \"revealed_roles\": deque(maxlen=3),\n+                \"vote_history\": deque(maxlen=6),\n+                \"attack_lines\": deque(maxlen=4),\n+                \"support_lines\": deque(maxlen=4),\n+                \"contradictions\": deque(maxlen=4),\n+                \"death_links\": deque(maxlen=4),\n+                \"latest_vote\": \"\",\n+                \"status\": \"unknown\",\n+                \"hard_clear\": False,\n+                \"soft_clear\": False,\n+                \"last_round\": None,\n+                \"last_phase\": None,\n+            }\n+            self._player_notes[player_id] = note\n+        return note\n+\n+    @staticmethod\n+    def _unique_strings(values: object) -> list[str]:\n+        if not isinstance(values, list):\n+            return []\n+        seen: set[str] = set()\n+        result: list[str] = []\n+        for value in values:\n+            text = str(value).strip()\n+            if text and text not in seen:\n+                seen.add(text)\n+                result.append(text)\n+        return result\n+\n+    @staticmethod\n+    def _role_looks_clear(role: str) -> bool:\n+        text = str(role).strip()\n+        if not text:\n+            return False\n+        if any(keyword in text for keyword in (\"狼人\", \"狼\", \"悍跳\", \"假\", \"伪\")):\n+            return False\n+        return any(keyword in text for keyword in (\"预言家\", \"女巫\", \"猎人\", \"守卫\", \"白痴\", \"好人\", \"平民\", \"民\"))\n+\n+    @staticmethod\n+    def _player_ids_from_text(text: str) -> list[str]:\n+        if not text:\n+            return []\n+        seen: set[str] = set()\n+        result: list[str] = []\n+        for match in _PLAYER_ID_PATTERN.findall(text):\n+            player_id = str(match).strip()\n+            if player_id and player_id not in seen:\n+                seen.add(player_id)\n+                result.append(player_id)\n+        return result\n+\n+    def _player_label(self, player_id: str) -> str:\n+        note = self._player_notes.get(player_id)\n+        if not note:\n+            return player_id\n+        tags: list[str] = []\n+        if note.get(\"status\") in {\"dead\", \"out\"}:\n+            tags.append(\"死\")\n+        if note.get(\"hard_clear\"):\n+            tags.append(\"硬清\")\n+        elif note.get(\"soft_clear\"):\n+            tags.append(\"软清\")\n+        claims = self._unique_strings(list(note.get(\"claims\") or []) + list(note.get(\"revealed_roles\") or []))\n+        if claims:\n+            tags.append(\"/\".join(claims[:2]))\n+        latest_vote = str(note.get(\"latest_vote\") or \"\").strip()\n+        if latest_vote:\n+            tags.append(f\"票{latest_vote}\")\n+        return f\"{player_id}({'/'.join(tags)})\" if tags else player_id\n+\n+    def _note_public_record(self, record: Mapping[str, Any]) -> None:\n+        actor = str(record.get(\"actor\") or \"\").strip()\n+        target = str(record.get(\"target\") or \"\").strip()\n+        kind = str(record.get(\"kind\") or \"\").strip().lower()\n+        text = str(record.get(\"text\") or \"\").strip()\n+        role = str(record.get(\"role\") or \"\").strip()\n+        round_value = record.get(\"round\")\n+        phase_value = record.get(\"phase\")\n+        summary = str(record.get(\"summary\") or \"\").strip()\n+        mentioned_ids = self._player_ids_from_text(text)\n+        related_ids = self._unique_strings([value for value in [actor, target, *mentioned_ids] if value])\n+        speech_kind = kind in {\"speak\", \"speech\", \"say\", \"dialogue\", \"statement\", \"text\"}\n+        is_vote = kind in {\"vote\", \"voting\"} or record.get(\"vote\") is not None\n+        is_death = kind in {\"death\", \"died\", \"eliminate\", \"eliminated\", \"kill\", \"killed\"} or record.get(\"death\") is not None\n+        is_claim = kind == \"claim\"\n+        is_reveal = kind in {\"reveal\", \"identity\", \"open_role\"}\n+        negative_words = (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"卖队\", \"带节奏\", \"假\", \"骗\", \"冲票\", \"踩\", \"查杀\", \"自相矛盾\")\n+        positive_words = (\"可信\", \"一致\", \"解释清楚\", \"对得上\", \"稳定\", \"金水\", \"好人\", \"站对\", \"硬清\")\n+        contradiction_words = (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"自相矛盾\")\n+        for player_id in related_ids:\n+            note = self._player_note(player_id)\n+            note[\"last_round\"] = round_value\n+            note[\"last_phase\"] = phase_value\n+        if actor:\n+            actor_note = self._player_note(actor)\n+            if speech_kind and text:\n+                actor_note[\"speeches\"].append(self._compact_text(text, limit=56))\n+            if is_vote:\n+                if target:\n+                    actor_note[\"latest_vote\"] = target\n+                    actor_note[\"vote_history\"].append(target)\n+            if is_claim:\n+                previous_claims = self._unique_strings(list(actor_note[\"claims\"]))\n+                if role:\n+                    if previous_claims and role not in previous_claims:\n+                        actor_note[\"contradictions\"].append(self._compact_text(summary or text or role, limit=60))\n+                    actor_note[\"claims\"].append(self._compact_text(role, limit=24))\n+                if text and text != role:\n+                    actor_note[\"claims\"].append(self._compact_text(text, limit=32))\n+            if is_reveal:\n+                previous_roles = self._unique_strings(list(actor_note[\"revealed_roles\"]))\n+                if role:\n+                    if previous_roles and role not in previous_roles:\n+                        actor_note[\"contradictions\"].append(self._compact_text(summary or text or role, limit=60))\n+                    actor_note[\"revealed_roles\"].append(self._compact_text(role, limit=24))\n+                    if self._role_looks_clear(role):\n+                        actor_note[\"hard_clear\"] = True\n+                if text and any(keyword in text for keyword in (\"金水\", \"查验好人\", \"已验好\", \"确认好人\")):\n+                    actor_note[\"hard_clear\"] = True\n+            if text and any(keyword in text for keyword in contradiction_words):\n+                actor_note[\"contradictions\"].append(self._compact_text(summary or text, limit=60))\n+            if text and any(keyword in text for keyword in (\"金水\", \"可信\", \"好人\", \"站边\", \"支持\")):\n+                actor_note[\"soft_clear\"] = True\n+        if is_death:\n+            dead_ids = self._unique_strings([value for value in [target, actor, *mentioned_ids] if value])\n+            for player_id in dead_ids:\n+                note = self._player_note(player_id)\n+                note[\"status\"] = \"dead\"\n+                note[\"death_links\"].append(self._compact_text(summary or text or f\"{player_id}死亡\", limit=60))\n+        if text:\n+            summary_text = self._compact_text(summary or text, limit=64)\n+            if any(keyword in text for keyword in negative_words) and target:\n+                self._player_note(target)[\"attack_lines\"].append(summary_text)\n+            if any(keyword in text for keyword in positive_words) and target:\n+                self._player_note(target)[\"support_lines\"].append(summary_text)\n+            for player_id in mentioned_ids:\n+                if player_id == actor:\n+                    continue\n+                mention_note = self._player_note(player_id)\n+                if any(keyword in text for keyword in negative_words):\n+                    mention_note[\"attack_lines\"].append(summary_text)\n+                if any(keyword in text for keyword in positive_words):\n+                    mention_note[\"support_lines\"].append(summary_text)\n+                mention_note[\"last_round\"] = round_value\n+                mention_note[\"last_phase\"] = phase_value\n+        if target and is_vote:\n+            self._player_note(target)[\"attack_lines\"].append(self._compact_text(summary or f\"{actor}投{target}\", limit=60))\n+        if target and is_death:\n+            self._player_note(target)[\"death_links\"].append(self._compact_text(summary or text or f\"{target}死亡\", limit=60))\n+\n+    def _evidence_snapshot(self, recent_memory: list[str]) -> dict[str, list[str]]:\n+        vote_pressure: Counter[str] = Counter()\n+        role_claims: dict[str, list[str]] = {}\n+        top_contradictions: list[str] = []\n+        hard_clears: list[str] = []\n+        for player_id, note in self._player_notes.items():\n+            latest_vote = str(note.get(\"latest_vote\") or \"\").strip()\n+            if latest_vote:\n+                vote_pressure[latest_vote] += 1\n+            contradictions = list(note.get(\"contradictions\") or [])\n+            if contradictions:\n+                top_contradictions.append(\n+                    f\"{self._player_label(player_id)}:{self._compact_text(contradictions[-1], limit=40)}\"\n+                )\n+            claims = self._unique_strings(list(note.get(\"claims\") or []) + list(note.get(\"revealed_roles\") or []))\n+            for role in claims:\n+                role_claims.setdefault(role, []).append(player_id)\n+            if note.get(\"hard_clear\"):\n+                hard_clears.append(self._player_label(player_id))\n+        claimed_roles: list[str] = []\n+        for role, players in sorted(role_claims.items(), key=lambda item: (-len(item[1]), item[0])):\n+            claimed_roles.append(f\"{role}:{'/'.join(players[:3])}\")\n+            if len(claimed_roles) >= 4:\n+                break\n+        return {\n+            \"top_vote_pressure\": [f\"{player_id}×{count}\" for player_id, count in vote_pressure.most_common(3)],\n+            \"top_contradictions\": top_contradictions[:3],\n+            \"claimed_roles\": claimed_roles[:4],\n+            \"hard_clears\": hard_clears[:4],\n+            \"recent_signals\": recent_memory[-4:],\n+        }\n \n     def _hunter_target_ranking(\n         self,\n         allowed_actions: list[Mapping[str, Any]],\n         recent_memory: list[str],\n+        turn_packet: Mapping[str, Any],\n     ) -> dict[str, Any]:\n         target_ids: list[str] = []\n         for action in allowed_actions:\n@@ -348,52 +564,132 @@\n                     target_ids.append(target_id)\n         ranking: list[dict[str, Any]] = []\n         for target_id in target_ids:\n-            score, reasons = self._score_hunter_target(target_id, recent_memory)\n+            score_info = self._score_hunter_target(target_id, recent_memory, turn_packet)\n             ranking.append(\n                 {\n                     \"target_id\": target_id,\n-                    \"score\": round(score, 2),\n-                    \"reasons\": reasons,\n+                    \"score\": round(score_info[\"score\"], 2),\n+                    \"reasons\": score_info[\"reasons\"],\n+                    \"signals\": score_info[\"signals\"],\n                 }\n             )\n         ranking.sort(key=lambda item: item[\"score\"], reverse=True)\n         skip_option = self._pass_like_action_kind(allowed_actions)\n         best_score = ranking[0][\"score\"] if ranking else 0.0\n+        strongest_signals = max(\n+            (\n+                sum(1 for value in item.get(\"signals\", {}).values() if isinstance(value, int) and value > 0)\n+                for item in ranking\n+            ),\n+            default=0,\n+        )\n         if skip_option:\n-            skip_condition = \"若没有明确矛盾、票型偏差或身份冲突，优先跳过。\"\n+            if strongest_signals >= 2 or best_score >= 1.4:\n+                skip_condition = \"只有当所有合法目标都只剩单一薄弱线索、且没有改口/对跳/死亡链条冲突时才可跳过。\"\n+            else:\n+                skip_condition = \"证据过弱且没有明显多源冲突时可以跳过；否则优先出手。\"\n         else:\n-            skip_condition = \"没有跳过动作时，只选分数最高且风险最低的目标。\"\n-        if best_score < 1.0:\n-            skip_condition = \"证据不足时直接跳过；若不能跳过，再选最弱风险目标。\"\n+            skip_condition = \"没有跳过动作时，必须从合法目标里选风险最低且证据最弱的那个。\"\n         return {\n             \"target_ranking\": ranking[:4],\n             \"skip_option\": skip_option,\n             \"skip_condition\": skip_condition,\n         }\n \n-    def _score_hunter_target(self, target_id: str, recent_memory: list[str]) -> tuple[float, list[str]]:\n+    def _score_hunter_target(\n+        self,\n+        target_id: str,\n+        recent_memory: list[str],\n+        turn_packet: Mapping[str, Any],\n+    ) -> dict[str, Any]:\n         pattern = re.compile(rf\"(?<![A-Za-z0-9]){re.escape(target_id)}(?![A-Za-z0-9])\")\n         score = 0.0\n         reasons: list[str] = []\n+        signals = {\n+            \"vote_pressure\": 0,\n+            \"contradictions\": 0,\n+            \"claim_conflict\": 0,\n+            \"death_links\": 0,\n+            \"clear_hits\": 0,\n+            \"recent_mentions\": 0,\n+        }\n+        vote_pressure = 0\n+        for player_id, note in self._player_notes.items():\n+            if str(note.get(\"latest_vote\") or \"\").strip() == target_id:\n+                vote_pressure += 1\n+            if player_id == target_id:\n+                continue\n+            for line in list(note.get(\"attack_lines\") or [])[-2:]:\n+                if pattern.search(line):\n+                    signals[\"recent_mentions\"] += 1\n+            for line in list(note.get(\"support_lines\") or [])[-1:]:\n+                if pattern.search(line):\n+                    signals[\"recent_mentions\"] += 1\n+        if vote_pressure:\n+            signals[\"vote_pressure\"] = vote_pressure\n+            score += 0.8 + min(vote_pressure, 4) * 0.55\n+            reasons.append(f\"票压{vote_pressure}\")\n+        target_note = self._player_notes.get(target_id) or {}\n+        contradictions = list(target_note.get(\"contradictions\") or [])\n+        if contradictions:\n+            signals[\"contradictions\"] = len(contradictions)\n+            score += 0.7 + 0.35 * min(len(contradictions), 3)\n+            reasons.append(\"改口/对跳:\" + self._compact_text(contradictions[-1], limit=48))\n+        death_links = list(target_note.get(\"death_links\") or [])\n+        if death_links:\n+            signals[\"death_links\"] = len(death_links)\n+            score += 0.6 + 0.25 * min(len(death_links), 3)\n+            reasons.append(\"死亡链:\" + self._compact_text(death_links[-1], limit=48))\n+        target_claims = self._unique_strings(list(target_note.get(\"claims\") or []) + list(target_note.get(\"revealed_roles\") or []))\n+        if len(target_claims) >= 2:\n+            signals[\"claim_conflict\"] = len(target_claims)\n+            score += 0.9\n+            reasons.append(\"多次身份声明:\" + \"/\".join(target_claims[:2]))\n+        if target_claims:\n+            role_claim_counts: dict[str, list[str]] = {}\n+            for player_id, note in self._player_notes.items():\n+                claims = self._unique_strings(list(note.get(\"claims\") or []) + list(note.get(\"revealed_roles\") or []))\n+                for role in claims:\n+                    role_claim_counts.setdefault(role, []).append(player_id)\n+            for role in target_claims:\n+                claimers = role_claim_counts.get(role, [])\n+                if len(claimers) >= 2:\n+                    signals[\"claim_conflict\"] = max(signals[\"claim_conflict\"], len(claimers))\n+                    score += 0.45 + 0.15 * min(len(claimers), 4)\n+                    reasons.append(f\"对跳{role}:{'/'.join(claimers[:3])}\")\n+                    break\n+        recent_hits = 0\n         for line in recent_memory:\n             if not pattern.search(line):\n                 continue\n-            line_score = 0.2\n-            if any(keyword in line for keyword in (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"带节奏\", \"卖队\", \"假\", \"骗\", \"冲票\", \"踩\", \"查杀\", \"自相矛盾\")):\n-                line_score += 1.3\n+            recent_hits += 1\n+            if any(keyword in line for keyword in (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"卖队\", \"带节奏\", \"假\", \"骗\", \"冲票\", \"踩\", \"查杀\", \"自相矛盾\")):\n+                score += 0.9\n                 reasons.append(self._compact_text(line, limit=60))\n-            if any(keyword in line for keyword in (\"投票\", \"票型\", \"站边\", \"出局\", \"死亡\", \"身份\", \"警长\", \"发言\", \"表态\")):\n-                line_score += 0.4\n-            if any(keyword in line for keyword in (\"可信\", \"一致\", \"解释清楚\", \"对得上\", \"稳定\", \"金水\")):\n-                line_score -= 0.5\n-            if \"狼人\" in line:\n-                line_score += 0.8\n-            if \"好人\" in line:\n-                line_score -= 0.2\n-            score += line_score\n+            elif any(keyword in line for keyword in (\"投票\", \"票型\", \"站边\", \"出局\", \"死亡\", \"身份\", \"警长\", \"发言\", \"表态\")):\n+                score += 0.25\n+            elif any(keyword in line for keyword in (\"可信\", \"一致\", \"解释清楚\", \"对得上\", \"稳定\", \"金水\", \"好人\")):\n+                score -= 0.35\n+        signals[\"recent_mentions\"] += recent_hits\n+        if recent_hits and not reasons:\n+            reasons.append(self._compact_text(f\"最近记忆命中{recent_hits}次\", limit=60))\n+        if target_note.get(\"hard_clear\"):\n+            signals[\"clear_hits\"] += 1\n+            score -= 1.8\n+            reasons.append(\"公开硬清\")\n+        if target_note.get(\"soft_clear\"):\n+            signals[\"clear_hits\"] += 1\n+            score -= 0.8\n+            reasons.append(\"软清/正向背书\")\n+        if target_note.get(\"status\") in {\"dead\", \"out\"}:\n+            score -= 0.6\n+            reasons.append(\"已出局\")\n         if not reasons:\n-            reasons.append(\"公开记忆里缺少直接矛盾，只能低置信度判断\")\n-        return score, reasons[:3]\n+            reasons.append(\"公开证据单薄\")\n+        # 若允许，优先比较多源冲突；单一薄证据不应直接压成高优先级。\n+        if signals[\"vote_pressure\"] == 0 and signals[\"contradictions\"] == 0 and signals[\"claim_conflict\"] == 0 and signals[\"death_links\"] == 0:\n+            score = max(0.0, score - 0.6)\n+        return {\"score\": score, \"reasons\": reasons[:4], \"signals\": signals}\n \n     @staticmethod\n     def _pass_like_action_kind(allowed_actions: list[Mapping[str, Any]]) -> str:\n@@ -406,48 +702,121 @@\n     def _extract_public_events(self, sync_packet: Mapping[str, Any]) -> list[str]:\n         events: list[str] = []\n         seen: set[str] = set()\n+        round_groups: dict[str, list[dict[str, Any]]] = {}\n         default_round = sync_packet.get(\"round\")\n         default_phase = sync_packet.get(\"phase\") or sync_packet.get(\"public_phase\")\n \n+        def build_record(item: object) -> dict[str, Any] | None:\n+            if isinstance(item, str):\n+                text = item.strip()\n+                if not text:\n+                    return None\n+                summary = self._compact_text(text, limit=72)\n+                return {\n+                    \"round\": default_round,\n+                    \"phase\": default_phase,\n+                    \"actor\": \"\",\n+                    \"target\": \"\",\n+                    \"kind\": \"text\",\n+                    \"text\": text,\n+                    \"role\": \"\",\n+                    \"vote\": None,\n+                    \"death\": None,\n+                    \"summary\": summary,\n+                }\n+            if not isinstance(item, Mapping):\n+                return None\n+            round_value = item.get(\"round\", default_round)\n+            phase_value = item.get(\"phase\", item.get(\"public_phase\", default_phase))\n+            actor = str(\n+                item.get(\"speaker\")\n+                or item.get(\"player_id\")\n+                or item.get(\"from_player_id\")\n+                or item.get(\"from\")\n+                or item.get(\"actor\")\n+                or item.get(\"source\")\n+                or \"\"\n+            ).strip()\n+            target = str(item.get(\"target_id\") or item.get(\"target\") or item.get(\"votee\") or \"\").strip()\n+            kind = str(item.get(\"kind\") or item.get(\"action\") or item.get(\"type\") or \"\").strip().lower()\n+            text = str(item.get(\"text\") or item.get(\"content\") or item.get(\"message\") or \"\").strip()\n+            role = str(item.get(\"role\") or item.get(\"revealed_role\") or item.get(\"identity\") or \"\").strip()\n+            vote = item.get(\"vote\")\n+            if not target and vote is not None and kind in {\"vote\", \"voting\"}:\n+                target = str(vote).strip()\n+            summary = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)\n+            if not summary:\n+                return None\n+            return {\n+                \"round\": round_value,\n+                \"phase\": phase_value,\n+                \"actor\": actor,\n+                \"target\": target,\n+                \"kind\": kind,\n+                \"text\": text,\n+                \"role\": role,\n+                \"vote\": vote,\n+                \"death\": item.get(\"death\"),\n+                \"summary\": summary,\n+            }\n+\n         def add_event(item: object) -> None:\n-            event = self._summarize_public_event(item, default_round=default_round, default_phase=default_phase)\n+            record = build_record(item)\n+            if not record:\n+                return\n+            event = record[\"summary\"]\n             if not event or event in seen:\n                 return\n             seen.add(event)\n+            self._note_public_record(record)\n             events.append(event)\n+            group_key = f\"r{record['round']}\" if record.get(\"round\") is not None else \"r?\"\n+            phase_key = str(record.get(\"phase\") or \"?\")\n+            round_groups.setdefault(f\"{group_key}/{phase_key}\", []).append(record)\n \n         for key in (\"events\", \"public_events\", \"log\", \"logs\", \"history\", \"records\", \"timeline\"):\n             value = sync_packet.get(key)\n             if isinstance(value, list):\n                 for item in value:\n                     add_event(item)\n-                    if len(events) >= 8:\n-                        return events\n-        for key in (\"public_state\", \"state\", \"game\"):\n-            value = sync_packet.get(key)\n-            if value is not None:\n-                add_event(value)\n-                if len(events) >= 8:\n-                    return events\n-\n-        def walk(item: object, depth: int) -> None:\n-            if len(events) >= 8 or depth > 2:\n-                return\n-            if isinstance(item, Mapping):\n-                if self._looks_like_public_event(item):\n-                    add_event(item)\n-                else:\n-                    for value in item.values():\n-                        if isinstance(value, (Mapping, list, tuple)):\n-                            walk(value, depth + 1)\n-                return\n-            if isinstance(item, (list, tuple)):\n-                for value in item:\n-                    walk(value, depth + 1)\n-                    if len(events) >= 8:\n-                        return\n-\n-        walk(sync_packet, 0)\n+                    if len(events) >= 10:\n+                        break\n+            if len(events) >= 10:\n+                break\n+        if len(events) < 10:\n+            for key in (\"public_state\", \"state\", \"game\"):\n+                value = sync_packet.get(key)\n+                if value is not None:\n+                    add_event(value)\n+                    if len(events) >= 10:\n+                        break\n+        if len(events) < 10:\n+            def walk(item: object, depth: int) -> None:\n+                if len(events) >= 10 or depth > 2:\n+                    return\n+                if isinstance(item, Mapping):\n+                    if self._looks_like_public_event(item):\n+                        add_event(item)\n+                    else:\n+                        for value in item.values():\n+                            if isinstance(value, (Mapping, list, tuple)):\n+                                walk(value, depth + 1)\n+                    return\n+                if isinstance(item, (list, tuple)):\n+                    for value in item:\n+                        walk(value, depth + 1)\n+                        if len(events) >= 10:\n+                            return\n+\n+            walk(sync_packet, 0)\n+        for group_key, group in round_groups.items():\n+            summary = self._summarize_round_group(group_key, group)\n+            if summary and summary not in seen:\n+                seen.add(summary)\n+                events.append(summary)\n+                self._round_memory.append(summary)\n+            if len(events) >= 12:\n+                break\n         return events\n \n     @staticmethod\n@@ -547,6 +916,30 @@\n             return prefix + \" \".join(parts)\n         return \" \".join(parts)\n \n+    def _summarize_round_group(self, group_key: str, group: list[dict[str, Any]]) -> str | None:\n+        pieces: list[str] = []\n+        for record in group:\n+            actor = str(record.get(\"actor\") or \"\").strip()\n+            target = str(record.get(\"target\") or \"\").strip()\n+            kind = str(record.get(\"kind\") or \"\").strip().lower()\n+            text = str(record.get(\"text\") or \"\").strip()\n+            role = str(record.get(\"role\") or \"\").strip()\n+            if kind in {\"vote\", \"voting\"} or record.get(\"vote\") is not None:\n+                if actor or target:\n+                    pieces.append(f\"{actor or '?'}→{target or str(record.get('vote') or '?')}\")\n+            elif kind in {\"death\", \"died\", \"eliminate\", \"eliminated\", \"kill\", \"killed\"} or record.get(\"death\") is not None:\n+                pieces.append(f\"{target or actor or '?'}死亡\")\n+            elif kind in {\"reveal\", \"identity\", \"open_role\", \"claim\"} or role:\n+                pieces.append(f\"{actor or '?'}:{self._compact_text(role or text or '身份', limit=18)}\")\n+            elif text and any(keyword in text for keyword in (\"改口\", \"矛盾\", \"对跳\", \"反水\", \"查杀\", \"金水\", \"站边\", \"投票\")):\n+                pieces.append(f\"{actor or '?'}:{self._compact_text(text, limit=22)}\")\n+            if len(pieces) >= 3:\n+                break\n+        pieces = self._unique_strings(pieces)\n+        if not pieces:\n+            return None\n+        return f\"[{group_key}] \" + \"；\".join(pieces[:3])\n+\n     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:\n         if turn_packet[\"self\"][\"player_id\"] != self.player_id:\n             raise ValueError(\"行动包被发送给了错误玩家\")\n@@ -565,7 +958,7 @@\n             \"private_information\": private,\n             \"public_state\": turn_packet[\"public_state\"],\n             \"request\": turn_packet[\"request\"],\n-            \"memory_brief\": self._recent_memory(5),\n+            \"memory_brief\": self._recent_memory(8),\n             \"decision_brief\": self._decision_brief(turn_packet, current_dialogue),\n             \"history_policy\": {\n                 \"default_context\": \"current_state_only\",\n--- hunter-n00008/task.md\n+++ hunter-n00040/task.md\n@@ -2,8 +2,8 @@\n \n 你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。\n \n-- 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据：发言、票型、改口、身份声明、死亡顺序。\n-- 公开发言要回应当下争议，优先比较“谁支持谁、谁反复改口、谁的票型和身份声明不一致”。\n-- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择与票型、发言和死亡链条最不一致的人。\n-- 如果公开证据不足，或目标之间没有明显差异，要明确走跳过条件；不要把“带走最像狼的人”当成固定模板。\n-- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手。+- 活着时保持自然的好人视角，但要持续积累最近几轮的公开证据账本：谁支持谁、谁投了谁、谁改口、谁对跳、谁公开声明了什么身份、谁已经死亡或出局。\n+- 公开发言优先回应当前争议，按这个顺序组织判断：先看票型和身份声明是否一致，再看改口、对跳和死亡链条，最后才看主观像狼与否。\n+- 被要求开枪时，只在合法 target_ids 内比较目标；优先选择同时被票型、身份冲突、改口/对跳和死亡链条指向的人。\n+- 只有当所有合法目标都只有单一薄弱线索、且看不出明显多源冲突时，才可以选择跳过；如果已经出现明显证据差异，即使分数不高也不要把“跳过”当默认。\n+- 任何猎人反应都要考虑连锁风险：先确认是否会误伤关键好人，再决定是否出手；如果目标中存在明显硬清或公开确认的好人，优先保护。",
+        "evaluation_summary": null
+      }
+    },
+    {
+      "tool": "read_previous_diagnosis",
+      "arguments": {
+        "node_id": "hunter-n00008"
+      },
+      "result": {
+        "node_id": "hunter-base",
+        "role": "hunter",
+        "attempt": 1,
+        "required_resources": [
+          "task",
+          "boundaries",
+          "current_agent",
+          "random_game_replay"
+        ],
+        "required_replay_game_index": 7,
+        "tool_trace": [
+          {
+            "tool": "read_evaluation_summary",
+            "arguments": {},
+            "result": {
+              "node_id": "hunter-base",
+              "role": "hunter",
+              "team": "village",
+              "game_count": 20,
+              "complete_game_count": 20,
+              "failed_game_count": 0,
+              "win_count": 5,
+              "loss_count": 15,
+              "win_rate": 0.25,
+              "decision_count": 104,
+              "fallback_count": 0,
+              "fallback_rate": 0.0,
+              "invalid_decision_count": 0,
+              "quality_scope": "focus_role_only",
+              "total_decision_count": 2731,
+              "total_fallback_count": 32,
+              "total_invalid_decision_count": 32,
+              "recommended_status": "retained",
+              "status_reasons": [
+                "passed_broad_filter"
+              ],
+              "results": [
+                {
+                  "game_index": 0,
+                  "game_id": "s2-hunter-base-game0",
+                  "seed": "season2-evolution:2f9b7a2c346892e4:game0",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "5ca6e59b81221e2d8cf9d9a033b67a750fce6702d1a7af13679f0544707848ca",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 94,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p9",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p9",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p3"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round0/log/full-game0.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round0/log/full-game0.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 155,
+                    "api_attempt_count": 248,
+                    "reported_usage_response_count": 155,
+                    "input_tokens": 621890,
+                    "output_tokens": 7261,
+                    "total_tokens": 629151,
+                    "unreported_api_attempt_count": 93
+                  }
+                },
+                {
+                  "game_index": 1,
+                  "game_id": "s2-hunter-base-game1",
+                  "seed": "season2-evolution:18a0dd2194896fba:game1",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "414f5c96aaed1a4a22db1d40ead64669111c6fa75a78e6672342938b376a0b12",
+                  "complete": true,
+                  "winner": "village",
+                  "focus_won": true,
+                  "decision_count": 179,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.0111731843575419,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p5",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p5",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p10"
+                  ],
+                  "focus_decision_count": 14,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game1.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 187,
+                    "api_attempt_count": 304,
+                    "reported_usage_response_count": 187,
+                    "input_tokens": 754085,
+                    "output_tokens": 9149,
+                    "total_tokens": 763234,
+                    "unreported_api_attempt_count": 117
+                  }
+                },
+                {
+                  "game_index": 2,
+                  "game_id": "s2-hunter-base-game2",
+                  "seed": "season2-evolution:1052412c2192304e:game2",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "9ae90f89d85e5b0a6cd3aa5a6a639c6044a513b5e24adcabbb0d64ca51ead566",
+                  "complete": true,
+                  "winner": "village",
+                  "focus_won": true,
+                  "decision_count": 119,
+                  "fallback_count": 3,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 3
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p3",
+                      "type": "participant_error",
+                      "message": "TimeoutError",
+                      "exception_type": "TimeoutError"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p5",
+                      "type": "participant_error",
+                      "message": "TimeoutError",
+                      "exception_type": "TimeoutError"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p3",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p5"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p8"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game2.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game2.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 195,
+                    "api_attempt_count": 348,
+                    "reported_usage_response_count": 195,
+                    "input_tokens": 859063,
+                    "output_tokens": 10139,
+                    "total_tokens": 869202,
+                    "unreported_api_attempt_count": 153
+                  }
+                },
+                {
+                  "game_index": 3,
+                  "game_id": "s2-hunter-base-game3",
+                  "seed": "season2-evolution:2f9b7a2c346892e4:game3",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "e86ad43453deeb01b33ab9e0bfb94d94d8e9cd6828ace3c10e5a61d6c30ba1b6",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 188,
+                  "fallback_count": 3,
+                  "fallback_rate": 0.015957446808510637,
+                  "error_counts": {
+                    "participant_error": 3
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p1",
+                      "type": "participant_error",
+                      "message": "TimeoutError",
+                      "exception_type": "TimeoutError"
+                    },
+                    {
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p12"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p8"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p9"
+                  ],
+                  "focus_decision_count": 11,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game3.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 193,
+                    "api_attempt_count": 332,
+                    "reported_usage_response_count": 193,
+                    "input_tokens": 826922,
+                    "output_tokens": 10172,
+                    "total_tokens": 837094,
+                    "unreported_api_attempt_count": 139
+                  }
+                },
+                {
+                  "game_index": 4,
+                  "game_id": "s2-hunter-base-game4",
+                  "seed": "season2-evolution:18a0dd2194896fba:game4",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "b1e23ecf3d71e0b1744724e1553694c5ec4388bfa76db620c9832084c26a5cb2",
+                  "complete": true,
+                  "winner": "village",
+                  "focus_won": true,
+                  "decision_count": 156,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.00641025641025641,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p1",
+                      "type": "participant_error",
+                      "message": "TimeoutError",
+                      "exception_type": "TimeoutError"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p5"
+                  ],
+                  "focus_decision_count": 3,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game4.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 157,
+                    "api_attempt_count": 250,
+                    "reported_usage_response_count": 157,
+                    "input_tokens": 636116,
+                    "output_tokens": 7946,
+                    "total_tokens": 644062,
+                    "unreported_api_attempt_count": 93
+                  }
+                },
+                {
+                  "game_index": 5,
+                  "game_id": "s2-hunter-base-game5",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game5",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "4f5931a37c1e5c93ca0fe339646ec4a2af40b70a9775dfb933dbf956ab4ea6bc",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 88,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "TimeoutError",
+                      "exception_type": "TimeoutError"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p5"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game5.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round0/log/full-game5.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 142,
+                    "api_attempt_count": 272,
+                    "reported_usage_response_count": 142,
+                    "input_tokens": 670091,
+                    "output_tokens": 7497,
+                    "total_tokens": 677588,
+                    "unreported_api_attempt_count": 130
+                  }
+                },
+                {
+                  "game_index": 6,
+                  "game_id": "s2-hunter-base-game6",
+                  "seed": "season2-evolution:18a0dd2194896fba:game6",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "b1019ac2471a87d8685bac031e161e4b746066f09220fe41b6e8e6b929c30490",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 183,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.01092896174863388,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p8",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p12"
+                  ],
+                  "focus_decision_count": 14,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game6.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 187,
+                    "api_attempt_count": 291,
+                    "reported_usage_response_count": 187,
+                    "input_tokens": 729251,
+                    "output_tokens": 9454,
+                    "total_tokens": 738705,
+                    "unreported_api_attempt_count": 104
+                  }
+                },
+                {
+                  "game_index": 7,
+                  "game_id": "s2-hunter-base-game7",
+                  "seed": "season2-evolution:18a0dd2194896fba:game7",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "c9663ad692f3237582390760636c9f19ac6d81de0de60aed9328094decd0e2f0",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 205,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.00975609756097561,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p5",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p3"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p5",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p8"
+                  ],
+                  "focus_decision_count": 13,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game7.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 209,
+                    "api_attempt_count": 311,
+                    "reported_usage_response_count": 209,
+                    "input_tokens": 784632,
+                    "output_tokens": 9520,
+                    "total_tokens": 794152,
+                    "unreported_api_attempt_count": 102
+                  }
+                },
+                {
+                  "game_index": 8,
+                  "game_id": "s2-hunter-base-game8",
+                  "seed": "season2-evolution:1052412c2192304e:game8",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "f25360d19821362a67db0336cd09e4d4ae43ce7f5fad5d0ef913c2078f1aa5b5",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 94,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p9",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p3"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p5"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game8.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round0/log/full-game8.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 150,
+                    "api_attempt_count": 277,
+                    "reported_usage_response_count": 150,
+                    "input_tokens": 689649,
+                    "output_tokens": 7528,
+                    "total_tokens": 697177,
+                    "unreported_api_attempt_count": 127
+                  }
+                },
+                {
+                  "game_index": 9,
+                  "game_id": "s2-hunter-base-game9",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game9",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "e31e3c8270a3eadcd9b1140f89ddb7e0913086a37171a36ea968a1db835afae6",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 180,
+                  "fallback_count": 3,
+                  "fallback_rate": 0.016666666666666666,
+                  "error_counts": {
+                    "participant_error": 3
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p9"
+                  ],
+                  "focus_decision_count": 9,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round0/log/full-game9.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 187,
+                    "api_attempt_count": 342,
+                    "reported_usage_response_count": 187,
+                    "input_tokens": 843795,
+                    "output_tokens": 11779,
+                    "total_tokens": 855574,
+                    "unreported_api_attempt_count": 155
+                  }
+                },
+                {
+                  "game_index": 10,
+                  "game_id": "s2-hunter-base-game10",
+                  "seed": "season2-evolution:18a0dd2194896fba:game10",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "1b7a7ed922b7ae60e399c3524917471d4398cbbf83b177154924984bdafb6cf6",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 152,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 7,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game0.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 154,
+                    "api_attempt_count": 253,
+                    "reported_usage_response_count": 154,
+                    "input_tokens": 635907,
+                    "output_tokens": 7715,
+                    "total_tokens": 643622,
+                    "unreported_api_attempt_count": 99
+                  }
+                },
+                {
+                  "game_index": 11,
+                  "game_id": "s2-hunter-base-game11",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game11",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "a533daa8f49fc9ee0f947510b1a3ca583b77ecd943ee22e8553cacb9a17b1d27",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 103,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p1"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p12",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p1"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game1.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 167,
+                    "api_attempt_count": 276,
+                    "reported_usage_response_count": 167,
+                    "input_tokens": 664534,
+                    "output_tokens": 8765,
+                    "total_tokens": 673299,
+                    "unreported_api_attempt_count": 109
+                  }
+                },
+                {
+                  "game_index": 12,
+                  "game_id": "s2-hunter-base-game12",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game12",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "9414f04f42c7d0da63914e64b7edb4e390d8e4afd00de9ecca6135c533fb17be",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 89,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p3",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game2.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-base/games/round1/log/full-game2.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 142,
+                    "api_attempt_count": 245,
+                    "reported_usage_response_count": 142,
+                    "input_tokens": 584980,
+                    "output_tokens": 7257,
+                    "total_tokens": 592237,
+                    "unreported_api_attempt_count": 103
+                  }
+                },
+                {
+                  "game_index": 13,
+                  "game_id": "s2-hunter-base-game13",
+                  "seed": "season2-evolution:2f9b7a2c346892e4:game13",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "3bafcbfb37c9546c4fab1c22a7e53cc4eba82bc80fd58a93476d049e8130e201",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 139,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.007194244604316547,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p4",
+                      "type": "participant_error",
+                      "message": "TimeoutError",
+                      "exception_type": "TimeoutError"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p6"
+                  ],
+                  "focus_decision_count": 9,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game3.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 139,
+                    "api_attempt_count": 209,
+                    "reported_usage_response_count": 139,
+                    "input_tokens": 516362,
+                    "output_tokens": 6832,
+                    "total_tokens": 523194,
+                    "unreported_api_attempt_count": 70
+                  }
+                },
+                {
+                  "game_index": 14,
+                  "game_id": "s2-hunter-base-game14",
+                  "seed": "season2-evolution:2f9b7a2c346892e4:game14",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "46bdace0e3045fb2d2c3eca8ec2a51de860938fc36db6533bdfb8e2362333c56",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 117,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p5",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p7"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game4.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game4.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 194,
+                    "api_attempt_count": 334,
+                    "reported_usage_response_count": 194,
+                    "input_tokens": 856467,
+                    "output_tokens": 10032,
+                    "total_tokens": 866499,
+                    "unreported_api_attempt_count": 140
+                  }
+                },
+                {
+                  "game_index": 15,
+                  "game_id": "s2-hunter-base-game15",
+                  "seed": "season2-evolution:18a0dd2194896fba:game15",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "bdc21e8f1eb2adf4cd6b7919b9dd4cd30d101d13fda44e399335bf3c15dc2aaa",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 97,
+                  "fallback_count": 0,
+                  "fallback_rate": 0.0,
+                  "error_counts": {},
+                  "errors": [],
+                  "focus_player_ids": [
+                    "p10"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game5.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game5.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 160,
+                    "api_attempt_count": 253,
+                    "reported_usage_response_count": 160,
+                    "input_tokens": 647500,
+                    "output_tokens": 8544,
+                    "total_tokens": 656044,
+                    "unreported_api_attempt_count": 93
+                  }
+                },
+                {
+                  "game_index": 16,
+                  "game_id": "s2-hunter-base-game16",
+                  "seed": "season2-evolution:2f9b7a2c346892e4:game16",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "5453b845b2a48022447ade1dcd77334ecf08e71a7d8acdc3e11e31e8f8c325cc",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 122,
+                  "fallback_count": 3,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 3
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p9"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p11",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p2"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game6.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/wolf/wolf-n00004/games/round1/log/full-game6.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 199,
+                    "api_attempt_count": 330,
+                    "reported_usage_response_count": 199,
+                    "input_tokens": 811875,
+                    "output_tokens": 9821,
+                    "total_tokens": 821696,
+                    "unreported_api_attempt_count": 131
+                  }
+                },
+                {
+                  "game_index": 17,
+                  "game_id": "s2-hunter-base-game17",
+                  "seed": "season2-evolution:9ccd6a9b88747517:game17",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-base",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "6b16b295ce30f55c9056e74f9f05bfa1f15088ee44bcd7514812233d9a5286e3",
+                  "complete": true,
+                  "winner": "village",
+                  "focus_won": true,
+                  "decision_count": 146,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.00684931506849315,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p6",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p3"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p10"
+                  ],
+                  "focus_decision_count": 11,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game7.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 148,
+                    "api_attempt_count": 271,
+                    "reported_usage_response_count": 148,
+                    "input_tokens": 667425,
+                    "output_tokens": 8040,
+                    "total_tokens": 675465,
+                    "unreported_api_attempt_count": 123
+                  }
+                },
+                {
+                  "game_index": 18,
+                  "game_id": "s2-hunter-base-game18",
+                  "seed": "season2-evolution:18a0dd2194896fba:game18",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-n00004",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "967558bc9876bb69d9842bb801bcda4c07a5f8de40b51fedde8e09788af377b0",
+                  "complete": true,
+                  "winner": "wolf",
+                  "focus_won": false,
+                  "decision_count": 178,
+                  "fallback_count": 2,
+                  "fallback_rate": 0.011235955056179775,
+                  "error_counts": {
+                    "participant_error": 2
+                  },
+                  "errors": [
+                    {
+                      "player_id": "p1",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p10"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    },
+                    {
+                      "player_id": "p1",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p6"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p4"
+                  ],
+                  "focus_decision_count": 13,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/games/round1/log/full-game8.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 186,
+                    "api_attempt_count": 313,
+                    "reported_usage_response_count": 186,
+                    "input_tokens": 792189,
+                    "output_tokens": 9389,
+                    "total_tokens": 801578,
+                    "unreported_api_attempt_count": 127
+                  }
+                },
+                {
+                  "game_index": 19,
+                  "game_id": "s2-hunter-base-game19",
+                  "seed": "season2-evolution:1052412c2192304e:game19",
+                  "focus_node": "hunter-base",
+                  "role_nodes": {
+                    "wolf": "wolf-base",
+                    "villager": "villager-base",
+                    "seer": "seer-base",
+                    "witch": "witch-n00001",
+                    "guard": "guard-base",
+                    "hunter": "hunter-base"
+                  },
+                  "evaluation_signature": "e08237c8ec2e7d426d4e15c796b9d9f086579be640e65a807021f857e14d54d5",
+                  "complete": true,
+                  "winner": "village",
+                  "focus_won": true,
+                  "decision_count": 102,
+                  "fallback_count": 1,
+                  "fallback_rate": 0.0,
+                  "error_counts": {
+                    "participant_error": 1
+                  },
+                  "errors": [
+                    {
+                      "event_class": "RUNNER_ERROR",
+                      "player_id": "p10",
+                      "type": "participant_error",
+                      "message": "模型返回非法行动：target_id 必须是 target_ids 中的一项",
+                      "exception_type": "RuleViolationError",
+                      "attempted_action": {
+                        "kind": "guard_protect",
+                        "target_id": "p7"
+                      },
+                      "validation_error": "target_id 必须是 target_ids 中的一项"
+                    }
+                  ],
+                  "focus_player_ids": [
+                    "p3"
+                  ],
+                  "focus_decision_count": 0,
+                  "focus_fallback_count": 0,
+                  "focus_fallback_rate": 0.0,
+                  "focus_error_counts": {},
+                  "focus_errors": [],
+                  "record_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round1/log/full-game9.json",
+                  "reused_from_record": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/witch/witch-n00001/games/round1/log/full-game9.json",
+                  "model_token_usage": {
+                    "availability": "partial",
+                    "participant_count": 12,
+                    "successful_response_count": 166,
+                    "api_attempt_count": 287,
+                    "reported_usage_response_count": 166,
+                    "input_tokens": 703886,
+                    "output_tokens": 8745,
+                    "total_tokens": 712631,
+                    "unreported_api_attempt_count": 121
+                  }
+                }
+              ],
+              "model": {
+                "available": true,
+                "model": "qwen3.8-flash",
+                "protocol": "responses",
+                "reasoning_effort": "none",
+                "enable_thinking": false,
+                "max_output_tokens": 900
+              }
+            }
+          },
+          {
+            "tool": "read_evolution_path",
+            "arguments": {},
+            "result": {
+              "lineage": [
+                {
+                  "node": {
+                    "node_id": "hunter-base",
+                    "role": "hunter",
+                    "status": "retained",
+                    "parent_id": null,
+                    "depth": 0,
+                    "children": [
+                      "hunter-n00007",
+                      "hunter-n00008"
+                    ],
+                    "created_at": "2026-09-04T05:02:49.883410+00:00",
+                    "code_hash": "c0f2b19e618231270233463e90a6b67f9ddb6d073c14fadab503ae7c4eb79b50",
+                    "patch_path": null,
+                    "diagnosis_path": null,
+                    "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/evaluations/hunter/hunter-base/summary.json",
+                    "status_reason": "base"
+                  },
+                  "patch": ""
+                }
+              ]
+            }
+          },
+          {
+            "tool": "read_evolution_contract",
+            "arguments": {},
+            "result": {
+              "purpose": "Meta-Agent 为当前角色设计下一代 Task-Agent；外部状态机负责评测、建树和预算执行。",
+              "current_node": {
+                "node_id": "hunter-base",
+                "role": "hunter",
+                "status": "retained",
+                "depth": 0,
+                "parent_id": null,
+                "children": [
+                  "hunter-n00007",
+                  "hunter-n00008"
+                ],
+                "generated_candidate_count": 2,
+                "successful_evolution_count": 0,
+                "pending_candidate_count": 2
+              },
+              "node_states": {
+                "pending": "待评估；先运行配置数量的对局，再决定 retained 或 discarded",
+                "retained": "保留在候选池中；在预算允许时可以生成子节点",
+                "discarded": "舍弃；不进入候选池，也不再生成子节点"
+              },
+              "evaluation": {
+                "games_per_pending_node": 20,
+                "player_count": 12,
+                "game_concurrency": 2,
+                "model_max_in_flight": 4,
+                "max_failed_games": 18,
+                "max_fallback_rate": 0.2,
+                "max_invalid_decisions": 10,
+                "discard_all_losses": true,
+                "focus_role_uses_current_node": true,
+                "other_roles_use_random_retained_candidates": true,
+                "quality_error_metrics_scope": "focus_role_only; aggregate game metrics are retained for diagnostics",
+                "parent_child_comparison_required": false
+              },
+              "evolution_budget": {
+                "children_per_expansion": 3,
+                "max_children_per_node": 3,
+                "max_tree_depth": 6,
+                "max_generated_candidates_per_role": 60,
+                "max_successful_evolutions_per_role": 20,
+                "role_scheduler": "least_evolved_random",
+                "candidate_pool_extra_limit": null
+              },
+              "process": [
+                "一个 step 以产生新的 retained 子节点为成功终止条件；不是生成 pending 就结束。",
+                "一个 step 可以连续处理多个节点，直到产生 retained 子节点或所有机会耗尽。",
+                "pending 节点只做评测并决定保留或舍弃。",
+                "retained 节点扩展时固定创建 children_per_expansion 个子节点。",
+                "每个子节点单独调用一次 Meta-Agent 和 Pi；一次扩展抽取不同的游戏回放。",
+                "子节点从父节点快照继承全部祖先修改；其他分支需要通过工具主动读取。",
+                "不要求子节点胜过父节点，也不保证每次修改都是真实改进。"
+              ],
+              "not_evolvable": [
+                "Game Engine",
+                "游戏规则与胜负裁决",
+                "信息可见性与行动 JSON schema",
+                "工具实现、模型网关、审计记录和所有外部预算"
+              ]
+            }
+          },
+          {
+            "tool": "list_resources",
+            "arguments": {},
+            "result": {
+              "required_resources": [
+                "task",
+                "boundaries",
+                "current_agent",
+                "random_game_replay"
+              ],
+              "external_knowledge": {
+                "description": "进化前冻结的狼人杀 Skill 卡片；通过 list_skills/read_skill 按需读取，不直接注入 Task-Agent",
+                "tool": "list_skills/read_skill"
+              },
+              "tools": [
+                {
+                  "name": "list_resources",
+                  "description": "列出本次诊断可用的只读资料及参数。"
+                },
+                {
+                  "name": "read_current_agent",
+                  "description": "读取当前节点的 task_agent.py 或 task.md。"
+                },
+                {
+                  "name": "read_evolution_path",
+                  "description": "读取 base 到当前节点的节点信息和祖先 patch。"
+                },
+                {
+                  "name": "read_evolution_tree",
+                  "description": "读取当前角色完整进化树索引。"
+                },
+                {
+                  "name": "read_evolution_contract",
+                  "description": "按需读取本次实验的进化状态机、预算和节点筛选规则。"
+                },
+                {
+                  "name": "read_evaluation_summary",
+                  "description": "读取当前节点最近一次评测汇总。"
+                },
+                {
+                  "name": "read_game_replay",
+                  "description": "分页读取当前节点评测中的一局完整审计回放。"
+                },
+                {
+                  "name": "read_other_branch",
+                  "description": "读取同角色另一节点的 patch、状态和胜负摘要。"
+                },
+                {
+                  "name": "read_previous_diagnosis",
+                  "description": "读取同角色某节点关联的历史诊断。"
+                },
+                {
+                  "name": "list_skills",
+                  "description": "列出所有可用 Skill 的名称和短描述，不返回完整攻略。"
+                },
+                {
+                  "name": "read_skill",
+                  "description": "读取指定 Skill 的完整内容，包括短描述和长描述。"
+                }
+              ]
+            }
+          },
+          {
+            "tool": "read_other_branch",
+            "arguments": {
+              "node_id": "hunter-n00007"
+            },
+            "result": {
+              "node": {
+                "node_id": "hunter-n00007",
+                "role": "hunter",
+                "status": "pending",
+                "parent_id": "hunter-base",
+                "depth": 1,
+                "children": [],
+                "created_at": "2026-09-04T14:25:57.225705+00:00",
+                "code_hash": "7e7eabdcdf3a941d6bc7f16b594f7068bcd462caafa0b97fffd7ca0c6de2f53c",
+                "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/archive/nodes/hunter-n00007/ancestor.patch",
+                "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T134204-1376d1b4/branch0/diagnosis.json",
+                "evaluation_summary_path": null,
+                "status_reason": ""
+              },
+              "patch": "--- hunter-base/task_agent.py\n+++ hunter-n00007/task_agent.py\n@@ -7,6 +7,7 @@\n from __future__ import annotations\n \n import asyncio\n+from collections import deque\n from collections.abc import Mapping\n import hashlib\n import inspect\n@@ -20,6 +21,8 @@\n \n \n _CHINESE_CHARACTER = re.compile(r\"[\\u3400-\\u9fff]\")\n+_SIGNAL_TEXT = re.compile(r\"(票|投|狼|好人|金水|查杀|对跳|冲票|带票|带节奏|怀疑|矛盾|身份|死亡|开枪|跳过|pass|vote|claim|wolf|kill|dead)\", re.IGNORECASE)\n+_PLAYER_ID_TEXT = re.compile(r\"\\b[a-zA-Z]*\\d+\\b\")\n \n CURRENT_ROUND_DIALOGUE_TOOL_NAME = \"read_current_round_dialogue\"\n DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5\n@@ -29,6 +32,38 @@\n # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。\n DEFAULT_MAX_DECISION_RETRIES = 2\n _SPEECH_ACTION_KINDS = frozenset({\"speak\", \"last_words\"})\n+\n+_MEMORY_KEYS = {\n+    \"round\",\n+    \"phase\",\n+    \"day\",\n+    \"night\",\n+    \"speaker\",\n+    \"speaker_id\",\n+    \"player\",\n+    \"player_id\",\n+    \"voter\",\n+    \"voter_id\",\n+    \"target\",\n+    \"target_id\",\n+    \"kind\",\n+    \"action\",\n+    \"event\",\n+    \"result\",\n+    \"status\",\n+    \"role\",\n+    \"claim\",\n+    \"text\",\n+    \"message\",\n+    \"vote\",\n+    \"votes\",\n+    \"alive\",\n+    \"dead\",\n+    \"revealed\",\n+    \"public_role\",\n+    \"reason\",\n+    \"winner\",\n+}\n \n \n CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {\n@@ -187,12 +222,14 @@\n             \"output_tokens\": 0,\n             \"total_tokens\": 0,\n         }\n+        self._recent_public_events: deque[str] = deque(maxlen=10)\n \n     async def observe(self, sync_packet: dict[str, Any]) -> None:\n-        \"\"\"接收公开同步；最小基线不把它跨行动保存为模型记忆。\"\"\"\n-\n-        # 保留 Participant 接口，但刻意不维护跨行动状态。\n-        del sync_packet\n+        \"\"\"接收公开同步，并压缩保存为短记忆。\"\"\"\n+\n+        for line in self._extract_memory_lines(sync_packet):\n+            if line:\n+                self._recent_public_events.append(line)\n \n     async def decide(self, turn_packet: dict[str, Any]) -> dict[str, Any]:\n         if turn_packet[\"self\"][\"player_id\"] != self.player_id:\n@@ -201,7 +238,8 @@\n         if str(private.get(\"role\")) != self.profile.role:\n             raise ValueError(\"Task-Agent 的角色档案与行动包身份不一致\")\n \n-        system = self._system_prompt(private)\n+        decision_brief = self._build_decision_brief(turn_packet)\n+        system = self._system_prompt(private, decision_brief=decision_brief)\n         prompt = {\n             \"game\": turn_packet[\"game\"],\n             \"public_rules\": turn_packet[\"public_rules\"],\n@@ -209,6 +247,7 @@\n             \"private_information\": private,\n             \"public_state\": turn_packet[\"public_state\"],\n             \"request\": turn_packet[\"request\"],\n+            \"decision_brief\": decision_brief,\n             \"history_policy\": {\n                 \"default_context\": \"current_state_only\",\n                 \"current_round_dialogue_tool\": CURRENT_ROUND_DIALOGUE_TOOL_NAME,\n@@ -296,7 +335,10 @@\n     def model_token_usage_snapshot(self) -> dict[str, int]:\n         return dict(self._model_token_usage)\n \n-    def _system_prompt(self, private: Mapping[str, Any]) -> str:\n+    def _system_prompt(self, private: Mapping[str, Any], *, decision_brief: str = \"\") -> str:\n+        role_task = self.profile.task\n+        if decision_brief:\n+            role_task = f\"{role_task}\\n\\n【本局决策简报】\\n{decision_brief}\"\n         return render_prompt(\n             \"player_system.txt\",\n             player_id=self.player_id,\n@@ -304,7 +346,7 @@\n             team=private[\"team\"],\n             persona=self.persona,\n             role_base=self.profile.base,\n-            role_task=self.profile.task,\n+            role_task=role_task,\n             tool_name=CURRENT_ROUND_DIALOGUE_TOOL_NAME,\n             max_tool_calls=self.max_tool_calls_per_decision,\n             max_tool_result_tokens=self.max_tool_result_tokens,\n@@ -347,6 +389,210 @@\n             if value is not None:\n                 self._model_token_usage[key] += value\n \n+    def _build_decision_brief(self, turn_packet: Mapping[str, Any]) -> str:\n+        if self.profile.role != \"hunter\":\n+            return \"\"\n+        request = turn_packet.get(\"request\") if isinstance(turn_packet.get(\"request\"), Mapping) else {}\n+        public_state = turn_packet.get(\"public_state\") if isinstance(turn_packet.get(\"public_state\"), Mapping) else {}\n+        ranking = self._rank_hunter_targets(request, public_state, list(self._recent_public_events))\n+        phase = str(\n+            turn_packet.get(\"game\", {}).get(\n+                \"public_phase\",\n+                turn_packet.get(\"game\", {}).get(\"phase\", request.get(\"phase\", \"unknown\")),\n+            )\n+        )\n+        lines = [f\"阶段：{phase}\"]\n+        legal_targets = ranking.get(\"legal_targets\") or []\n+        if legal_targets:\n+            lines.append(\"合法目标：\" + \"、\".join(legal_targets[:8]))\n+        recent = ranking.get(\"recent_memory\") or []\n+        if recent:\n+            lines.append(\"最近公开记忆：\" + \" | \".join(recent[-3:]))\n+        ordered = ranking.get(\"target_ranking\") or []\n+        if ordered:\n+            top_bits = []\n+            for item in ordered[:3]:\n+                reason = str(item.get(\"reason\") or \"\")[:32]\n+                top_bits.append(f\"{item.get('target_id')}({item.get('score')}:{reason})\")\n+            lines.append(\"目标排序：\" + \" > \".join(top_bits))\n+        if ranking.get(\"pass_recommended\"):\n+            lines.append(\"倾向：证据不足或连锁风险高时可跳过\")\n+        elif ranking.get(\"best_target\"):\n+            lines.append(f\"倾向：优先开枪 {ranking['best_target']}\")\n+        return self._truncate_text(\"\\n\".join(lines), 900)\n+\n+    def _rank_hunter_targets(\n+        self,\n+        request: Mapping[str, Any],\n+        public_state: Mapping[str, Any],\n+        memory_lines: list[str],\n+    ) -> dict[str, Any]:\n+        legal_targets = self._collect_target_ids(request)\n+        if not legal_targets:\n+            return {\n+                \"legal_targets\": [],\n+                \"recent_memory\": memory_lines[-6:],\n+                \"target_ranking\": [],\n+                \"pass_recommended\": True,\n+                \"best_target\": None,\n+            }\n+\n+        memory_blob = \"\\n\".join(memory_lines[-8:])\n+        try:\n+            public_blob_raw = json.dumps(public_state, ensure_ascii=False, separators=(\",\", \":\"))\n+        except TypeError:\n+            public_blob_raw = repr(public_state)\n+        public_blob = self._truncate_text(public_blob_raw, 1200)\n+        target_ranking: list[dict[str, Any]] = []\n+        for target_id in legal_targets:\n+            score, reasons = self._score_hunter_target(target_id, memory_blob, public_blob)\n+            target_ranking.append(\n+                {\n+                    \"target_id\": target_id,\n+                    \"score\": score,\n+                    \"reason\": \"；\".join(reasons) if reasons else \"证据不足\",\n+                }\n+            )\n+        target_ranking.sort(key=lambda item: (-int(item[\"score\"]), str(item[\"target_id\"])))\n+        best = target_ranking[0] if target_ranking else None\n+        pass_recommended = best is None or int(best[\"score\"]) < 3\n+        if len(target_ranking) > 1:\n+            second = target_ranking[1]\n+            if int(best[\"score\"]) - int(second[\"score\"]) < 2 and int(best[\"score\"]) < 5:\n+                pass_recommended = True\n+        if best is not None and int(best[\"score\"]) >= 5:\n+            pass_recommended = False\n+        return {\n+            \"legal_targets\": legal_targets,\n+            \"recent_memory\": memory_lines[-6:],\n+            \"target_ranking\": target_ranking,\n+            \"pass_recommended\": pass_recommended,\n+            \"best_target\": best[\"target_id\"] if best and not pass_recommended else None,\n+        }\n+\n+    def _score_hunter_target(self, target_id: str, memory_blob: str, public_blob: str) -> tuple[int, list[str]]:\n+        score = 0\n+        reasons: list[str] = []\n+        target_token = str(target_id)\n+        token_lower = target_token.lower()\n+        search_space = f\"{memory_blob}\\n{public_blob}\"\n+        lines = [line for line in search_space.splitlines() if target_token in line or token_lower in line.lower()]\n+        if not lines and target_token in search_space:\n+            lines = [search_space]\n+        for line in lines[:6]:\n+            line_lower = line.lower()\n+            line_score = 0\n+            if any(word in line_lower for word in (\"狼\", \"wolf\", \"查杀\", \"对跳\", \"假\", \"伪\", \"冲票\", \"带票\", \"带节奏\", \"矛盾\")):\n+                line_score += 3\n+                reasons.append(self._truncate_text(line, 40))\n+            elif any(word in line_lower for word in (\"怀疑\", \"票\", \"vote\", \"claim\", \"身份\", \"死亡\", \"night\", \"夜\", \"发言\")):\n+                line_score += 1\n+                reasons.append(self._truncate_text(line, 40))\n+            if any(word in line_lower for word in (\"好人\", \"金水\", \"可信\", \"站边\", \"支持\")):\n+                line_score -= 1\n+            score += line_score\n+\n+        target_mentions = search_space.count(target_token)\n+        if target_mentions:\n+            score += min(2, target_mentions)\n+        if target_token in public_blob:\n+            score += 1\n+\n+        if any(word in search_space for word in (\"高票\", \"最高票\", \"票王\", \"带票\", \"冲票\", \"对跳\", \"查杀\", \"狼链\", \"连锁\", \"连带\")) and target_token in search_space:\n+            score += 2\n+        if any(word in search_space for word in (\"已死好人\", \"好人链\", \"公认好人\", \"公开好人\", \"金水\", \"可信\")) and target_token in search_space:\n+            score -= 1\n+\n+        score = max(score, 0)\n+        if not reasons:\n+            reasons.append(\"公开记忆里缺少强关联\")\n+        return score, reasons[:3]\n+\n+    def _collect_target_ids(self, request: Mapping[str, Any]) -> list[str]:\n+        target_ids: list[str] = []\n+        seen: set[str] = set()\n+        raw_actions = request.get(\"allowed_actions\")\n+        if not isinstance(raw_actions, list):\n+            return target_ids\n+        for allowed in raw_actions:\n+            if not isinstance(allowed, Mapping):\n+                continue\n+            raw_target_ids = allowed.get(\"target_ids\")\n+            if not isinstance(raw_target_ids, list):\n+                continue\n+            for target_id in raw_target_ids:\n+                if target_id is None:\n+                    continue\n+                text = str(target_id)\n+                if text not in seen:\n+                    seen.add(text)\n+                    target_ids.append(text)\n+        return target_ids\n+\n+    def _extract_memory_lines(self, value: Any, *, depth: int = 0) -> list[str]:\n+        lines: list[str] = []\n+        self._extract_memory_lines_into(value, lines, depth=depth)\n+        return lines[:10]\n+\n+    def _extract_memory_lines_into(self, value: Any, lines: list[str], *, depth: int) -> None:\n+        if len(lines) >= 10 or depth > 2:\n+            return\n+        if isinstance(value, Mapping):\n+            parts: list[str] = []\n+            for key, item in value.items():\n+                key_text = str(key)\n+                if key_text in _MEMORY_KEYS or key_text.endswith(\"_id\"):\n+                    compact = self._compact_value(item)\n+                    if compact:\n+                        parts.append(f\"{key_text}={compact}\")\n+                if isinstance(item, (Mapping, list, tuple)):\n+                    self._extract_memory_lines_into(item, lines, depth=depth + 1)\n+                elif isinstance(item, str) and self._is_signal_text(item):\n+                    compact = self._compact_text(item)\n+                    if compact:\n+                        parts.append(compact)\n+            if parts:\n+                line = self._compact_text(\" \".join(parts))\n+                if line:\n+                    lines.append(line)\n+            return\n+        if isinstance(value, (list, tuple)):\n+            for item in value[:5]:\n+                self._extract_memory_lines_into(item, lines, depth=depth + 1)\n+                if len(lines) >= 10:\n+                    return\n+            return\n+        if isinstance(value, str):\n+            text = self._compact_text(value)\n+            if text and self._is_signal_text(text):\n+                lines.append(text)\n+\n+    def _is_signal_text(self, text: str) -> bool:\n+        return bool(_SIGNAL_TEXT.search(text) or _PLAYER_ID_TEXT.search(text) or _CHINESE_CHARACTER.search(text))\n+\n+    @staticmethod\n+    def _compact_text(text: str, limit: int = 160) -> str:\n+        return re.sub(r\"\\s+\", \" \", str(text)).strip()[:limit]\n+\n+    def _compact_value(self, value: Any) -> str:\n+        if value is None:\n+            return \"\"\n+        if isinstance(value, bool):\n+            return \"true\" if value else \"false\"\n+        if isinstance(value, (int, float)):\n+            return str(value)\n+        if isinstance(value, str):\n+            return self._compact_text(value, 80)\n+        try:\n+            dumped = json.dumps(value, ensure_ascii=False, separators=(\",\", \":\"))\n+        except TypeError:\n+            dumped = repr(value)\n+        return self._compact_text(dumped, 120)\n+\n+    @staticmethod\n+    def _truncate_text(text: str, limit: int) -> str:\n+        return str(text)[: max(0, int(limit))]\n+\n     @staticmethod\n     def _nonnegative_int(value: object, *, fallback: int | None) -> int | None:\n         if isinstance(value, bool):\n--- hunter-base/task.md\n+++ hunter-n00007/task.md\n@@ -1,8 +1,16 @@\n # 猎人最小任务\n \n-你的任务是帮助好人找狼，并在死亡触发猎人行动时做出有依据的选择。\n+你的目标是帮助好人找狼，并在被击杀触发猎人行动时做出稳定、合法、可解释的选择。\n \n-- 活着时保持自然的好人视角，收集足够证据，不要为了证明身份而过早暴露。\n-- 被要求开枪时比较合法目标的身份线索和连锁风险；证据不足时可以选择跳过。\n-- 不要把尚未发生的猎人反应写成系统事实，也不要忽略当前行动包的目标范围。\n-- 公开发言要回应当下争议，避免每次都用相同的“带走最像狼的人”模板。\n+## 决策 checklist\n+1. 先确认当前阶段是否真的到了猎人反应；只在行动包明确允许时开枪或跳过。\n+2. 列出当前合法目标，绝不使用行动包外的目标，也不要把尚未发生的猎人反应当作事实。\n+3. 结合最近 1~2 轮公开发言、票型、死亡链和公开身份跳点，优先找：高票、带节奏、与已公开好人链冲突、前后说法不一致的玩家。\n+4. 对每个合法目标按顺序比较：身份可信度、票型一致性、连锁风险。\n+5. 证据足够且目标明显可疑时，选择开枪；证据不足、风险偏高或无法分辨时，允许并优先跳过。\n+\n+## 公开发言规则\n+- 活着时保持自然的好人视角，回应当下争议，尽量引用最近一条或两条公开证据。\n+- 不必急于自证身份；如果需要表态，用简短、可信、基于公开信息的话说明立场。\n+- 避免每次都重复“带走最像狼的人”这类固定句式，要针对本轮争议给出具体回应。\n+- 不要把没有发生的猎人反应、开枪结果或身份结论写成系统事实。",
+              "evaluation_summary": null
+            }
+          },
+          {
+            "tool": "read_other_branch",
+            "arguments": {
+              "node_id": "hunter-n00008"
+            },
+            "result": {
+              "node": {
+                "node_id": "hunter-n00008",
+                "role": "hunter",
+                "status": "pending",
+                "parent_id": "hunter-base",
+                "depth": 1,
+                "children": [],
+                "created_at": "2026-09-04T14:33:51.015210+00:00",
+                "code_hash": "c0f2b19e618231270233463e90a6b67f9ddb6d073c14fadab503ae7c4eb79b50",
+                "patch_path": null,
+                "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/werewolf_game/records/season2/evolution/operations/20260904T134204-1376d1b4/branch1/diagnosis.json",
+                "evaluation_summary_path": null,
+                "status_reason": ""
+              },
+              "patch": "",
+              "evaluation_summary": null
+            }
+          }
+        ],
+        "diagnosis": {
+          "summary": "hunter-base 是一个“可运行但策略层面偏弱”的基线：评测中没有出现猎人相关的结构化错误，但 20 局仅 5 胜，说明主要问题不在 schema/校验，而在缺少跨回合记忆、缺少猎人专属决策框架，以及公开发言没有被任务化成可复用的局内证据链。",
+          "evidence": [
+            {
+              "source": "read_evaluation_summary",
+              "fact": "hunter-base 在 20 局完整评测中 win_rate 仅 0.25（5 胜 15 负），且 recommended_status 只是 retained，说明它是“能跑但效果一般”的保留节点。"
+            },
+            {
+              "source": "current_agent.py",
+              "fact": "observe(sync_packet) 当前实现是直接丢弃同步包，不保存任何跨行动状态；这与猎人需要积累公开发言、票型和死亡链条来决定开枪的任务不匹配。"
+            },
+            {
+              "source": "current_agent.py",
+              "fact": "Task-Agent 只提供 CURRENT_ROUND_DIALOGUE 工具，且 prompt 的 history_policy 默认是 current_state_only；代码没有任何长期记忆、摘要或历史线索压缩机制。"
+            },
+            {
+              "source": "random_game_replay / game7",
+              "fact": "在 game7 中，猎人 p8 最终开枪打中 p11（狼人），说明单次死亡反应并未完全失效；但他在存活阶段没有形成稳定、可复用的公开推理链，对局势贡献偏被动。"
+            },
+            {
+              "source": "read_other_branch hunter-n00007",
+              "fact": "另一个分支已经开始尝试“短记忆 deque + decision_brief + 猎人目标排序”的方向，说明问题很可能就卡在这里，而不是引擎或 schema。"
+            },
+            {
+              "source": "evaluation_summary errors",
+              "fact": "评测中的 participant_error 主要来自其他角色的 guard 目标非法、timeout 等，不是 hunter-base 自身的非法输出；因此 hunter 的核心瓶颈更像是策略表达不足，而不是输出稳定性。"
+            }
+          ],
+          "root_causes": [
+            "状态失忆：猎人相关判断需要跨天保留“谁支持谁、谁反复改口、谁在带节奏”的线索，但当前 observe 完全不保存历史。",
+            "缺少猎人专属决策层：当前代码没有针对 hunter_reaction 生成可解释的目标排序、连锁风险和 pass 条件，完全依赖大模型临场推断。",
+            "提示词没有把“当前争议”转成可执行约束：任务文本虽然要求回应当下争议，但代码里没有把这件事固化成短简报或发言骨架，导致公开发言容易泛化。",
+            "历史信息没有压缩而是被忽略：即使公共状态同步已经存在，agent 也没有做“高信号事件抽取”，所以无法把票型、身份声明、死亡顺序变成可用证据。"
+          ],
+          "modification_plan": [
+            {
+              "file": "task_agent.py",
+              "change": "把 observe 从 no-op 改为“有限长短记忆”：从同步包中抽取高信号公开事件（发言、投票、死亡、身份公开、警长结果等），压缩后存入 deque，并在决策时注入最近若干条记忆。",
+              "rationale": "猎人最需要的是跨回合证据链，尤其是死亡前最后几轮的投票与发言；这能直接提升开枪和公开发言的相关性。"
+            },
+            {
+              "file": "task_agent.py",
+              "change": "为 hunter 增加 decision_brief / target_ranking：在 hunter_reaction 时按合法目标生成简短评分、理由和是否建议跳过的结论；在发言时也给出当前争议摘要、最可疑对象和上一轮变化点。",
+              "rationale": "把“该打谁 / 要不要跳过”从模型自由发挥变成结构化输入，可以显著减少模板化“带走最像狼的人”式输出。"
+            },
+            {
+              "file": "task_agent.py",
+              "change": "增加 phase-aware 的简短策略模板：对 speak / last_words / hunter_reaction 分别生成不同的简报内容，避免所有阶段都使用同一套泛化提示。",
+              "rationale": "猎人在活着时要自然、在死亡反应时要收敛到证据与连锁风险；分阶段约束能让行为更贴合任务。"
+            },
+            {
+              "file": "task.md",
+              "change": "把猎人任务改写得更可执行：明确要求保存最近若干轮的争议点、优先比较票型与身份声明的一致性、证据不足时明确写出跳过条件，而不是只写“找狼”。",
+              "rationale": "任务文本本身是系统提示的重要来源；更具体的规则会让模型更稳定地遵守“有依据地开枪”和“回应当前争议”。"
+            }
+          ],
+          "risks": [
+            "短记忆和评分逻辑可能增加 prompt 长度，需控制在现有 12000 字符预算内。",
+            "如果抽取规则过宽，可能把噪声也当作证据，反而误导开枪目标。",
+            "如果目标排序过于刚性，模型会变得机械化，遇到异常局面时泛化能力下降。",
+            "task.md 过度细化可能压缩模型在复杂局面的自由推理空间，导致在非典型局里反而更保守。"
+          ],
+          "code_agent_brief": "请在不改动 Game Engine、规则、schema 和工具实现的前提下，升级 hunter-base 的 Task-Agent。优先在 task_agent.py 增加一个 bounded short-term memory：observe 需要从公开同步中提取高信号事件并保留最近几条；decide 时为 hunter 生成一段简短 decision_brief。对于 hunter_reaction，要基于合法 target_ids 做一个轻量 target_ranking，输出“优先开枪谁 / 为什么 / 证据不足时是否跳过”的结构化提示。对于 speak / last_words，不要再用单一泛化模板，而要让简报明确绑定当前争议、最近票型变化和最关键的身份矛盾。同步把 task.md 改成更具体的猎人任务说明，强调跨回合证据、连锁风险和证据不足时的跳过条件。要求：保持 JSON 输出兼容、不要增加非法行动率、不要超出当前 prompt/tool 预算。"
+        },
+        "model": {
+          "available": true,
+          "model": "gpt-5.5",
+          "protocol": "responses",
+          "reasoning_effort": null,
+          "enable_thinking": true,
+          "max_output_tokens": 900
+        },
+        "token_usage": {
+          "input_tokens": 208176,
+          "output_tokens": 5591,
+          "total_tokens": 213767
+        }
+      }
+    }
+  ],
+  "diagnosis": {
+    "summary": "hunter-n00008 的实现已经从“纯无记忆”进化到“短字符串记忆”，但仍停留在浅层关键词判断：它能过规则、也不常报错，但对跨轮票型、身份声明、改口和死亡链条的整合太弱，导致 20 局仅 7 胜。当前代码在猎人反应里主要靠最近几条文本里是否直接提到 target_id 再叠加关键词分数，这种方法不足以稳定识别像 game6 里 p4 这种多轮立场漂移的狼，也解释了为什么整体胜率仍偏低。",
+    "evidence": [
+      {
+        "source": "read_evaluation_summary",
+        "fact": "hunter-n00008 在 20 局中 win_rate 只有 0.35，且没有 fallback/invalid 问题，说明主要瓶颈不是 schema 合规，而是决策质量。"
+      },
+      {
+        "source": "random_game_replay game6",
+        "fact": "第 6 局里 p4 多次立场变化：前期站边 p9，后面又改成“站边5号是好人”，但最终 p9/p4/p5/p12 的残局仍让狼人获胜，说明仅靠局部记忆不足以抓住长期矛盾。"
+      },
+      {
+        "source": "current_agent.py",
+        "fact": "_recent_memory 只保留最近 5 条上下文，_score_hunter_target 只对 recent_memory 做 target_id 正则匹配和关键词加权，没有结构化票型/声明/死亡链解析。"
+      },
+      {
+        "source": "current_agent.py",
+        "fact": "decision_brief 在 hunter_reaction 里只输出 target_ranking、skip_option、skip_condition，缺少按玩家聚合的证据摘要，模型要自己从零拼接证据链。"
+      },
+      {
+        "source": "read_other_branch hunter-n00040",
+        "fact": "同角色另一分支已经开始尝试增加 player_notes、evidence_snapshot、claimed_roles、hard_clears 等结构化状态，说明当前节点的主要短板已被识别为“缺少结构化证据层”。"
+      },
+      {
+        "source": "read_previous_diagnosis hunter-base",
+        "fact": "历史诊断里也暴露过局部记忆、超时和错误目标的问题，当前节点虽修掉部分合规性问题，但还没有补上可持续的证据建模。"
+      }
+    ],
+    "root_causes": [
+      {
+        "cause": "记忆层过浅且是非结构化字符串",
+        "impact": "只能看到最近少量公开文本，无法稳定追踪同一玩家跨轮的站边、改口、票型和身份声明变化。"
+      },
+      {
+        "cause": "猎人反应评分函数过于依赖关键词和目标字符串匹配",
+        "impact": "会把“说到了目标名字”误当成强证据，也会错过没有直呼 target_id、但在票型和死亡链上更危险的对象。"
+      },
+      {
+        "cause": "缺少按玩家聚合的证据画像",
+        "impact": "无法形成谁支持谁、谁反复改口、谁的票与声明不一致的稳定判断，因此在残局和猎人开枪场景里很容易失焦。"
+      },
+      {
+        "cause": "发言与 last_words 的输出约束仍偏泛",
+        "impact": "模型容易输出“先观察”“别分票”一类安全但信息密度低的文本，不能持续压缩场上争议点，也不利于后续复盘。"
+      },
+      {
+        "cause": "当前实现缺少显式的风险阈值与跳过条件",
+        "impact": "虽然有 skip_option，但缺少基于证据强度的硬阈值和误伤关键好人的保护逻辑，猎人反应容易被弱证据牵引。"
+      }
+    ],
+    "modification_plan": [
+      {
+        "file": "task_agent.py",
+        "change": "新增一个受限、可回收的结构化证据层：为每个玩家维护简短 dossier（最近发言、身份声明、投票历史、被点名次数、支持/攻击线、死亡相关性、硬清/软清标记），并从现有 public sync 中增量更新。",
+        "rationale": "把当前的字符串记忆升级为按玩家聚合的证据状态，才能稳定比较“谁支持谁、谁改口、谁票型和身份声明不一致”。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "重写 `_hunter_target_ranking` / `_score_hunter_target`，改为基于结构化证据打分：优先看跨轮矛盾、票型压力、对跳冲突、死亡链相关性；降低单纯关键词和 target_id 命中的权重；加入明确的 skip 阈值。",
+        "rationale": "猎人反应的核心不是‘找最像狼的人’，而是从合法 target_ids 里选出证据最硬且误伤风险最低的对象。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "把 `decision_brief` 中的 hunter_reaction / speak / last_words 三种模式都改成输出一个简短 evidence_snapshot（top contradictions、top vote pressure、claimed roles、hard clears），并要求模型在发言时点名一个具体怀疑对象和一个具体依据。",
+        "rationale": "让模型在生成时直接消费结构化证据，减少临场自拼证据链造成的漂移和空话。"
+      },
+      {
+        "file": "task_agent.py",
+        "change": "给结构化证据层和 prompt 摘要都加上严格上限：每个玩家最多保留少量条目、每轮只输出 top-N 证据，避免 prompt 过长和 token 膨胀。",
+        "rationale": "当前评测 token 消耗已经很高，下一代改造必须在增强信息密度的同时保持 bounded memory 和 bounded prompt。"
+      }
+    ],
+    "risks": [
+      {
+        "risk": "结构化解析过于激进会把模糊好人也标成狼，导致猎人开枪或发言立场过硬。",
+        "mitigation": "只做保守聚合，默认低置信度；对硬清和跳过条件设置保守阈值。"
+      },
+      {
+        "risk": "证据层和摘要层一起增强后，system / user prompt 可能变长，增加延迟和 token 成本。",
+        "mitigation": "严格限制每个 dossier 和 evidence_snapshot 的长度，只保留 top-N 项。"
+      },
+      {
+        "risk": "从自由文本中抽取票型和声明可能遇到格式噪声或字段缺失。",
+        "mitigation": "保留当前字符串回退路径；解析失败时不报错，只降级为弱证据。"
+      },
+      {
+        "risk": "如果过度强调历史矛盾，可能在平安夜或信息稀少局中过早定狼。",
+        "mitigation": "把 skip 条件显式化，并要求多源证据一致时才出手。"
+      },
+      {
+        "risk": "发言模板过硬会降低自然度，暴露角色风格。",
+        "mitigation": "只约束‘必须包含一个具体对象和一个具体依据’，不限制整体语气。"
+      }
+    ],
+    "code_agent_brief": "请在 hunter 角色的 task_agent.py 中做一次最小但实质的下一代升级：把当前只保存最近几条字符串记忆的实现，改成一个受限的结构化证据层，按玩家聚合票型、身份声明、改口、支持/攻击线、死亡链和硬清/软清标记；然后用这个证据层重写 hunter_reaction 的目标排序和 speak/last_words 的 brief 输出。目标是让猎人反应优先选‘证据最硬且误伤风险最低’的人，而不是只看 target_id 命中和关键词。不要改 Game Engine、规则、schema、工具或密钥；不要扩展工具预算；所有新状态都必须 bounded，prompt 也必须保持短。"
+  },
+  "model": {
+    "available": true,
+    "model": "gpt-5.5",
+    "protocol": "responses",
+    "reasoning_effort": null,
+    "enable_thinking": true,
+    "max_output_tokens": 900
+  },
+  "token_usage": {
+    "input_tokens": 294421,
+    "output_tokens": 7336,
+    "total_tokens": 301757
+  }
+}

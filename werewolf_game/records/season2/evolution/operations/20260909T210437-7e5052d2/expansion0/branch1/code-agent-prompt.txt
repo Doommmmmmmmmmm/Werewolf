@@ -1,0 +1,175 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 12000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "witch-n00079 通过了广泛筛选但实际胜率仅为20%（20局4胜），核心问题不是行动协议或稳定性，而是女巫私密狼刀信息没有被决策保护逻辑正确建模，导致高价值救人几乎从未发生；同时，公开证据账本使用宽泛关键词递归，存在把非目标玩家错误计入毒药候选的风险。下一代应优先修复“私密当前夜目标优先于公开历史”的决策路径，并将救药与毒药的证据门槛分离。",
+  "evidence": [
+    {
+      "fact": "当前节点20局胜4局、负16局，胜率0.2；focus角色无非法行动、无fallback，说明主要损失来自策略决策而不是schema或运行失败。",
+      "source": "read_evaluation_summary"
+    },
+    {
+      "fact": "祖先witch-n00060胜率为0.35，witch-n00003胜率为0.30；n00079在加入更复杂的女巫账本后反而下降到0.20，说明新增启发式没有解决核心决策问题，可能引入了过度保守或错误证据聚合。",
+      "source": "read_evaluation_summary、read_previous_diagnosis、read_evolution_path"
+    },
+    {
+      "fact": "代码的_build_witch_decision_context调用_extract_current_night_death_targets，而该函数只扫描turn_packet中的public_state、game、request、tool_context，明确没有扫描private_information/private。",
+      "source": "current_agent.py"
+    },
+    {
+      "fact": "代码的_rank_witch_rescue_targets只从witch_evidence_ledger中选择目标，并且_is_witch_heal_candidate要求score至少为2且必须有death_chain、claim_conflict或role_chain证据；因此即使引擎私密信息提供了真实当夜狼刀目标，只要该目标没有被公开历史账本正确记录，就不可能进入救药候选。",
+      "source": "current_agent.py"
+    },
+    {
+      "fact": "随机回放game9中，p1在第1至第4夜的女巫行动均为pass，审计最终显示antidote_available和poison_available仍为true，说明整局没有使用任何药水。",
+      "source": "random_game_replay，seq39、166、232、293以及最终role_state"
+    },
+    {
+      "fact": "game9第3夜狼刀目标为p10，p10是已公开跳预言家并持有警徽的关键公开信息位；守卫保护的是p1，p10最终死亡。若私密狼刀目标能可靠进入救药判断，这一夜至少应被评估为高价值救人机会。",
+      "source": "random_game_replay，seq182、228-235"
+    },
+    {
+      "fact": "game9第2夜狼刀目标为p3，p3是公开金水且参与站边判断的关键公开链节点；代码仍然选择pass。该目标是否值得救可以有策略争议，但它至少应因私密狼刀事实和公开金水链进入候选，而不是被当前代码结构性排除。",
+      "source": "random_game_replay，seq107-112、152-170"
+    },
+    {
+      "fact": "_collect_structured_targets在命中包含死亡、投票、查杀、claim等关键词的键后，会对整个子树序列化并提取其中所有p数字；它不区分事件中的target_id、voter_id、speaker_id、候选列表或文本提及对象。",
+      "source": "current_agent.py"
+    },
+    {
+      "fact": "上述宽泛收集结果被_update_witch_memory写入death_chain、vote_pressure、claim_conflict、role_chain并累加分数；_is_witch_poison_candidate只要求总分和证据类型数达阈值，而没有验证证据是否是同一目标的结构化target关系，也没有排除死亡玩家、发言者或投票者身份。",
+      "source": "current_agent.py"
+    },
+    {
+      "fact": "task.md要求没有当前夜真实夜死时默认pass，且毒药只能依据结构化、多源、一致的公开证据；当前实现的救药路径无法读取当前夜私密目标，毒药路径则可能把宽泛解析出的账本视为结构化证据，和任务约束不一致。",
+      "source": "task.md、current_agent.py"
+    },
+    {
+      "fact": "同代分支witch-n00078尝试了大规模公开证据解析和预先规划，但因smoke中fallback=12、errors=12失败；witch-n00080则引入私密资源来源区分、未知布尔值不再默认当作true，并增加_extract_current_witch_private_context，方向上更接近本节点需要，但其完整实现尚未证明优于当前节点。",
+      "source": "read_other_branch"
+    }
+  ],
+  "root_causes": [
+    {
+      "cause": "当前夜私密狼刀目标没有进入确定性的救药判定链。",
+      "mechanism": "决策上下文和fallback都从公开状态及公开账本推导current_night_death_targets，而不是优先读取引擎放在private_information中的当前夜目标。结果是没有公开死亡时被误判为“没有夜死”，或者目标只因尚未形成公开证据而无法救。",
+      "confidence": "高"
+    },
+    {
+      "cause": "救药错误地依赖公开嫌疑账本，而不是依赖私密狼刀事实加公开价值评估。",
+      "mechanism": "_rank_witch_rescue_targets要求目标先出现在ledger_snapshot，并满足最低分和特定证据类型；这是对毒药候选的思路误用于救药。救药的必要条件应是当前夜真实目标，公开证据主要用于判断目标是否关键，而不应成为发现目标的前置条件。",
+      "confidence": "高"
+    },
+    {
+      "cause": "公开证据抽取丢失事件关系，造成账本污染。",
+      "mechanism": "关键词命中后遍历整个子树并抽取所有玩家编号，将一个事件中的所有相关ID都当成该证据的目标。例如投票记录可能同时包含投票者和被投者，发言记录可能包含发言者及其提及对象。这样score和evidence_types并不表示同一玩家被同一类证据指向。",
+      "confidence": "高"
+    },
+    {
+      "cause": "毒药门槛是数值阈值，不是可审计的多源一致性判断。",
+      "mechanism": "当前门槛score>=4且证据类型数>=2，但分数可能来自错误关联、重复同步或不相干的death_chain。即使实际回放中没有毒药误用，这条路径仍与task.md要求的结构化、多源、一致证据不等价。",
+      "confidence": "高"
+    },
+    {
+      "cause": "决策优先级没有把“当前私密事实、合法动作和资源状态”置于模型自由推理之前。",
+      "mechanism": "模型仍收到完整private_information，但系统同时收到一个可能错误地推荐pass的witch_decision_context；没有明确的硬性优先级或可验证状态摘要来阻止模型被空泛的保守规则带偏。",
+      "confidence": "中高"
+    },
+    {
+      "cause": "跨回合公开记忆采用启发式截断和宽泛关键词，无法稳定保存关键公开链。",
+      "mechanism": "_recent_public_summaries只保留少量截断片段，账本又依赖文本中的玩家编号；这会丢失“谁对谁的查杀、谁投了谁、谁是警长/金水”等关系，导致模型只能看到不完整的候选信号。",
+      "confidence": "中"
+    }
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "新增一个只读取当前行动包私密字段的_extract_current_witch_private_context(private, request, game)函数，支持明确的wolf_target、night_attack_target、attack_target、killed_target、night_death_target及常见嵌套别名；只有字段确实存在且值是合法玩家ID时才返回current_night_death_targets。不要从public_state推断当前夜狼刀。",
+      "rationale": "引擎已在女巫行动包中私下提供当夜狼人目标。必须把该事实作为救药发现目标的唯一首要来源，避免把尚未公开的夜死误判为不存在，也避免从公开信息反推私密事实。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重写_rank_witch_rescue_targets：以private_context中的current_night_death_targets为候选基础，不再要求目标先存在于witch_evidence_ledger；仅在当前目标仍合法、解药可用且目标不是自己以外的非法对象时，依据公开状态中的关键位信息计算价值。若没有私密当前夜目标，返回空列表。",
+      "rationale": "救药与毒药的证据逻辑不同。救药首先需要真实狼刀目标，公开证据只用于判断是否为警长、公开预言家、已形成稳定归票核心或能明显改变轮次。此改动直接修复game9第2、3夜这类机会被结构性漏掉的问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在_build_witch_decision_context中加入private_context字段，例如private_current_night_target、private_target_source='engine_private'、private_target_confidence='certain'，并将推荐顺序改为：先检查当前action kinds和资源；若有私密当前夜目标且公开价值满足条件则推荐heal；否则再评估poison；否则pass。",
+      "rationale": "让模型看到可审计的事实来源和明确决策顺序，减少完整private_information与启发式摘要之间的冲突。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在_apply_role_safe_fallback中，对heal行动直接依据private_context.current_night_death_targets和救药价值判定；禁止仅凭ledger_snapshot放行救药。若模型选择救人但当前私密目标为空、目标不在当前私密目标集合或解药不可用，则优先转换为合法pass。",
+      "rationale": "fallback应是安全网而不是第二套不完整推理系统。该规则能在模型误选heal时保护药水，也能在模型漏掉高价值救人时允许确定性计划返回。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "将_extract_current_night_death_targets从当前救药逻辑中移除或限制为兼容性辅助，不再扫描public_state、game、request、tool_context中的“死亡/出局/刀口”关键词来识别当夜私密目标。",
+      "rationale": "公开死亡是历史事实，不能等同于当前夜私密狼刀。继续使用宽泛公开扫描会在白天或同步状态中把旧死亡、多人死亡列表误当成当前夜目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "把公开证据账本改为事件关系解析：对结构化字段优先读取target_id、target、checked_id、against_id、candidate_ids；投票只把被投目标计入vote_pressure，另行保存voter_id，不把所有事件中的玩家ID都计入目标证据；发言文本只作为未结构化弱证据，不进入毒药硬门槛。",
+      "rationale": "满足task.md关于“结构化、多源、一致”的要求，消除当前_collect_structured_targets把发言者、投票者、提及对象混成目标的根本问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "为毒药建立独立的candidate record，至少包含target_id、distinct_evidence_sources、supporting_event_count、contradiction_count、last_public_round和alive状态；毒药放行要求目标当前存活、至少两种独立结构化来源、来源都指向同一target_id、无明显冲突，且不允许仅凭death_chain、文本提及或模型生成名单。",
+      "rationale": "当前score/evidence_type_count无法表达证据是否真正一致。独立字段和明确门槛能降低误毒风险，同时保留在公开票型收拢、查杀/对跳冲突等真实高置信场景下使用毒药的能力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在_update_witch_memory中增加round/event去重标识，只对新观察到的公开事件更新账本；不要因同一public sync重复发送而重复累加证据。",
+      "rationale": "公开同步可能重复包含历史状态。当前实现没有事件级去重，重复观察会人为抬高score，进一步破坏毒药阈值的可信度。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在_system_prompt或_build_safety_notes中加入简短硬顺序：私密当前夜目标只用于内部救药判断，不得公开；没有私密当前夜目标就不救；毒药只看结构化公开记录；任何推荐都必须服从request.allowed_actions。",
+      "rationale": "将实现逻辑转化为模型可执行的操作顺序，但不把私密信息写入公开发言或改变信息边界。"
+    },
+    {
+      "file": "task.md",
+      "change": "补充“救药判定与毒药判定分离”的操作说明：救药候选只能来自当前行动包私密狼刀目标，公开信息只决定是否高价值；毒药候选只能来自结构化公开目标关系，不得用私密狼刀信息直接毒人。",
+      "rationale": "当前任务文字已经强调pass和隐私，但没有明确告诉模型救药候选的唯一来源，导致模型可能把历史公开死亡与当前私密夜死混用。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "增加针对纯函数的单元测试和smoke测试：私密目标存在但public_state无夜死时，heal候选必须包含该目标；私密目标缺失时必须pass；公开投票记录中的voter_id不能成为vote_pressure目标；重复同步不能重复加分；低置信文本提及不能放行poison；heal和poison不可在同一决策中同时计划。",
+      "rationale": "这些测试直接覆盖当前节点最可能的回归点，并避免重复witch-n00078的大规模改动导致smoke fallback/errors失败。"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "私密字段别名或嵌套结构与假设不同，新增提取器可能仍读不到狼刀目标。",
+      "mitigation": "实现有限、显式的别名表和递归Mapping读取，并优先使用request或private中字段名明确包含target的值；不要使用任意文本关键词推断。"
+    },
+    {
+      "risk": "救药价值过滤过严，可能错过虽非警长但对轮次很重要的普通玩家。",
+      "mitigation": "将真实私密狼刀目标全部保留在context中，价值过滤只决定推荐而不抹除事实；在残局、人数接近狼胜条件或目标是唯一公开信息链节点时加入明确的轮次紧迫性条件。"
+    },
+    {
+      "risk": "救药价值过滤过宽，可能首夜或普通局面浪费解药。",
+      "mitigation": "坚持当前夜目标是必要条件，并要求公开关键位或轮次改变证据；没有明确价值时硬性pass。"
+    },
+    {
+      "risk": "毒药证据解析改严后，使用毒药的频率会下降。",
+      "mitigation": "不要简单提高总分阈值，而是保留投票收拢、查杀/对跳冲突、独立结构化来源等明确白名单；通过多局评测观察毒药命中率和错毒率。"
+    },
+    {
+      "risk": "候选代码增加过多规划逻辑后可能出现fallback或非法行动，类似witch-n00078的失败。",
+      "mitigation": "只增加女巫私密目标提取、救药硬门和证据关系修复；所有计划行动都从allowed_actions中生成，无法确认时返回现有合法pass，不引入大规模预先行动规划。"
+    },
+    {
+      "risk": "公开账本若误把审计或私密字段纳入，可能造成信息泄露。",
+      "mitigation": "更新账本只接收observe收到的公开同步；当前夜私密context只进入内部决策，不进入recent_public_summaries、公开发言建议或任何公开事件字段。"
+    },
+    {
+      "risk": "单局game9显示的高价值救人机会不能代表所有20局。",
+      "mitigation": "将game9作为机制性证据而非总体因果证明；修改后必须对完整20局及至少多个具有真实私密狼刀、警长或预言家存活的回放进行对比评测。"
+    }
+  ],
+  "code_agent_brief": "请在候选工作区仅修改witch的task_agent.py和必要的task.md，不改引擎、规则、行动schema、工具、可见性或预算。目标是修复女巫私密狼刀目标未进入救药判断的问题，并降低公开证据账本误判毒药候选的风险。具体要求：1）新增有限别名和递归Mapping提取器，从private_information中读取引擎明确提供的当前夜wolf target，仅将明确的玩家ID作为current_night_death_targets；禁止从public_state的历史死亡列表推断当前狼刀。2）重写救药候选：当前私密目标是必要条件，不再要求目标先存在公开ledger；公开信息只用于判断是否为关键公开发言位、警长/归票核心、公开预言家/金水链节点或轮次紧迫目标；没有私密目标、解药不可用或目标不在合法动作候选中时返回合法pass。3）在_build_witch_decision_context和模型提示中显式标出private_target_source=engine_private，并规定私密目标只能内部使用、不得公开。4）重写公开证据收集，优先使用结构化target_id/target/checked_id/against_id；投票只计被投目标，分离voter_id；文本提及不能单独进入毒药硬门；增加事件去重，避免重复sync重复累加。5）毒药放行必须基于当前存活目标、至少两种独立结构化证据源且都指向同一target_id、无明显冲突；不得凭宽泛score、death_chain、单一文本片段或模型自生成名单。6）在_apply_role_safe_fallback中确保heal/poison都只能转换为allowed_actions中的合法动作，低置信时使用pass。7）加入最小单元测试或可执行smoke覆盖：private target存在而public无夜死时能产生heal候选；private target缺失时pass；投票者不被当作投票目标；重复观察不重复加分；低置信文本不能放行poison；不出现fallback和非法行动。请保持改动小而局部，不复制witch-n00078的大规模规划实现。"
+}

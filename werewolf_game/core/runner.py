@@ -451,8 +451,20 @@ class GameRunner:
             "input_tokens",
             "output_tokens",
             "total_tokens",
+            "prompt_request_count",
+            "prompt_over_limit_count",
+            "prompt_measurement_count",
+            "prompt_chars_total",
+            "prompt_chars_max",
+            "prompt_chars_min",
+            "prompt_remaining_chars_min",
+            "prompt_tool_calls",
+            "prompt_turns",
         )
         totals = {field: 0 for field in fields}
+        max_fields = {"prompt_chars_max"}
+        min_fields = {"prompt_chars_min", "prompt_remaining_chars_min"}
+        seen_min: set[str] = set()
         for snapshot in snapshots:
             for field in fields:
                 value = snapshot.get(field, 0)
@@ -462,7 +474,21 @@ class GameRunner:
                     normalized = int(value)
                 except (TypeError, ValueError):
                     continue
-                if normalized >= 0:
+                if normalized < 0:
+                    continue
+                if field in max_fields:
+                    totals[field] = max(totals[field], normalized)
+                elif field in min_fields:
+                    # 0 is a valid value for remaining budget, but a missing
+                    # field also defaults to 0. Only use present values.
+                    if field not in snapshot:
+                        continue
+                    if field not in seen_min:
+                        totals[field] = normalized
+                        seen_min.add(field)
+                    else:
+                        totals[field] = min(totals[field], normalized)
+                else:
                     totals[field] += normalized
 
         reported = totals["reported_usage_response_count"]

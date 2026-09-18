@@ -186,6 +186,13 @@ class TaskAgent:
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
+            "prompt_measurement_count": 0,
+            "prompt_chars_total": 0,
+            "prompt_chars_max": 0,
+            "prompt_chars_min": 0,
+            "prompt_remaining_chars_min": 0,
+            "prompt_tool_calls": 0,
+            "prompt_turns": 0,
         }
 
     async def observe(self, sync_packet: dict[str, Any]) -> None:
@@ -334,18 +341,57 @@ class TaskAgent:
         attempts = self._nonnegative_int(getattr(response, "api_attempts", 1), fallback=1)
         self._model_token_usage["api_attempt_count"] += max(1, attempts or 1)
         usage = getattr(response, "token_usage", None)
-        if not isinstance(usage, dict):
-            return
-        values = {
-            key: self._nonnegative_int(usage.get(key), fallback=None)
-            for key in ("input_tokens", "output_tokens", "total_tokens")
-        }
-        if all(value is None for value in values.values()):
-            return
-        self._model_token_usage["reported_usage_response_count"] += 1
-        for key, value in values.items():
-            if value is not None:
-                self._model_token_usage[key] += value
+        if isinstance(usage, dict):
+            values = {
+                key: self._nonnegative_int(usage.get(key), fallback=None)
+                for key in ("input_tokens", "output_tokens", "total_tokens")
+            }
+            if not all(value is None for value in values.values()):
+                self._model_token_usage["reported_usage_response_count"] += 1
+                for key, value in values.items():
+                    if value is not None:
+                        self._model_token_usage[key] += value
+        prompt_stats = getattr(response, "prompt_stats", None)
+        if isinstance(prompt_stats, dict):
+            measurement_count = self._nonnegative_int(
+                prompt_stats.get("prompt_measurement_count"), fallback=0
+            ) or 0
+            chars_total = self._nonnegative_int(
+                prompt_stats.get("prompt_chars_total"), fallback=0
+            ) or 0
+            chars_max = self._nonnegative_int(
+                prompt_stats.get("prompt_chars_max"), fallback=0
+            ) or 0
+            chars_min = self._nonnegative_int(
+                prompt_stats.get("prompt_chars_min"), fallback=0
+            ) or 0
+            remaining = self._nonnegative_int(
+                prompt_stats.get("prompt_remaining_chars"), fallback=0
+            ) or 0
+            self._model_token_usage["prompt_measurement_count"] += measurement_count
+            self._model_token_usage["prompt_chars_total"] += chars_total
+            self._model_token_usage["prompt_chars_max"] = max(
+                self._model_token_usage["prompt_chars_max"], chars_max
+            )
+            if measurement_count:
+                previous_min = self._model_token_usage["prompt_chars_min"]
+                self._model_token_usage["prompt_chars_min"] = (
+                    chars_min
+                    if previous_min <= 0
+                    else min(previous_min, chars_min)
+                )
+                previous_remaining = self._model_token_usage["prompt_remaining_chars_min"]
+                self._model_token_usage["prompt_remaining_chars_min"] = (
+                    remaining
+                    if previous_remaining <= 0
+                    else min(previous_remaining, remaining)
+                )
+            self._model_token_usage["prompt_tool_calls"] += self._nonnegative_int(
+                prompt_stats.get("prompt_tool_calls"), fallback=0
+            ) or 0
+            self._model_token_usage["prompt_turns"] += self._nonnegative_int(
+                prompt_stats.get("prompt_turns"), fallback=0
+            ) or 0
 
     @staticmethod
     def _nonnegative_int(value: object, *, fallback: int | None) -> int | None:

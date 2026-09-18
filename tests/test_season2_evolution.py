@@ -9,6 +9,7 @@ import unittest
 from werewolf_game.season2.archive import EvolutionArchive, NodeStatus, core_snapshot_hash
 from werewolf_game.season2.config import load_season2_config
 from werewolf_game.season2.evolution import EvolutionManager
+from werewolf_game.season2.code_agent import PiServiceUnavailable
 from werewolf_game.season2.evaluator import EvolutionEvaluator
 from werewolf_game.season2.meta_agent import MetaAgent
 from werewolf_game.season2.resources import MetaResourceCatalog
@@ -76,6 +77,7 @@ def write_config(root: Path, *, roles: list[str] | None = None) -> Path:
             "model": "",
             "timeout_seconds": 10,
             "max_attempts": 1,
+            "retry_backoff_seconds": 0,
             "use_bwrap": False,
             "candidate_smoke_test": False,
             "readonly_paths": [],
@@ -237,6 +239,25 @@ class Season2EvolutionTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Game core 已发生变化"):
                     EvolutionArchive(config)
 
+    def test_archive_allows_changed_runtime_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_path = write_config(root)
+            config = load_season2_config(config_path)
+            archive = EvolutionArchive(config)
+            archive.initialize()
+
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            raw["evaluation"]["game_concurrency"] = 2
+            raw["evaluation"]["model_max_in_flight"] = 3
+            raw["pi"]["timeout_seconds"] = 20
+            config_path.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+            resumed = EvolutionArchive(load_season2_config(config_path))
+            self.assertEqual(resumed.config.evaluation.game_concurrency, 2)
+            self.assertEqual(resumed.config.evaluation.model_max_in_flight, 3)
+            self.assertEqual(resumed.config.pi.timeout_seconds, 20)
+
     def test_base_node_cannot_be_discarded(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -397,6 +418,64 @@ class Season2EvolutionTest(unittest.TestCase):
             self.assertEqual(evaluated["action"], "evolved")
             self.assertEqual(evaluated["node_id"], "wolf-n00002")
             self.assertEqual(archive.node("wolf-n00002").status, NodeStatus.RETAINED)
+
+    def test_step_uses_separate_directories_for_multiple_expansion_batches(self):
+        class FailFirstBatchCodeAgent(FakeCodeAgent):
+            def __init__(self, failures: int) -> None:
+                self.failures = failures
+
+            async def apply(self, **kwargs):
+                if self.failures > 0:
+                    self.failures -= 1
+                    raise RuntimeError("simulated service overload")
+                return await super().apply(**kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = load_season2_config(write_config(root, roles=["wolf", "seer"]))
+            archive = EvolutionArchive(config)
+            manager = EvolutionManager(
+                config=config,
+                archive=archive,
+                meta_agent=FakeMetaAgent(),
+                code_agent=FailFirstBatchCodeAgent(
+                    config.evolution.children_per_expansion
+                ),
+                evaluator=FakeEvaluator(root),
+            )
+
+            result = asyncio.run(manager.step())
+
+            self.assertEqual(result["action"], "evolved")
+            operation_directories = list((root / "operations").iterdir())
+            self.assertEqual(len(operation_directories), 1)
+            operation_directory = operation_directories[0]
+            self.assertTrue((operation_directory / "expansion0" / "branch0").is_dir())
+            self.assertTrue((operation_directory / "expansion1" / "branch0").is_dir())
+
+    def test_external_pi_failure_pauses_without_discarding_child(self):
+        class UnavailableCodeAgent(FakeCodeAgent):
+            async def apply(self, **kwargs):
+                raise PiServiceUnavailable("server_is_overloaded")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = load_season2_config(write_config(root))
+            archive = EvolutionArchive(config)
+            manager = EvolutionManager(
+                config=config,
+                archive=archive,
+                meta_agent=FakeMetaAgent(),
+                code_agent=UnavailableCodeAgent(),
+                evaluator=FakeEvaluator(root),
+            )
+
+            result = asyncio.run(manager.step())
+
+            self.assertEqual(result["action"], "paused")
+            child_id = result["branches"][0]["child_id"]
+            self.assertEqual(archive.node(child_id).status, NodeStatus.PENDING)
+            self.assertEqual(archive.node(child_id).patch_path, None)
 
     def test_versioned_candidates_complete_a_game(self):
         with tempfile.TemporaryDirectory() as directory:

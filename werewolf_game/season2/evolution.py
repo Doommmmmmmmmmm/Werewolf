@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .archive import EvolutionArchive, NodeStatus
-from .code_agent import PiCodeAgent
+from .code_agent import PiCodeAgent, PiServiceUnavailable
 from .config import Season2Config
 from .evaluator import EvolutionEvaluator
 from .meta_agent import MetaAgent
@@ -47,10 +47,79 @@ class EvolutionManager:
             validate_candidate_files(directory, self.config.pi.allowed_files)
             validate_candidate_source(directory)
 
+    async def _resume_pending_code_agent(self) -> dict[str, Any] | None:
+        """网络中断后重启时，优先重试已有诊断但尚未完成 Pi 修改的节点。"""
+
+        candidates: list[Any] = []
+        for role in self.config.evolution.roles:
+            for node in self.archive.nodes_for_role(role):
+                if node.status != NodeStatus.PENDING or node.patch_path or not node.diagnosis_path:
+                    continue
+                diagnosis_path = Path(node.diagnosis_path)
+                if diagnosis_path.exists():
+                    candidates.append(node)
+
+        # 明确因外部服务故障暂停的节点必须优先恢复；其余历史遗留 pending
+        # 再按创建时间处理，不能由配置中的角色排列顺序抢占恢复机会。
+        candidates.sort(
+            key=lambda item: (
+                str(item.status_reason).startswith("recovered_external_service_failure"),
+                item.created_at,
+            ),
+            reverse=True,
+        )
+        for node in candidates:
+                diagnosis_path = Path(node.diagnosis_path)
+                try:
+                    artifact = json.loads(diagnosis_path.read_text(encoding="utf-8"))
+                    diagnosis = artifact.get("diagnosis", artifact)
+                    if not isinstance(diagnosis, dict):
+                        continue
+                except (OSError, json.JSONDecodeError):
+                    continue
+                branch_directory = diagnosis_path.parent
+                operation_directory = branch_directory.parent.parent
+                report("恢复 Pi 修改", node=node.node_id)
+                try:
+                    result = await self.code_agent.apply(
+                        workspace=self.archive.node_code_directory(node.node_id),
+                        role=node.role,
+                        diagnosis=diagnosis,
+                        operation_directory=branch_directory,
+                    )
+                    finalized = self.archive.finalize_child_code(node.node_id)
+                    candidate_class = CandidateModuleLoader(self.archive).task_agent_class(
+                        node.node_id
+                    )
+                    validate_task_agent_class(candidate_class)
+                    report("Pi 修改恢复完成", node=node.node_id)
+                    return None
+                except PiServiceUnavailable as error:
+                    self._write(
+                        operation_directory / "result.json",
+                        {
+                            "action": "paused",
+                            "reason": "pi_service_unavailable",
+                            "node_id": node.node_id,
+                            "error": f"{type(error).__name__}: {error}",
+                        },
+                    )
+                    report_error("外部服务不可用，暂停进化", node=node.node_id)
+                    return {
+                        "action": "paused",
+                        "reason": "pi_service_unavailable",
+                        "node_id": node.node_id,
+                        "error": f"{type(error).__name__}: {error}",
+                    }
+        return None
+
     async def step(self) -> dict[str, Any]:
         # 一个 step 代表一次成功进化：只有新节点被评为 retained 才结束。
         # 如果候选被舍弃，则继续寻找下一个可处理节点；所有中间状态都会落盘。
         self.initialize()
+        resumed_code = await self._resume_pending_code_agent()
+        if resumed_code is not None:
+            return resumed_code
         recovered = self._find_unfinished_batch()
         if recovered is None:
             timestamp = datetime.now(timezone.utc).isoformat()
@@ -182,9 +251,12 @@ class EvolutionManager:
                 self._write(operation_directory / "progress.json", {"history": history})
                 continue
 
+            # 一个 step 可能连续尝试多个父节点。每批扩展使用独立目录，避免前一批
+            # 全部失败后再次创建 branch0/branch1 时发生 FileExistsError。
+            expansion_directory = self._next_expansion_directory(operation_directory)
             branches: list[dict[str, Any]] = []
             for branch_index, replay_item in enumerate(replay_items):
-                branch_directory = operation_directory / f"branch{branch_index}"
+                branch_directory = expansion_directory / f"branch{branch_index}"
                 branch_directory.mkdir(parents=True, exist_ok=False)
                 diagnosis_path = branch_directory / "diagnosis.json"
                 child = self.archive.create_child(node.node_id, diagnosis_path=diagnosis_path)
@@ -226,6 +298,37 @@ class EvolutionManager:
                         }
                     )
                     report("分支完成", child=child.node_id, status=child.status)
+                except PiServiceUnavailable as error:
+                    # 外部服务故障不代表候选策略失败；保留 pending 节点并暂停整个 step。
+                    report_error("外部服务不可用，暂停进化", child=child.node_id)
+                    branch = {
+                        "branch_index": branch_index,
+                        "replay_game_index": replay_item.get("game_index"),
+                        "child_id": child.node_id,
+                        "child_status": NodeStatus.PENDING,
+                        "stage": "code_agent",
+                        "diagnosis_path": str(diagnosis_path),
+                        "error": f"{type(error).__name__}: {error}",
+                    }
+                    branches.append(branch)
+                    self._write(
+                        operation_directory / "result.json",
+                        {
+                            "action": "paused",
+                            "operation_id": operation_id,
+                            "parent_id": node.node_id,
+                            "reason": "pi_service_unavailable",
+                            "branches": branches,
+                            "replay_game_indices": [item.get("game_index") for item in replay_items],
+                        },
+                    )
+                    return {
+                        "action": "paused",
+                        "operation_id": operation_id,
+                        "parent_id": node.node_id,
+                        "reason": "pi_service_unavailable",
+                        "branches": branches,
+                    }
                 except Exception as error:
                     report_error("分支失败", child=child.node_id, error=type(error).__name__)
                     child = self.archive.set_status(
@@ -261,7 +364,7 @@ class EvolutionManager:
         for _ in range(max(0, int(steps))):
             result = await self.step()
             results.append(result)
-            if result["action"] == "stopped":
+            if result["action"] in {"stopped", "paused"}:
                 break
         return results
 
@@ -359,6 +462,18 @@ class EvolutionManager:
                 report("step 完成", parent=parent_id, retained_child=child_id)
                 return result
         return None
+
+    @staticmethod
+    def _next_expansion_directory(operation_directory: Path) -> Path:
+        """为同一 step 中的下一批父节点扩展分配不重名目录。"""
+
+        expansion_index = 0
+        while True:
+            directory = operation_directory / f"expansion{expansion_index}"
+            if not directory.exists():
+                directory.mkdir(parents=False, exist_ok=False)
+                return directory
+            expansion_index += 1
 
     @staticmethod
     def _write(path: Path, value: object) -> None:

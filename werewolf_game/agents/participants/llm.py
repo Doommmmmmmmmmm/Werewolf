@@ -30,6 +30,37 @@ class TaskModelBoundary:
     def __init__(self, client: Any, *, max_prompt_chars: int = 12000) -> None:
         self._client = client
         self.max_prompt_chars = max(1, int(max_prompt_chars))
+        self._prompt_stats = {
+            "prompt_request_count": 0,
+            "prompt_over_limit_count": 0,
+            "prompt_chars_total": 0,
+            "prompt_chars_max": 0,
+            "prompt_chars_min": 0,
+            "prompt_remaining_chars_min": 0,
+            "prompt_tool_calls": 0,
+            "prompt_turns": 0,
+        }
+
+    def prompt_budget_snapshot(self) -> dict[str, int]:
+        snapshot = dict(self._prompt_stats)
+        snapshot["prompt_measurement_count"] = snapshot.get("prompt_turns", 0)
+        return snapshot
+
+    def _record_prompt_stats(self, stats: dict[str, Any], *, failed: bool = False) -> None:
+        self._prompt_stats["prompt_request_count"] += 1
+        if failed:
+            self._prompt_stats["prompt_over_limit_count"] += 1
+        count = max(1, int(stats.get("prompt_measurement_count", 1) or 1))
+        total = max(0, int(stats.get("prompt_chars_total", 0) or 0))
+        maximum = max(0, int(stats.get("prompt_chars_max", 0) or 0))
+        minimum = max(0, int(stats.get("prompt_chars_min", 0) or 0))
+        remaining = max(0, int(stats.get("prompt_remaining_chars", 0) or 0))
+        self._prompt_stats["prompt_chars_total"] += total
+        self._prompt_stats["prompt_chars_max"] = max(self._prompt_stats["prompt_chars_max"], maximum)
+        self._prompt_stats["prompt_chars_min"] = minimum if self._prompt_stats["prompt_chars_min"] <= 0 else min(self._prompt_stats["prompt_chars_min"], minimum)
+        self._prompt_stats["prompt_remaining_chars_min"] = remaining if self._prompt_stats["prompt_remaining_chars_min"] <= 0 else min(self._prompt_stats["prompt_remaining_chars_min"], remaining)
+        self._prompt_stats["prompt_tool_calls"] += max(0, int(stats.get("prompt_tool_calls", 0) or 0))
+        self._prompt_stats["prompt_turns"] += max(count, int(stats.get("prompt_turns", 0) or 0))
 
     async def complete_json(self, **kwargs: Any) -> Any:
         prompt_chars = len(str(kwargs.get("system") or ""))
@@ -37,15 +68,43 @@ class TaskModelBoundary:
             if isinstance(message, dict):
                 prompt_chars += len(str(message.get("content") or ""))
         if prompt_chars > self.max_prompt_chars:
+            self._record_prompt_stats({
+                "prompt_measurement_count": 1,
+                "prompt_chars_total": prompt_chars,
+                "prompt_chars_max": prompt_chars,
+                "prompt_chars_min": prompt_chars,
+                "prompt_remaining_chars": 0,
+                "prompt_turns": 1,
+            }, failed=True)
             raise ValueError(
                 f"Task-Agent prompt 超过外部上限：{prompt_chars}>{self.max_prompt_chars} 字符"
             )
         # 底层工具循环追加工具结果后也必须继续使用同一硬上限。
         kwargs["max_prompt_chars"] = self.max_prompt_chars
         complete = self._client.complete_json
-        if inspect.iscoroutinefunction(complete):
-            return await complete(**kwargs)
-        return await asyncio.to_thread(complete, **kwargs)
+        try:
+            if inspect.iscoroutinefunction(complete):
+                response = await complete(**kwargs)
+            else:
+                response = await asyncio.to_thread(complete, **kwargs)
+        except Exception as error:
+            stats = getattr(error, "prompt_stats", None)
+            if isinstance(stats, dict):
+                self._record_prompt_stats(stats, failed=True)
+            raise
+        stats = getattr(response, "prompt_stats", None)
+        if isinstance(stats, dict):
+            self._record_prompt_stats(stats)
+        else:
+            self._record_prompt_stats({
+                "prompt_measurement_count": 1,
+                "prompt_chars_total": prompt_chars,
+                "prompt_chars_max": prompt_chars,
+                "prompt_chars_min": prompt_chars,
+                "prompt_remaining_chars": max(0, self.max_prompt_chars - prompt_chars),
+                "prompt_turns": 1,
+            })
+        return response
 
 class TaskAgentParticipant(Participant):
     """一个玩家参与者，按行动包身份懒加载对应的角色 Task-Agent。"""
@@ -119,6 +178,8 @@ class TaskAgentParticipant(Participant):
             snapshot = agent.model_token_usage_snapshot()
             for field in fields:
                 totals[field] += int(snapshot.get(field, 0) or 0)
+        for key, value in self.model_client.prompt_budget_snapshot().items():
+            totals[key] = totals.get(key, 0) + int(value or 0)
         return totals
 
     def _agent_for(self, role: str) -> TaskAgent:

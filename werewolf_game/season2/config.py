@@ -88,6 +88,7 @@ class PiConfig:
     agent_dir: Path | None
     timeout_seconds: float
     max_attempts: int
+    retry_backoff_seconds: float
     use_bwrap: bool
     candidate_smoke_test: bool
     readonly_paths: tuple[Path, ...] = field(default_factory=tuple)
@@ -231,6 +232,7 @@ def load_season2_config(path: str | Path) -> Season2Config:
             ),
             timeout_seconds=float(pi.get("timeout_seconds", 900)),
             max_attempts=_positive(pi.get("max_attempts", 1), "pi.max_attempts"),
+            retry_backoff_seconds=max(0.0, float(pi.get("retry_backoff_seconds", 60))),
             use_bwrap=bool(pi.get("use_bwrap", True)),
             candidate_smoke_test=bool(pi.get("candidate_smoke_test", True)),
             readonly_paths=tuple(resolve(item) for item in pi.get("readonly_paths", ())),

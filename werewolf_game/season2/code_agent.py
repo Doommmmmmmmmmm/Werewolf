@@ -22,6 +22,34 @@ class CodeAgentResult:
     attempts: int
 
 
+class PiServiceUnavailable(RuntimeError):
+    """Pi 所依赖的外部模型服务暂时不可用。
+
+    这类错误不能作为候选策略失败处理；调用方应保留 pending 节点并暂停
+    进化，待服务恢复后重试同一个候选。
+    """
+
+
+def is_transient_service_failure(value: object) -> bool:
+    text = str(value).lower()
+    return any(
+        marker in text
+        for marker in (
+            "server_is_overloaded",
+            "service unavailable",
+            "temporarily unavailable",
+            "upstream connect",
+            "connection reset",
+            "connection refused",
+            "timed out",
+            "timeout",
+            "502 bad gateway",
+            "503 service unavailable",
+            "504 gateway timeout",
+        )
+    )
+
+
 class PiCodeAgent:
     def __init__(self, config: Season2Config) -> None:
         self.config = config
@@ -54,6 +82,8 @@ class PiCodeAgent:
                     ) + "\n",
                     encoding="utf-8",
                 )
+                if is_transient_service_failure(error) and attempt < self.config.pi.max_attempts:
+                    await asyncio.sleep(self._retry_delay(attempt))
                 continue
             last_result = result
             (operation_directory / f"pi-attempt{attempt}.json").write_text(
@@ -73,16 +103,40 @@ class PiCodeAgent:
                 validate_candidate_files(workspace, self.config.pi.allowed_files)
                 validate_candidate_source(workspace)
                 return result
+            if is_transient_service_failure(result.stderr) or is_transient_service_failure(
+                result.stdout
+            ):
+                if attempt < self.config.pi.max_attempts:
+                    await asyncio.sleep(self._retry_delay(attempt))
+
         if last_result is None:
             assert last_error is not None
+            if is_transient_service_failure(last_error):
+                raise PiServiceUnavailable(
+                    f"Pi 外部服务暂时不可用（已尝试 {self.config.pi.max_attempts} 次）："
+                    f"{type(last_error).__name__}: {last_error}"
+                ) from last_error
             raise RuntimeError(
                 f"Pi 在 {self.config.pi.max_attempts} 次尝试中均未正常启动："
                 f"{type(last_error).__name__}: {last_error}"
             ) from last_error
         assert last_result is not None
+        if is_transient_service_failure(last_result.stderr) or is_transient_service_failure(
+            last_result.stdout
+        ):
+            raise PiServiceUnavailable(
+                f"Pi 外部服务暂时不可用（已尝试 {self.config.pi.max_attempts} 次）："
+                f"{last_result.stderr[-1000:]}"
+            )
         raise RuntimeError(
             f"Pi 修改失败（{last_result.returncode}）：{last_result.stderr[-1000:]}"
         )
+
+    def _retry_delay(self, attempt: int) -> float:
+        """对外部服务故障使用指数退避，避免连续请求撞在同一拥塞窗口。"""
+
+        base = max(0.0, float(self.config.pi.retry_backoff_seconds))
+        return base * (2 ** max(0, attempt - 1))
 
     def _run_once(self, workspace: Path, prompt: str, attempt: int) -> CodeAgentResult:
         # 延迟导入，避免未启用 Pi 的普通游戏/测试进程加载进程管理模块。

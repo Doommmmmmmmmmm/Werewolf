@@ -112,6 +112,7 @@ class ModelResponse(dict[str, Any]):
         generic_retries: int,
         usage_limit_retries: int,
         token_usage: Mapping[str, int | None] | None = None,
+        prompt_stats: Mapping[str, int] | None = None,
     ) -> None:
         super().__init__(value)
         self.api_attempts = int(api_attempts)
@@ -122,6 +123,8 @@ class ModelResponse(dict[str, Any]):
         self.input_tokens = self.token_usage.get("input_tokens")
         self.output_tokens = self.token_usage.get("output_tokens")
         self.total_tokens = self.token_usage.get("total_tokens")
+        # Prompt 预算诊断只作为对象属性保留，不注入模型返回的动作 JSON。
+        self.prompt_stats = dict(prompt_stats or {})
 
 
 def load_dotenv(file_path: str | Path | None = None) -> bool:
@@ -346,9 +349,16 @@ def _enforce_prompt_budget(
     limit = max(1, int(max_prompt_chars))
     actual = _prompt_char_count(system, messages)
     if actual > limit:
-        raise ModelClientError(
-            f"Task-Agent prompt 超过外部上限：{actual}>{limit} 字符"
-        )
+        error = ModelClientError(f"Task-Agent prompt 超过外部上限：{actual}>{limit} 字符")
+        error.prompt_stats = {
+            "prompt_measurement_count": 1,
+            "prompt_chars_total": actual,
+            "prompt_chars_max": actual,
+            "prompt_chars_min": actual,
+            "prompt_remaining_chars": 0,
+            "prompt_turns": 1,
+        }
+        raise error
 
 
 def extract_text(response: dict[str, Any]) -> str:
@@ -650,6 +660,7 @@ class ModelClient:
                 max_prompt_chars=max_prompt_chars,
             )
 
+        prompt_chars = _prompt_char_count(system, messages)
         _enforce_prompt_budget(system, messages, max_prompt_chars)
         generic_retries = 0
         usage_limit_retries = 0
@@ -668,6 +679,15 @@ class ModelClient:
                     generic_retries=generic_retries,
                     usage_limit_retries=usage_limit_retries,
                     token_usage=extract_token_usage(response),
+                    prompt_stats={
+                        "prompt_measurement_count": 1,
+                        "prompt_chars_total": prompt_chars,
+                        "prompt_chars_max": prompt_chars,
+                        "prompt_chars_min": prompt_chars,
+                        "prompt_remaining_chars": max(0, int(max_prompt_chars or 0) - prompt_chars),
+                        "prompt_tool_calls": 0,
+                        "prompt_turns": 1,
+                    },
                 )
             except Exception as error:  # 保留服务端原始错误供 Runner 记录
                 if self._is_usage_limit(error):
@@ -723,11 +743,24 @@ class ModelClient:
         total_generic_retries = 0
         total_usage_limit_retries = 0
         usage_totals: dict[str, int] = {}
+        prompt_chars_total = 0
+        prompt_chars_max = 0
+        prompt_chars_min: int | None = None
+        prompt_measurement_count = 0
 
         # One initial call, at most one final call after each tool response, and
         # one guard turn if a model ignores the exhausted tool budget.
         max_turns = max(3, int(max_tool_calls) + 2)
         for _turn in range(max_turns):
+            current_prompt_chars = _prompt_char_count(system, conversation)
+            prompt_measurement_count += 1
+            prompt_chars_total += current_prompt_chars
+            prompt_chars_max = max(prompt_chars_max, current_prompt_chars)
+            prompt_chars_min = (
+                current_prompt_chars
+                if prompt_chars_min is None
+                else min(prompt_chars_min, current_prompt_chars)
+            )
             _enforce_prompt_budget(system, conversation, max_prompt_chars)
             payload = build_model_payload(
                 system,
@@ -828,6 +861,17 @@ class ModelClient:
                     generic_retries=total_generic_retries,
                     usage_limit_retries=total_usage_limit_retries,
                     token_usage=usage_totals,
+                    prompt_stats={
+                        "prompt_measurement_count": prompt_measurement_count,
+                        "prompt_chars_total": prompt_chars_total,
+                        "prompt_chars_max": prompt_chars_max,
+                        "prompt_chars_min": prompt_chars_min or 0,
+                        "prompt_remaining_chars": max(
+                            0, int(max_prompt_chars or 0) - prompt_chars_max
+                        ),
+                        "prompt_tool_calls": tool_calls_used,
+                        "prompt_turns": prompt_measurement_count,
+                    },
                 )
             raise ModelClientError("模型响应不是有效 JSON，且没有可处理的工具调用")
 

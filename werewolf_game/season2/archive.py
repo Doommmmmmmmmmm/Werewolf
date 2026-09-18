@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -83,12 +84,19 @@ def snapshot_hash(directory: Path, files: Iterable[str] = ("task_agent.py", "tas
 
 
 def core_snapshot_hash() -> str:
-    """计算稳定游戏内核的指纹，排除缓存文件后用于赛季完整性校验。"""
+    """计算规则内核指纹。
+
+    ``core/runner.py`` 只负责调度、记录和运行时汇总，不参与规则裁决；将它
+    纳入赛季指纹会导致增加观测字段、日志字段等非规则改动后误拒绝继续进化。
+    GameEngine、loops 和规则相关模块仍然全部参与校验。
+    """
 
     core_directory = Path(__file__).resolve().parents[1] / "core"
     digest = hashlib.sha256()
     for path in sorted(core_directory.rglob("*.py")):
         relative = path.relative_to(core_directory).as_posix()
+        if relative == "runner.py":
+            continue
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -395,14 +403,29 @@ class EvolutionArchive:
         _atomic_json(self.manifest_path, self._manifest)
 
     def _validate_manifest(self) -> None:
-        # archive 一旦初始化，角色集合和全部配置即被冻结，防止实验条件混淆。
+        # archive 一旦初始化，实验语义相关配置即被冻结，防止混用实验条件。
+        # 对局并发、模型请求并发、Pi 超时、重试次数和退避等待只影响运行调度，不改变种子、候选组合、
+        # 规则或筛选标准，因此允许停机后调整并继续同一个 archive。
         if int(self._manifest.get("schema_version", -1)) != self.SCHEMA_VERSION:
             raise ValueError("不支持的 Season 2 archive schema")
         expected_roles = set(self.config.evolution.roles)
         actual_roles = set(self._manifest.get("roles", {}))
         if expected_roles != actual_roles:
             raise ValueError("配置角色集合与已有 archive 不一致，不能静默混用")
-        if self._manifest.get("config") != self.config.manifest():
+        archived_config = deepcopy(self._manifest.get("config"))
+        current_config = self.config.manifest()
+        for value in (archived_config, current_config):
+            if isinstance(value, dict):
+                evaluation = value.get("evaluation")
+                if isinstance(evaluation, dict):
+                    evaluation.pop("game_concurrency", None)
+                    evaluation.pop("model_max_in_flight", None)
+                pi = value.get("pi")
+                if isinstance(pi, dict):
+                    pi.pop("timeout_seconds", None)
+                    pi.pop("max_attempts", None)
+                    pi.pop("retry_backoff_seconds", None)
+        if archived_config != current_config:
             raise ValueError(
                 "外置配置与已有 archive 的冻结配置不一致；请恢复原配置或使用新的 archive_root"
             )

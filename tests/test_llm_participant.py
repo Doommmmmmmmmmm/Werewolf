@@ -233,6 +233,15 @@ class LlmParticipantTest(unittest.IsolatedAsyncioTestCase):
                 "input_tokens": 31,
                 "output_tokens": 9,
                 "total_tokens": 40,
+                "prompt_request_count": 1,
+                "prompt_over_limit_count": 0,
+                "prompt_chars_total": 0,
+                "prompt_chars_max": 0,
+                "prompt_chars_min": 0,
+                "prompt_remaining_chars_min": 0,
+                "prompt_tool_calls": 0,
+                "prompt_turns": 1,
+                "prompt_measurement_count": 1,
             },
         )
 

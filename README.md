@@ -215,6 +215,10 @@ WEREWOLF_HUMAN_ROLE=wolf python3 werewolf_game/examples/run_human_game.py
 - `WEREWOLF_TASK_MAX_TOOL_CALLS`：每次行动最多读取本轮对话的次数，最低基线默认 1；
 - `WEREWOLF_TASK_MAX_TOOL_RESULT_TOKENS`：单次工具返回的保守长度上限，默认 800；当前
   实现用 Unicode 字符作保守截断，不依赖模型专用 tokenizer；
+- `max_prompt_chars`（`season2.json`）：每次 Task-Agent 请求的 system 与 messages
+  总字符上限，默认 12000。对局记录的 `model_token_usage` 还会保存实际 Prompt
+  统计，包括请求次数、最大/最小/累计字符数、最小剩余预算、工具调用次数，以及
+  超过上限的次数；这些统计不改变 Prompt 内容和游戏行为。
 - `WEREWOLF_BASE_GAME_COUNT`：`run_base_games.py` 的对局数，默认 10；
 - `WEREWOLF_HUMAN_PLAYER`、`WEREWOLF_HUMAN_ROLE`：人工玩家设置。
 
@@ -231,6 +235,12 @@ profile；默认模型为 `qwen3.8-flash`，关闭 reasoning/thinking。模型�
 - 管理员审计 JSON 与 Markdown；
 - 面向真人的公开 JSON 与 Markdown；
 - 引擎事件、运行异常、最终状态和可用的模型 token 汇总。
+
+其中 `model_token_usage` 中的 `prompt_*` 字段用于评估上下文预算：
+`prompt_chars_max` 是本局观测到的最大单次请求字符数，
+`prompt_remaining_chars_min` 是最紧张的一次请求剩余预算，
+`prompt_over_limit_count` 是在边界层被 12000 字符限制拦截的次数。工具循环中的每个
+中间请求也会计入 `prompt_turns` 和字符统计。
 
 记录运行时才创建，不在仓库中预置历史 `records/`。`archives/` 下的 Season 0/1 内容
 是只读历史，不参与当前游戏。

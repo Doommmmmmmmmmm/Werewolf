@@ -107,7 +107,13 @@ class VersionedTaskAgentParticipant(Participant):
             if not hasattr(agent, "model_token_usage_snapshot"):
                 continue
             for key, value in agent.model_token_usage_snapshot().items():
+                if key.startswith("prompt_"):
+                    # Prompt 预算由共享的 TaskModelBoundary 统一统计，避免
+                    # 同一请求同时被候选 Agent 和边界层重复计数。
+                    continue
                 totals[key] = totals.get(key, 0) + int(value or 0)
+        for key, value in self.model_client.prompt_budget_snapshot().items():
+            totals[key] = totals.get(key, 0) + int(value or 0)
         return totals
 
     def _agent_for(self, role: str) -> Any:

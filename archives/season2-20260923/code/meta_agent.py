@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import ModelClientError
+from werewolf_game.core.errors import ModelClientError
 from .archive import EvolutionArchive
 from .config import Season2Config
 from .resources import MetaResourceCatalog

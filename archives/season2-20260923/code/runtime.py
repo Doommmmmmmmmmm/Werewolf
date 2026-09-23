@@ -6,10 +6,10 @@ import importlib.util
 import sys
 from typing import Any
 
-from ..agents.participants.base import Participant
-from ..agents.participants.llm import TaskModelBoundary
-from ..agents.task_agent import DEFAULT_MAX_PROMPT_CHARS
-from ..prompts import RoleProfile, RoleProfileStore
+from werewolf_game.agents.participants.base import Participant
+from werewolf_game.agents.participants.llm import TaskModelBoundary
+from werewolf_game.agents.task_agent import DEFAULT_MAX_PROMPT_CHARS
+from werewolf_game.prompts import RoleProfile, RoleProfileStore
 from .archive import EvolutionArchive
 
 

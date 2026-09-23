@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..core.constants import ALL_ROLES
+from werewolf_game.core.constants import ALL_ROLES
 
 
 def _mapping(value: object, name: str) -> Mapping[str, Any]:

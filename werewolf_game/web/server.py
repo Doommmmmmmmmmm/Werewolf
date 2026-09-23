@@ -19,7 +19,8 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from ..agents.participants.human import KIND_LABELS, ROLE_LABELS
-from ..season2.config import Season2Config
+from .config import DemoConfig
+from .roster import default_repository
 from .session import SessionManager, SessionOptions
 
 LOGGER = logging.getLogger("werewolf.web")
@@ -306,7 +307,7 @@ class WebDemoServer:
         return {
             "kind_labels": dict(KIND_LABELS),
             "role_labels": dict(ROLE_LABELS),
-            "player_count": self.manager.config.evaluation.player_count,
+            "player_count": self.manager.config.player_count,
             "roles": self.manager.available_roles(),
             "rules": self.manager.rule_summary(),
             "strategies": self.manager.strategy_options(),
@@ -395,14 +396,28 @@ class WebDemoServer:
 
 async def serve(
     *,
-    config: Season2Config,
+    config: DemoConfig | None = None,
+    archive_directory: str | Path | None = None,
     host: str = "127.0.0.1",
     port: int = 8192,
     record_directory: str | Path | None = None,
     model_client: Any | None = None,
 ) -> None:
+    """启动 demo 服务。
+
+    ``archive_directory`` 指向已归档的赛季目录（含 `records/evolution/archive`
+    与 `summary/output/node_ratings.json`）；省略时使用默认归档位置。
+    """
+
     manager = SessionManager(
-        config=config, record_directory=record_directory, model_client=model_client
+        config=config,
+        repository=(
+            default_repository(archive_directory)
+            if archive_directory is not None
+            else None
+        ),
+        record_directory=record_directory,
+        model_client=model_client,
     )
     server = WebDemoServer(manager, host=host, port=port)
     try:

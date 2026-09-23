@@ -11,11 +11,11 @@ from pathlib import Path
 import random
 from typing import Any
 
-from ..core.constants import team_for_role
-from ..core.engine import GameEngine
-from ..recording.records import GAMES_PER_ROUND, RoundGameRecordStore
-from ..core.rules import create_rules_for_player_count
-from ..core.runner import GameRunner
+from werewolf_game.core.constants import team_for_role
+from werewolf_game.core.engine import GameEngine
+from werewolf_game.recording.records import GAMES_PER_ROUND, RoundGameRecordStore
+from werewolf_game.core.rules import create_rules_for_player_count
+from werewolf_game.core.runner import GameRunner
 from .archive import EvolutionArchive, EvolutionNode
 from .config import Season2Config
 from .runtime import CandidateModuleLoader, VersionedTaskAgentParticipant

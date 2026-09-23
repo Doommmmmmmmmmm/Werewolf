@@ -201,10 +201,26 @@ class _FakeNode:
 
 
 class _FakeArchive:
-    """只实现 roster 需要的只读接口。"""
+    """只实现 roster 需要的只读接口（对应 ArchivedNodeRepository）。"""
 
     def __init__(self, nodes: dict[str, list[_FakeNode]]) -> None:
         self._nodes = nodes
+
+    def evaluation_summary(self, node_id: str) -> dict | None:
+        """按节点读评测汇总；归档后改为由仓库按布局推导，不再用绝对路径。"""
+
+        for nodes in self._nodes.values():
+            for node in nodes:
+                if node.node_id != node_id:
+                    continue
+                path = node.evaluation_summary_path
+                if not path:
+                    return None
+                try:
+                    return json.loads(Path(path).read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    return None
+        return None
 
     def retained_nodes(self, role: str) -> list[_FakeNode]:
         return list(self._nodes.get(role, []))

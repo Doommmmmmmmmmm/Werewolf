@@ -27,11 +27,11 @@ from ..core.runner import GameRunner
 from ..recording.recorder import PublicRecorder
 from ..recording.records import RoundGameRecordStore
 from ..recording.replay import rounds_from_record
-from ..season2.archive import EvolutionArchive
-from ..season2.config import Season2Config
-from ..season2.runtime import CandidateModuleLoader, VersionedTaskAgentParticipant
+from .config import DEFAULT_DEMO_CONFIG, DemoConfig
+from .node_repo import ArchivedNodeParticipant, ArchivedNodeRepository
 from .participant import WebHumanParticipant
 from .roster import (
+    default_repository,
     RATING_STRATEGIES,
     RosterEntry,
     best_role_nodes,
@@ -121,9 +121,8 @@ class GameSession:
         *,
         session_id: str,
         options: SessionOptions,
-        config: Season2Config,
-        archive: EvolutionArchive,
-        module_loader: CandidateModuleLoader,
+        config: DemoConfig,
+        repository: ArchivedNodeRepository,
         model_client: Any,
         coordinator: ModelRequestCoordinator,
         record_directory: str | Path,
@@ -132,10 +131,10 @@ class GameSession:
         self.session_id = session_id
         self.options = options
         self.config = config
-        self.archive = archive
+        self.repository = repository
         self.created_at = time.time()
 
-        player_count = config.evaluation.player_count
+        player_count = config.player_count
         self.player_count = player_count
         self.players = [
             {"id": f"p{index}", "name": f"{index} 号玩家"}
@@ -144,15 +143,15 @@ class GameSession:
         self.human_player_id = options.seat
 
         self.roster: dict[str, RosterEntry] = best_role_nodes(
-            archive,
-            config.evolution.roles,
+            repository,
+            config.roles,
             overrides=options.overrides,
             strategy=options.strategy,
             ratings=ratings,
         )
 
         rules = create_rules_for_player_count(
-            player_count, config.evaluation.optional_roles
+            player_count, config.optional_roles
         )
         fixed_roles = (
             {self.human_player_id: options.role}
@@ -177,7 +176,6 @@ class GameSession:
             self.human_player_id, on_turn=self._notify
         )
         role_nodes = role_node_map(self.roster)
-        evaluation = config.evaluation
         participants: dict[str, Any] = {}
         for player in self.players:
             player_id = player["id"]
@@ -185,17 +183,16 @@ class GameSession:
                 participants[player_id] = self.human
                 continue
             participants[player_id] = _PausableParticipant(
-                VersionedTaskAgentParticipant(
+                ArchivedNodeParticipant(
                     player_id=player_id,
                     model_client=model_client,
                     role_nodes=role_nodes,
-                    archive=archive,
-                    module_loader=module_loader,
+                    repository=repository,
                     request_coordinator=coordinator,
-                    max_decision_retries=evaluation.max_decision_retries,
-                    max_tool_calls_per_decision=evaluation.max_tool_calls_per_decision,
-                    max_tool_result_tokens=evaluation.max_tool_result_tokens,
-                    max_prompt_chars=evaluation.max_prompt_chars,
+                    max_decision_retries=config.max_decision_retries,
+                    max_tool_calls_per_decision=config.max_tool_calls_per_decision,
+                    max_tool_result_tokens=config.max_tool_result_tokens,
+                    max_prompt_chars=config.max_prompt_chars,
                 ),
                 gate=self._resume_gate,
             )
@@ -240,7 +237,7 @@ class GameSession:
             record_store=self.record_store,
             public_recorder=recorder,
             # AI 席位使用评测配置的超时；真人席位在实例上声明不超时。
-            decision_timeout_seconds=self.config.evaluation.decision_timeout_seconds,
+            decision_timeout_seconds=self.config.decision_timeout_seconds,
         )
         try:
             self.report = await runner.run()
@@ -458,25 +455,27 @@ class GameSession:
 
 
 class SessionManager:
-    """建局、查局和关闭；共享 archive、候选模块缓存和模型闸门。"""
+    """建局、查局和关闭；共享归档节点仓库、节点代码缓存和模型闸门。"""
 
     def __init__(
         self,
         *,
-        config: Season2Config,
+        config: DemoConfig | None = None,
+        repository: ArchivedNodeRepository | None = None,
         record_directory: str | Path | None = None,
         model_client: Any | None = None,
         max_in_flight: int | None = None,
     ) -> None:
-        self.config = config
-        self.archive = EvolutionArchive(config)
+        self.config = config or DEFAULT_DEMO_CONFIG
+        config = self.config
+        # 只读归档仓库；节点代码按内容哈希缓存，多局共用。
+        self.repository = repository or default_repository()
         # 强度表只读一次：文件约 280KB，且每局建局都要用。
-        self._ratings = load_ratings()
-        self.module_loader = CandidateModuleLoader(self.archive)
+        self._ratings = self.repository.ratings or load_ratings()
         self.model_client = model_client or ModelClient.from_env(profile="task")
         self.coordinator = ModelRequestCoordinator(
             max_in_flight=int(
-                max_in_flight or config.evaluation.model_max_in_flight or 8
+                max_in_flight or config.model_max_in_flight or 8
             )
         )
         self.record_directory = Path(
@@ -489,14 +488,13 @@ class SessionManager:
         self.sessions: dict[str, GameSession] = {}
 
     def create(self, options: SessionOptions) -> GameSession:
-        normalized = options.normalized(self.config.evaluation.player_count)
+        normalized = options.normalized(self.config.player_count)
         session_id = secrets.token_hex(4)
         session = GameSession(
             session_id=session_id,
             options=normalized,
             config=self.config,
-            archive=self.archive,
-            module_loader=self.module_loader,
+            repository=self.repository,
             model_client=self.model_client,
             coordinator=self.coordinator,
             record_directory=self.record_directory,
@@ -520,21 +518,20 @@ class SessionManager:
         不参与任何对局。
         """
 
-        evaluation = self.config.evaluation
         rules = create_rules_for_player_count(
-            evaluation.player_count, evaluation.optional_roles
+            self.config.player_count, self.config.optional_roles
         )
         probe = GameEngine(
             game_id="rule-summary-probe",
             players=[
                 {"id": f"p{index}", "name": f"P{index}"}
-                for index in range(1, evaluation.player_count + 1)
+                for index in range(1, self.config.player_count + 1)
             ],
             rules=rules,
             seed="rule-summary-probe",
         )
         summary = probe.public_rule_summary()
-        summary["player_count"] = evaluation.player_count
+        summary["player_count"] = self.config.player_count
         summary["max_day_speech_chars"] = rules.max_day_speech_chars
         summary["max_wolf_speech_chars"] = rules.max_wolf_speech_chars
         return summary
@@ -563,7 +560,7 @@ class SessionManager:
         """自选模式可选身份及牌堆数量，用于前端渲染选择器。"""
 
         rules = create_rules_for_player_count(
-            self.config.evaluation.player_count, self.config.evaluation.optional_roles
+            self.config.player_count, self.config.optional_roles
         )
         counts: dict[str, int] = {}
         for role in rules.role_deck:

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-from ..core.engine import GameEngine
-from ..core.rules import create_rules_for_player_count
-from ..core.runner import GameRunner
+from werewolf_game.core.engine import GameEngine
+from werewolf_game.core.rules import create_rules_for_player_count
+from werewolf_game.core.runner import GameRunner
 from .archive import EvolutionArchive
 from .config import Season2Config
 from .runtime import CandidateModuleLoader, VersionedTaskAgentParticipant

@@ -8,7 +8,7 @@ from pathlib import Path
 import random
 from typing import Any
 
-from ..prompts import RoleProfileStore
+from werewolf_game.prompts import RoleProfileStore
 from .archive import EvolutionArchive
 from .config import Season2Config
 

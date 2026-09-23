@@ -12,7 +12,7 @@ from pathlib import Path
 import shutil
 from typing import Any, Iterable
 
-from ..prompts import PROMPT_DIRECTORY
+from werewolf_game.prompts import PROMPT_DIRECTORY
 from .config import Season2Config
 
 
@@ -91,7 +91,9 @@ def core_snapshot_hash() -> str:
     GameEngine、loops 和规则相关模块仍然全部参与校验。
     """
 
-    core_directory = Path(__file__).resolve().parents[1] / "core"
+    # 归档后 code/ 不再位于 werewolf_game/ 内；core 仍以主项目的游戏内核为准，
+    # 因此按仓库根定位。哈希只绑定 core/ 内的相对路径与内容，与目录位置无关。
+    core_directory = Path(__file__).resolve().parents[3] / "werewolf_game" / "core"
     digest = hashlib.sha256()
     for path in sorted(core_directory.rglob("*.py")):
         relative = path.relative_to(core_directory).as_posix()
@@ -138,7 +140,10 @@ class EvolutionArchive:
             "nodes": {},
         }
         # 每个角色拥有独立 base 目录，即使初始代码相同，后续也能独立进化。
-        source_agent = Path(__file__).resolve().parents[1] / "agents" / "task_agent.py"
+        source_agent = (
+            Path(__file__).resolve().parents[3]
+            / "werewolf_game" / "agents" / "task_agent.py"
+        )
         for role in self.config.evolution.roles:
             node_id = f"{role}-base"
             directory = self.node_code_directory(node_id)

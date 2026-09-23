@@ -1,8 +1,11 @@
-"""按评测胜率挑选各角色的进化节点。
+"""为各角色挑选一个已归档的进化节点。
 
-只读消费 `EvolutionArchive`：遍历某角色的 retained 节点，从各自的评测汇总中读取
-`win_rate`，取最高者。缺少评测汇总的节点不参与排序；某角色完全没有可用评测时
-回退到该角色的 base 节点，保证 demo 总能开局。
+只读消费归档：Season 2 结束后它的 archive 被冻结到 `archives/season2-<日期>/`，
+本模块通过 `ArchivedNodeRepository` 读取，不使用 `EvolutionArchive`
+（后者会做配置冻结校验，路径一变就拒绝加载；详见 `node_repo` 的说明）。
+
+四种口径：按 20 局评测胜率、按两套强度模型、以及全部使用 base 节点做对照。
+某角色没有可用数据时回退到该角色的 base 节点，保证 demo 总能开局。
 """
 
 from __future__ import annotations
@@ -13,11 +16,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..season2.archive import EvolutionArchive
+from .node_repo import ArchivedNodeRepository
 
 STRATEGY_BEST_WIN_RATE = "best_win_rate"
 STRATEGY_BASE = "base"
-# season2_summary 的两套强度模型。评分从预计算结果读取，不在服务启动时重新拟合
+# 归档 summary 里的两套强度模型。评分从预计算结果读取，不在服务启动时重新拟合
 # （拟合要扫 2358 局）。
 STRATEGY_LOGISTIC_TEAM = "logistic_team"
 STRATEGY_BRADLEY_TERRY = "bradley_terry_legacy"
@@ -29,13 +32,22 @@ STRATEGIES = (
 )
 RATING_STRATEGIES = (STRATEGY_LOGISTIC_TEAM, STRATEGY_BRADLEY_TERRY)
 
-# 预计算强度表；由 season2_summary/compute_ratings.py 生成。
-RATINGS_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "season2_summary"
-    / "output"
-    / "node_ratings.json"
+# 默认归档位置：Season 2 的冻结产物。
+DEFAULT_ARCHIVE_DIRECTORY = (
+    Path(__file__).resolve().parents[2] / "archives" / "season2-20260923"
 )
+
+
+def default_repository(
+    archive_directory: str | Path | None = None,
+) -> ArchivedNodeRepository:
+    """按约定的归档布局构造只读仓库。"""
+
+    root = Path(archive_directory or DEFAULT_ARCHIVE_DIRECTORY)
+    return ArchivedNodeRepository(
+        root / "records" / "evolution" / "archive",
+        ratings_path=root / "summary" / "output" / "node_ratings.json",
+    )
 
 
 @dataclass(frozen=True)
@@ -67,39 +79,32 @@ class RosterEntry:
         }
 
 
-def _read_summary(node: Any) -> dict[str, Any] | None:
-    """读取节点评测汇总；缺失或损坏时返回 None 而不是抛错。"""
-
-    path = getattr(node, "evaluation_summary_path", None)
-    if not path:
-        return None
-    try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
-
-
-def _base_node_id(archive: EvolutionArchive, role: str) -> str:
+def _base_node_id(repository: ArchivedNodeRepository, role: str) -> str:
     """回退目标：该角色的 base 节点。"""
 
     candidate = f"{role}-base"
     try:
-        archive.node(candidate)
+        repository.node(candidate)
         return candidate
     except (KeyError, ValueError):
         # 该角色没有以 -base 命名的节点；退回按 depth 查找根节点。
         pass
-    for node in archive.nodes_for_role(role):
+    for node in repository.nodes_for_role(role):
         if node.depth == 0:
             return node.node_id
     raise ValueError(f"角色 {role} 在 archive 中没有可用节点")
 
 
 def load_ratings(path: Path | None = None) -> dict[str, Any] | None:
-    """读取预计算的强度表；缺失或损坏时返回 None，由调用方回退。"""
+    """读取预计算的强度表；缺失或损坏时返回 None，由调用方回退。
 
-    target = Path(path or RATINGS_PATH)
+    ``path`` 省略时使用默认归档位置。
+    """
+
+    target = Path(
+        path
+        or DEFAULT_ARCHIVE_DIRECTORY / "summary" / "output" / "node_ratings.json"
+    )
     try:
         value = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -129,7 +134,7 @@ def rating_model_info(ratings: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _rank_role_by_rating(
-    archive: EvolutionArchive,
+    repository: ArchivedNodeRepository,
     role: str,
     model_key: str,
     ratings: Mapping[str, Any],
@@ -145,7 +150,7 @@ def _rank_role_by_rating(
     if not isinstance(nodes, list):
         return None
     # 只认当前 archive 里仍为 retained 的节点，避免用上已舍弃的候选。
-    retained = {node.node_id for node in archive.retained_nodes(role)}
+    retained = {node.node_id for node in repository.retained_nodes(role)}
     scored: list[tuple[float, float, str, dict[str, Any]]] = []
     for entry in nodes:
         if not isinstance(entry, dict):
@@ -173,7 +178,7 @@ def _rank_role_by_rating(
     strength, games, node_id, entry = sorted(
         scored, key=lambda item: (-item[0], -item[1], item[2])
     )[0]
-    summary = _read_summary(archive.node(node_id)) or {}
+    summary = repository.evaluation_summary(node_id) or {}
     win_rate = summary.get("win_rate")
     game_count = summary.get("game_count")
     return RosterEntry(
@@ -193,12 +198,12 @@ def _rank_role_by_rating(
     )
 
 
-def _rank_role(archive: EvolutionArchive, role: str) -> RosterEntry:
+def _rank_role(repository: ArchivedNodeRepository, role: str) -> RosterEntry:
     """在 retained 节点中取胜率最高者；胜率相同时取评测局数更多的。"""
 
     scored: list[tuple[float, int, str]] = []
-    for node in archive.retained_nodes(role):
-        summary = _read_summary(node)
+    for node in repository.retained_nodes(role):
+        summary = repository.evaluation_summary(node.node_id)
         if summary is None:
             continue
         win_rate = summary.get("win_rate")
@@ -215,7 +220,7 @@ def _rank_role(archive: EvolutionArchive, role: str) -> RosterEntry:
     if not scored:
         return RosterEntry(
             role=role,
-            node_id=_base_node_id(archive, role),
+            node_id=_base_node_id(repository, role),
             win_rate=None,
             game_count=None,
             source="base_fallback",
@@ -234,7 +239,7 @@ def _rank_role(archive: EvolutionArchive, role: str) -> RosterEntry:
 
 
 def best_role_nodes(
-    archive: EvolutionArchive,
+    repository: ArchivedNodeRepository,
     roles: Sequence[str],
     *,
     overrides: Mapping[str, str] | None = None,
@@ -268,10 +273,10 @@ def best_role_nodes(
     for role in roles:
         override = normalized_overrides.get(role)
         if override is not None:
-            node = archive.node(override)
+            node = repository.node(override)
             if node.role != role:
                 raise ValueError(f"节点 {override} 属于 {node.role}，不能指定给 {role}")
-            summary = _read_summary(node) or {}
+            summary = repository.evaluation_summary(node.node_id) or {}
             win_rate = summary.get("win_rate")
             game_count = summary.get("game_count")
             roster[role] = RosterEntry(
@@ -285,16 +290,16 @@ def best_role_nodes(
         if strategy in RATING_STRATEGIES:
             table = ratings if ratings is not None else load_ratings()
             entry = (
-                _rank_role_by_rating(archive, role, strategy, table)
+                _rank_role_by_rating(repository, role, strategy, table)
                 if table is not None
                 else None
             )
             # 预计算结果缺失或该角色没有可用评分时，退回胜率口径而不是开局失败。
-            roster[role] = entry if entry is not None else _rank_role(archive, role)
+            roster[role] = entry if entry is not None else _rank_role(repository, role)
             continue
         if strategy == STRATEGY_BASE:
-            node_id = _base_node_id(archive, role)
-            summary = _read_summary(archive.node(node_id)) or {}
+            node_id = _base_node_id(repository, role)
+            summary = repository.evaluation_summary(node_id) or {}
             win_rate = summary.get("win_rate")
             game_count = summary.get("game_count")
             roster[role] = RosterEntry(
@@ -305,7 +310,7 @@ def best_role_nodes(
                 source="base",
             )
             continue
-        roster[role] = _rank_role(archive, role)
+        roster[role] = _rank_role(repository, role)
     return roster
 
 

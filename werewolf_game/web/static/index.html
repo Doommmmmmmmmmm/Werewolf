@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>狼人杀 · Season 2 进化 Agent Demo</title>
+<style>
+  :root {
+    --bg: #12151c;
+    --panel: #1b1f29;
+    --panel-2: #222734;
+    --line: #2d333f;
+    --text: #e6e9ef;
+    --muted: #98a0b0;
+    --accent: #6ea8fe;
+    --wolf: #e46b6b;
+    --good: #6bd39a;
+    --warn: #e5c07b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: 300px 1fr 320px; gap: 14px; padding: 14px; align-items: start; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  select, input, textarea, button {
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%;
+  }
+  textarea { resize: vertical; min-height: 78px; }
+  button { cursor: pointer; background: var(--accent); color: #0d1017; border: none; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); font-weight: 400; }
+  .seats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+  .seat {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 6px; text-align: center; font-size: 12px; position: relative;
+  }
+  .seat .num { font-size: 15px; font-weight: 600; }
+  .seat.dead { opacity: .4; text-decoration: line-through; }
+  .seat.me { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .seat.is-wolf { border-color: var(--wolf); }
+  .seat.is-wolf .tag { color: var(--wolf); }
+  .paused-banner {
+    background: rgba(229,192,123,.15); border: 1px solid var(--warn);
+    color: var(--warn); border-radius: 6px; padding: 7px 10px;
+    font-size: 12px; margin-bottom: 10px; text-align: center;
+  }
+  .seat .tag { font-size: 10px; color: var(--muted); display: block; }
+  .seat .badge { position: absolute; top: 3px; right: 5px; font-size: 11px; }
+  #log { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .ev { border-left: 2px solid var(--line); padding: 2px 0 2px 9px; }
+  .ev .who { color: var(--accent); font-weight: 600; }
+  .ev .meta { color: var(--muted); font-size: 11px; }
+  .ev.sys { border-left-color: var(--warn); }
+  .ev.sys .meta { color: var(--warn); }
+  .ev.death { border-left-color: var(--wolf); }
+  .ev.notice { border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
+  /* 狼人私聊：仅狼队可见，视觉上必须和公开发言区分，避免误判队友暴露。 */
+  .ev.wolf-chat {
+    border-left-color: var(--wolf); background: rgba(228,107,107,.07);
+    border-radius: 0 6px 6px 0; padding-right: 8px;
+  }
+  .ev.wolf-chat .meta { color: var(--wolf); }
+  .ev.wolf-chat .who { color: var(--wolf); }
+  /* 只有我能看到的私密信息 */
+  .ev.secret {
+    border-left-color: var(--warn); color: var(--warn);
+    background: rgba(229,192,123,.07); border-radius: 0 6px 6px 0;
+  }
+  .kv { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .kv:last-child { border-bottom: none; }
+  .kv span:last-child { color: var(--muted); }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 11px; background: var(--panel-2); border: 1px solid var(--line); margin: 0 4px 4px 0; }
+  .pill.wolf { color: var(--wolf); border-color: var(--wolf); }
+  .pill.good { color: var(--good); border-color: var(--good); }
+  .counter { text-align: right; font-size: 11px; color: var(--muted); }
+  .counter.over { color: var(--wolf); }
+  .hint { color: var(--muted); font-size: 12px; }
+  .notice-box {
+    background: rgba(110,168,254,.1); border: 1px solid var(--accent);
+    border-radius: 6px; padding: 8px 10px; font-size: 12px; margin: 0 0 10px;
+  }
+  details { font-size: 12px; }
+  summary { cursor: pointer; color: var(--accent); padding: 4px 0; }
+  /* 规则说明是长文本，左对齐更易读；不沿用 .kv 的右对齐。 */
+  #rulesBody .kv { display: block; padding: 5px 0; }
+  #rulesBody .kv span:first-child { color: var(--accent); display: block; font-size: 11px; }
+  #rulesBody .kv span:last-child { text-align: left; color: var(--text); }
+  #replayBody details { border-bottom: 1px solid var(--line); }
+  #replayBody summary { font-size: 13px; font-weight: 600; padding: 7px 0; }
+  .rp-sec { margin: 6px 0 10px 12px; }
+  .rp-title { color: var(--muted); font-size: 11px; letter-spacing: .04em; margin-bottom: 3px; }
+  .rp-line { padding: 2px 0 2px 8px; border-left: 2px solid var(--line); }
+  .err { color: var(--wolf); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
+  .turn-live { border-color: var(--accent); }
+  .status { font-size: 12px; color: var(--muted); }
+  .targets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .targets button { padding: 6px 4px; }
+  .targets button.sel { background: var(--accent); color: #0d1017; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  td:last-child { text-align: right; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>狼人杀 · Season 2 进化 Agent</h1>
+  <span class="sub" id="headline">12 人局 · 真人 1 席 · AI 11 席</span>
+  <span class="sub" id="phase"></span>
+</header>
+
+<main>
+  <!-- 左：建局 + 阵容 -->
+  <div>
+    <div class="panel" id="setup">
+      <h2>开始一局</h2>
+      <label>模式</label>
+      <select id="mode">
+        <option value="random">随机模式（引擎随机发牌）</option>
+        <option value="choose">自选模式（指定席位和身份）</option>
+      </select>
+      <label>席位</label>
+      <select id="seat"></select>
+      <div id="roleWrap" style="display:none">
+        <label>身份</label>
+        <select id="role"></select>
+      </div>
+      <label>对手强度</label>
+      <select id="strategy"></select>
+      <div style="margin-top:12px"><button id="start">开始对局</button></div>
+      <div class="err" id="setupErr"></div>
+      <p class="hint" style="margin-bottom:0">
+        一局 12 人全 LLM 对局约 13–20 分钟，发言逐条流式出现。进程退出后进行中的对局无法恢复。
+      </p>
+      <details id="rulesBox" style="margin-top:12px">
+        <summary>规则说明</summary>
+        <div id="rulesBody"></div>
+      </details>
+    </div>
+
+    <div class="panel" id="rosterPanel" style="display:none; margin-top:14px">
+      <h2>本局 AI 阵容</h2>
+      <table id="rosterTable"></table>
+    </div>
+  </div>
+
+  <!-- 中：座位 + 事件流 -->
+  <div>
+    <div class="panel">
+      <h2>座位</h2>
+      <div class="seats" id="seats"></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2>对局实况</h2>
+      <div id="log"><p class="hint">尚未开始。</p></div>
+    </div>
+  </div>
+
+  <!-- 右：私密信息 + 行动 -->
+  <div>
+    <div class="panel" id="privatePanel" style="display:none">
+      <h2>我的身份</h2>
+      <div id="privateBody"></div>
+    </div>
+
+    <div class="panel" id="actionPanel" style="margin-top:14px; display:none">
+      <h2>待办行动</h2>
+      <div id="actionBody"></div>
+      <div class="err" id="actionErr"></div>
+    </div>
+
+    <div class="panel" id="waitPanel" style="margin-top:14px; display:none">
+      <h2>等待中</h2>
+      <p class="status" id="waitText">AI 正在思考…</p>
+    </div>
+
+    <div class="panel" id="controlPanel" style="margin-top:14px; display:none">
+      <h2>对局控制</h2>
+      <div style="display:grid; gap:6px">
+        <button id="pauseBtn" class="ghost">暂停</button>
+        <button id="abandonBtn" class="ghost">放弃本局并重开</button>
+      </div>
+      <p class="hint" id="pauseHint" style="margin-bottom:0"></p>
+    </div>
+
+    <div class="panel" id="godPanel" style="margin-top:14px; display:none">
+      <h2>上帝视角（我已出局）</h2>
+      <div id="godBody"></div>
+    </div>
+
+    <div class="panel" id="resultPanel" style="margin-top:14px; display:none">
+      <h2>对局结果</h2>
+      <div id="resultBody"></div>
+    </div>
+  </div>
+</main>
+
+<div class="panel" id="replayPanel" style="display:none; margin:0 14px 14px">
+  <h2>完整复盘（公开信息）</h2>
+  <div id="replayBody"></div>
+</div>
+
+<script>
+"use strict";
+
+const state = {
+  meta: null,
+  session: null,
+  cursor: 0,
+  // 已渲染过的事件 seq，用于去重（引擎保证 seq 唯一）。
+  seenEvents: new Set(),
+  polling: false,
+  lastTurnRevision: -1,
+  selectedKind: null,
+  selectedTarget: null,
+  stream: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+// ---------- 初始化 ----------
+
+async function boot() {
+  state.meta = await fetch("/api/meta").then((r) => r.json());
+  const seat = $("seat");
+  for (let i = 1; i <= state.meta.player_count; i += 1) {
+    seat.add(new Option(`${i} 号`, `p${i}`));
+  }
+  const role = $("role");
+  for (const item of state.meta.roles) {
+    const label = state.meta.role_labels[item.role] || item.role;
+    role.add(new Option(`${label}（牌堆 ${item.count} 张）`, item.role));
+  }
+  $("mode").onchange = () => {
+    $("roleWrap").style.display = $("mode").value === "choose" ? "block" : "none";
+  };
+  // 对手强度口径由后端下发，附带各自挑出的阵容。
+  const strategy = $("strategy");
+  for (const item of state.meta.strategies || []) {
+    strategy.add(new Option(item.label, item.strategy));
+  }
+  $("start").onclick = startGame;
+  renderRules();
+  renderSeats(null);
+}
+
+// 规则文案全部来自引擎的 public_rule_summary()，不在前端硬编码，
+// 避免和实际生效的规则不一致。
+function renderRules() {
+  const r = state.meta.rules || {};
+  const L = state.meta.role_labels;
+  const deck = Object.entries(r.role_counts || {})
+    .map(([role, n]) => `${L[role] || role}×${n}`)
+    .join("、");
+  const night = (r.night_order || []).map((x) => L[x] || x).join(" → ");
+  const lw = r.last_words || {};
+  const sh = r.sheriff || {};
+  const sp = r.special_role_rules || {};
+
+  const items = [
+    ["牌堆", `${r.player_count} 人：${deck}`],
+    ["夜间顺序", night],
+    ["狼人胜利", r.wolf_win_condition === "slaughter_side"
+      ? "屠边：杀光所有神职或所有平民" : "人数过半"],
+    ["狼队", `夜间先私聊（≤${r.max_wolf_speech_chars} 字）再共同投票刀人${
+      r.wolves_can_target_wolves ? "，允许自刀做局" : ""}`],
+    ["白天发言", `每人 ≤${r.max_day_speech_chars} 字，须含中文；平民可以编造信息`],
+    ["遗言", `仅前 ${lw.eligible_death_count} 名${
+      lw.night_deaths_eligible ? "死亡者" : "白天被放逐者"}有遗言${
+      lw.night_deaths_eligible ? "" : "；夜间死亡没有遗言"}`],
+    ["死亡翻牌", r.reveal_role_on_death ? "死亡即公开身份" : "死亡不公开身份"],
+    ["对局结束", r.reveal_all_roles_at_end ? "公布全部身份" : "不公布身份"],
+  ];
+  if (sh.enabled) {
+    items.push(["警长", `首夜后竞选，${sh.vote_weight} 票权，可定发言方向；` +
+      `平票 PK 一次仍平则无警长；死亡时可传递或撕毁警徽`]);
+  }
+  items.push(["守卫", `${sp.guard_can_protect_self ? "可自守" : "不可自守"}；` +
+    `${sp.guard_can_repeat_protect ? "可连守" : "不可连续守同一人"}；守护挡狼刀但挡不住毒`]);
+
+  $("rulesBody").innerHTML = items
+    .map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`)
+    .join("");
+}
+
+async function startGame() {
+  $("setupErr").textContent = "";
+  $("start").disabled = true;
+  const body = {
+    mode: $("mode").value,
+    seat: $("seat").value,
+    strategy: $("strategy").value,
+  };
+  if (body.mode === "choose") body.role = $("role").value;
+  try {
+    const res = await fetch("/api/games", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "建局失败");
+    state.session = data;
+    $("setup").style.display = "none";
+    renderRoster(data.roster);
+    $("headline").textContent =
+      `${data.player_count} 人局 · 我是 ${seatLabel(data.seat)} · ` +
+      (data.mode === "choose" ? "自选模式" : "随机模式");
+    $("log").innerHTML = "";
+    openStream();
+  } catch (error) {
+    $("setupErr").textContent = error.message;
+    $("start").disabled = false;
+  }
+}
+
+// ---------- 事件流 ----------
+
+function openStream() {
+  const sessionId = state.session.session_id;
+  const stream = new EventSource(`/api/games/${sessionId}/events?since=0`);
+  state.stream = stream;
+  stream.onmessage = (message) => applyView(JSON.parse(message.data));
+  stream.onerror = () => {
+    // EventSource 自带自动重连。这里只在它彻底关闭时才降级到轮询，
+    // 否则每次网络抖动都会多启一条 pollLoop，和 SSE 争用同一个游标。
+    if (stream.readyState === EventSource.CLOSED) {
+      state.stream = null;
+      pollLoop();
+    }
+  };
+}
+
+async function pollLoop() {
+  // 单例：重复调用直接返回，避免多条循环并发读写 state.cursor。
+  if (state.polling) return;
+  state.polling = true;
+  try {
+    await pollForever();
+  } finally {
+    state.polling = false;
+  }
+}
+
+async function pollForever() {
+  while (true) {
+    if (!state.session) return;
+    try {
+      const res = await fetch(
+        `/api/games/${state.session.session_id}/state?since=${state.cursor}`
+      );
+      const view = await res.json();
+      applyView(view);
+      if (view.finished) return;
+    } catch (error) {
+      /* 忽略单次失败，稍后重试 */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+
+function applyView(view) {
+  // 先记下身份表：座位渲染要用它标注身份（我出局后解锁）。
+  state.revealedRoles = view.revealed_roles || null;
+  state.paused = !!view.paused;
+  if (Array.isArray(view.events) && view.events.length) {
+    for (const event of view.events) appendEvent(event);
+  }
+  // 游标只许前进：迟到的响应不能把它拉回去，否则会重新请求已渲染的事件。
+  if (typeof view.event_cursor === "number") {
+    state.cursor = Math.max(state.cursor, view.event_cursor);
+  }
+  renderSeats(view.public_state);
+  renderPhase(view.public_state);
+  renderTurn(view);
+  renderControls(view);
+  renderGodView(view);
+  if (view.finished) renderResult(view.result, view.error);
+}
+
+function renderControls(view) {
+  if (view.finished) {
+    $("controlPanel").style.display = "none";
+    return;
+  }
+  $("controlPanel").style.display = "block";
+  const btn = $("pauseBtn");
+  btn.textContent = view.paused ? "继续对局" : "暂停";
+  btn.onclick = () => togglePause(!view.paused);
+  $("pauseHint").textContent = view.paused
+    ? "已暂停：AI 不再发起新行动，已在途的请求会正常跑完。"
+    : "暂停后 AI 不再发起新行动，不会浪费已花掉的 token。";
+  $("abandonBtn").onclick = abandonGame;
+}
+
+async function togglePause(shouldPause) {
+  const path = shouldPause ? "pause" : "resume";
+  try {
+    await fetch(`/api/games/${state.session.session_id}/${path}`, { method: "POST" });
+  } catch (error) {
+    /* 状态会在下一帧同步回来 */
+  }
+}
+
+async function abandonGame() {
+  if (!window.confirm("放弃当前对局并回到建局界面？")) return;
+  try {
+    await fetch(`/api/games/${state.session.session_id}/abandon`, { method: "POST" });
+  } catch (error) {
+    /* 即使请求失败也回到建局界面 */
+  }
+  resetToSetup();
+}
+
+function renderGodView(view) {
+  const roles = view.revealed_roles;
+  if (!roles || view.finished) {
+    $("godPanel").style.display = "none";
+    return;
+  }
+  const players = (view.public_state || {}).players || [];
+  const rows = Object.entries(roles)
+    .sort((a, b) => Number(a[0].slice(1)) - Number(b[0].slice(1)))
+    .map(([pid, role]) => {
+      const info = players.find((p) => p.id === pid) || {};
+      const alive = info.alive !== false;
+      const label = state.meta.role_labels[role] || role;
+      const cls = role === "wolf" ? "wolf" : "good";
+      return `<span class="pill ${cls}" style="${alive ? "" : "opacity:.4"}">` +
+        `${seatLabel(pid)} ${label}${alive ? "" : " ✝"}</span>`;
+    })
+    .join("");
+  $("godBody").innerHTML =
+    '<p class="hint" style="margin-top:0">你已出局，以下是全部身份；存活的 AI 仍看不到这些信息。</p>' +
+    rows;
+  $("godPanel").style.display = "block";
+}
+
+// ---------- 渲染 ----------
+
+// 空值一律返回占位符，绝不把 null / undefined 拼进界面文案。
+// 引擎里 target_id 为 null 是合法状态（弃票、跳过），不是错误。
+function seatLabel(playerId, fallback = "—") {
+  if (playerId === null || playerId === undefined || playerId === "") return fallback;
+  return `${String(playerId).replace(/^p/, "")} 号`;
+}
+
+// 私密事件的归属人。存活期间只会收到发给自己的，但出局后转入观战视角会
+// 收到其他人的守护/用药/查验——此时必须按 recipients 判断主语，不能写死「你」。
+function actorOf(event) {
+  const recipients = event.recipients || [];
+  const owner = recipients.length ? recipients[0] : null;
+  const mine = state.session && owner === state.session.seat;
+  return {
+    owner,
+    mine,
+    // 是自己就说「你」，否则说「N 号」；带上已知身份便于观战时看懂。
+    label: mine ? "你" : seatLabel(owner),
+  };
+}
+
+// 观战时给主语补一个身份标注，例如「7 号（守卫）」。
+function actorWithRole(event, fallbackRole) {
+  const actor = actorOf(event);
+  if (actor.mine) return "你";
+  const role = (state.revealedRoles || {})[actor.owner] || fallbackRole;
+  const label = role ? state.meta.role_labels[role] || role : "";
+  return label ? `${actor.label}（${label}）` : actor.label;
+}
+
+function renderSeats(publicState) {
+  const host = $("seats");
+  const count = state.meta ? state.meta.player_count : 12;
+  const players = (publicState && publicState.players) || [];
+  const sheriffId = publicState && publicState.sheriff ? publicState.sheriff.player_id : null;
+  const mySeat = state.session ? state.session.seat : null;
+  host.innerHTML = "";
+  for (let i = 1; i <= count; i += 1) {
+    const id = `p${i}`;
+    const info = players.find((p) => p.id === id || p.player_id === id) || {};
+    const alive = info.alive !== false;
+    const div = document.createElement("div");
+    div.className = "seat" + (alive ? "" : " dead") + (id === mySeat ? " me" : "");
+    // 我出局后解锁全部身份；否则只显示引擎已公开翻牌的身份。
+    const godRole = state.revealedRoles ? state.revealedRoles[id] : null;
+    const shownRole = godRole || info.revealed_role;
+    const revealed = shownRole
+      ? (state.meta.role_labels[shownRole] || shownRole)
+      : (id === mySeat ? "我" : "");
+    if (shownRole === "wolf") div.classList.add("is-wolf");
+    div.innerHTML =
+      `<span class="num">${i}</span>` +
+      `<span class="tag">${revealed || "&nbsp;"}</span>` +
+      (id === sheriffId ? '<span class="badge" title="警长">👑</span>' : "");
+    host.appendChild(div);
+  }
+}
+
+function renderPhase(publicState) {
+  if (!publicState) return;
+  const phase = publicState.phase === "night" ? "🌙 夜晚" : "☀️ 白天";
+  $("phase").textContent = `第 ${publicState.round} 轮 · ${phase}`;
+}
+
+function renderRoster(roster) {
+  const table = $("rosterTable");
+  table.innerHTML = "";
+  for (const entry of roster) {
+    const label = state.meta.role_labels[entry.role] || entry.role;
+    const rate = entry.win_rate === null ? "—" : `${Math.round(entry.win_rate * 100)}%`;
+    const games = entry.game_count ? ` / ${entry.game_count} 局` : "";
+    table.insertAdjacentHTML(
+      "beforeend",
+      `<tr><td>${label}<br><span class="meta" style="font-size:11px;color:var(--muted)">${entry.node_id}</span></td>` +
+      `<td>胜率 ${rate}${games}</td></tr>`
+    );
+  }
+  $("rosterPanel").style.display = "block";
+}
+
+const DEATH_EVENTS = new Set([
+  "PLAYER_DIED", "PLAYER_ELIMINATED", "DAWN_ANNOUNCED", "HUNTER_SHOT_FIRED",
+]);
+// 上警名单等关键公开信息单独高亮，避免混在普通系统提示里被划过去。
+const NOTICE_EVENTS = new Set([
+  "SHERIFF_CANDIDATES_ANNOUNCED", "SHERIFF_ELECTED", "SHERIFF_ELECTION_TIED",
+  "SHERIFF_ELECTION_FAILED", "GAME_FINISHED",
+]);
+// 只有我能看到的私密信息：用独立配色，和公开信息明确区分。
+const SECRET_EVENTS = new Set([
+  "ROLE_ASSIGNED", "WOLF_TEAM_REVEALED", "SEER_RESULT",
+  "WOLF_TARGET_SELECTED", "GUARD_ACTION_CONFIRMED", "WITCH_ACTION_CONFIRMED",
+]);
+
+function appendEvent(event) {
+  // 按 seq 去重。引擎保证 seq 唯一且单调递增，这是防重复渲染的兜底：
+  // 即使游标算错、或两条数据流同时投递同一批事件，也不会重复上屏。
+  const seq = event.seq;
+  if (seq !== undefined && seq !== null) {
+    if (state.seenEvents.has(seq)) return;
+    state.seenEvents.add(seq);
+  }
+  const log = $("log");
+  const payload = event.payload || {};
+  const div = document.createElement("div");
+
+  // 带正文的发言：公开发言、狼人私聊、遗言。
+  // channel 在事件顶层（event.channel），不在 payload 里。
+  if (event.type === "PLAYER_SPOKE" || event.type === "PLAYER_LAST_WORDS") {
+    const isWolfRoom = event.channel === "wolf";
+    const mine = state.session && payload.player_id === state.session.seat;
+    const channel =
+      event.type === "PLAYER_LAST_WORDS"
+        ? "遗言"
+        : isWolfRoom ? "🐺 狼人私聊（仅狼队可见）" : "公开发言";
+    div.className = "ev" + (isWolfRoom ? " wolf-chat" : "");
+    div.innerHTML =
+      `<div class="meta">${channel}</div>` +
+      `<div><span class="who">${seatLabel(payload.player_id)}${mine ? "（我）" : ""}</span>：` +
+      `${escapeHtml(payload.text || "")}</div>`;
+  } else if (DEATH_EVENTS.has(event.type)) {
+    div.className = "ev death";
+    div.innerHTML = `<div class="meta">${describeEvent(event)}</div>`;
+  } else if (SECRET_EVENTS.has(event.type)) {
+    div.className = "ev secret";
+    div.innerHTML = `<div>${describeEvent(event)}</div>`;
+  } else if (NOTICE_EVENTS.has(event.type)) {
+    div.className = "ev notice";
+    div.innerHTML = `<div>${describeEvent(event)}</div>`;
+  } else {
+    div.className = "ev sys";
+    div.innerHTML = `<div class="meta">${describeEvent(event)}</div>`;
+  }
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function seatList(ids) {
+  return (ids || []).map(seatLabel).join("、");
+}
+
+function roleSuffix(role) {
+  if (!role) return "";
+  return `（${state.meta.role_labels[role] || role}）`;
+}
+
+function describeEvent(event) {
+  const p = event.payload || {};
+  // 只有带 player_id 的事件才有 who；投票类事件用的是 voter_id。
+  const who = seatLabel(p.player_id, "");
+  switch (event.type) {
+    case "GAME_STARTED": return "对局开始";
+    case "NIGHT_STARTED": return `🌙 第 ${p.round} 夜开始`;
+    case "DAY_STARTED": return `☀️ 第 ${p.round} 天开始`;
+    // 引擎字段是 dead_player_ids。
+    case "DAWN_ANNOUNCED": {
+      const deaths = seatList(p.dead_player_ids);
+      return deaths ? `天亮了，死亡：${deaths}` : "天亮了，昨夜平安夜";
+    }
+    case "NO_ONE_DIED": return "昨夜平安夜，无人死亡";
+    case "PLAYER_DIED": return `${who}${roleSuffix(p.role)} 死亡`;
+    case "PLAYER_ELIMINATED": return `${who}${roleSuffix(p.role)} 被投票放逐`;
+    case "VOTE_TIE": return `平票：${seatList(p.tied_target_ids)}，无人出局`;
+    case "NO_ONE_ELIMINATED": return "本轮无人出局";
+
+    // 警长竞选：名单本来就是公开信息，必须展开。
+    case "SHERIFF_ELECTION_STARTED": return `👑 第 ${p.round} 天警长竞选开始`;
+    case "SHERIFF_CANDIDATES_ANNOUNCED": {
+      const ids = p.candidate_ids || [];
+      return ids.length
+        ? `上警玩家（${ids.length} 人）：${seatList(ids)}`
+        : "无人上警";
+    }
+    case "SHERIFF_ELECTION_SPEECHES_STARTED": {
+      const ids = p.candidate_ids || [];
+      return `${p.runoff ? "PK 轮" : "竞选"}发言开始，按座位顺序：${seatList(ids)}`;
+    }
+    case "SHERIFF_ELECTION_VOTE_STARTED":
+      return `警长投票开始，候选：${seatList(p.candidate_ids)}`;
+    case "SHERIFF_ELECTION_TIED":
+      return `警长票平票，进入 PK：${seatList(p.candidate_ids)}`;
+    case "SHERIFF_ELECTION_FAILED": return `警长竞选未产生警长（${p.reason || "平票"}）`;
+    case "SHERIFF_ELECTED":
+      return `👑 ${who} 当选警长（${p.vote_weight} 票权）`;
+    // 引擎字段是 from_player_id / to_player_id，不是 target_id。
+    case "SHERIFF_BADGE_TRANSFERRED":
+      return `👑 ${seatLabel(p.from_player_id)} 把警徽移交给 ${seatLabel(p.to_player_id)}`;
+    case "SHERIFF_BADGE_DESTROYED": return "警徽被撕毁";
+
+    // 投票事件的投票人字段是 voter_id（不是 player_id）；
+    // target_id 为空表示弃票，weight 是票权（警长 1.5 票）。
+    case "VOTE_CAST": {
+      const weight = p.weight && p.weight !== 1 ? `（${p.weight} 票）` : "";
+      return p.target_id
+        ? `${seatLabel(p.voter_id)} 投票给 ${seatLabel(p.target_id)}${weight}`
+        : `${seatLabel(p.voter_id)} 弃票`;
+    }
+    case "SHERIFF_VOTE_CAST":
+      return p.target_id
+        ? `${seatLabel(p.voter_id)} 警长票投给 ${seatLabel(p.target_id)}`
+        : `${seatLabel(p.voter_id)} 警长票弃票`;
+    case "DAY_SPEECH_ORDER_SET":
+      return `发言顺序：从 ${p.reference_seat} 号${p.reference_is_dawn_death ? "（昨夜死者）" : ""}起${p.direction === "previous" ? "逆序" : "正序"}`;
+
+    case "PLAYER_LAST_WORDS": return `${who} 的遗言：${p.text || ""}`;
+    case "PLAYER_LAST_WORDS_SKIPPED": return `${who} 放弃遗言`;
+    case "PLAYER_PASSED": return `${who} 选择跳过`;
+    case "IDIOT_REVEALED":
+      return `${who} 翻开白痴身份${p.lost_vote_right ? "，失去投票权" : ""}`;
+    case "HUNTER_SHOT_FIRED": return `🔫 猎人 ${who} 开枪带走 ${seatLabel(p.target_id)}`;
+    case "HUNTER_SHOT_SKIPPED": return `猎人 ${who} 没有开枪`;
+    case "GAME_FINISHED": return `对局结束，${p.winner === "wolf" ? "狼人阵营" : "好人阵营"}获胜`;
+
+    // 以下是只发给本席位的 private / team 事件（引擎按 recipients 投递）。
+    // 它们进不了 PublicRecorder，只能从 engine.events_for(席位) 取。
+    // 主语一律由 recipients 决定：出局后观战会收到别人的私密事件。
+    case "ROLE_ASSIGNED": {
+      const actor = actorOf(event);
+      const role = state.meta.role_labels[p.role] || p.role;
+      const team = p.team === "wolf" ? "狼人阵营" : "好人阵营";
+      return actor.mine
+        ? `你的身份：${role}（${team}）`
+        : `${actor.label} 的身份：${role}（${team}）`;
+    }
+    case "WOLF_TEAM_REVEALED":
+      return `🐺 狼队成员：${seatList(p.wolf_ids)}`;
+    case "SEER_RESULT":
+      return `🔍 ${actorWithRole(event, "seer")} 查验 ${seatLabel(p.target_id)}：${
+        p.team === "wolf" ? "狼人" : "好人"}`;
+    case "WOLF_TARGET_SELECTED":
+      return p.target_id
+        ? `🐺 狼队今夜刀口：${seatLabel(p.target_id)}`
+        : `🐺 狼队未能达成一致（平票：${seatList(p.tied_target_ids)}）`;
+    case "GUARD_ACTION_CONFIRMED":
+      return `🛡 ${actorWithRole(event, "guard")} 守护了 ${seatLabel(p.target_id)}`;
+    case "WITCH_ACTION_CONFIRMED": {
+      const label = p.kind === "witch_heal" ? "使用解药救" : "使用毒药毒";
+      return `🧪 ${actorWithRole(event, "witch")} ${label} ${seatLabel(p.target_id)}`;
+    }
+    default: return `${event.type}${who ? " · " + who : ""}`;
+  }
+}
+
+function renderPrivate(packet) {
+  const info = packet.private_information || {};
+  const role = state.meta.role_labels[info.role] || info.role || "未知";
+  const isWolf = info.team === "wolf";
+  const rows = [];
+  rows.push(
+    `<div class="kv"><span>身份</span><span class="pill ${isWolf ? "wolf" : "good"}">${role}</span></div>`
+  );
+  rows.push(`<div class="kv"><span>阵营</span><span>${isWolf ? "狼人阵营" : "好人阵营"}</span></div>`);
+  if (info.wolf_teammates && info.wolf_teammates.length) {
+    rows.push(
+      `<div class="kv"><span>狼队友</span><span>${info.wolf_teammates.map(seatLabel).join("、")}</span></div>`
+    );
+  }
+  if (info.inspections && Object.keys(info.inspections).length) {
+    const items = Object.entries(info.inspections)
+      .map(([pid, res]) => {
+        const good = res === "good" || res === "village" || res === false;
+        return `<span class="pill ${good ? "good" : "wolf"}">${seatLabel(pid)} ${good ? "好人" : "狼人"}</span>`;
+      })
+      .join("");
+    rows.push(`<div class="kv"><span>查验记录</span><span>${items}</span></div>`);
+  }
+  if (info.antidote_available !== undefined) {
+    rows.push(
+      `<div class="kv"><span>解药 / 毒药</span><span>${info.antidote_available ? "可用" : "已用"} / ${info.poison_available ? "可用" : "已用"}</span></div>`
+    );
+  }
+  if (info.wolf_target) {
+    rows.push(`<div class="kv"><span>今夜刀口</span><span>${seatLabel(info.wolf_target)}</span></div>`);
+  }
+  if (info.last_protected_id) {
+    rows.push(`<div class="kv"><span>上次守护</span><span>${seatLabel(info.last_protected_id)}</span></div>`);
+  }
+  if (info.shot_available !== undefined) {
+    rows.push(`<div class="kv"><span>开枪</span><span>${info.shot_available ? "可用" : "不可用"}</span></div>`);
+  }
+  $("privateBody").innerHTML = rows.join("");
+  $("privatePanel").style.display = "block";
+}
+
+const CANDIDATE_EVENTS = [
+  "SHERIFF_ELECTION_VOTE_STARTED",
+  "SHERIFF_ELECTION_SPEECHES_STARTED",
+  "SHERIFF_CANDIDATES_ANNOUNCED",
+];
+
+// 缓存最近一次看到的上警名单：同一次待办可能只带部分事件。
+let lastCandidates = null;
+
+function electionContext(packet) {
+  const phase = (packet.request || {}).phase || "";
+  const events = packet.visible_events || [];
+  for (const type of CANDIDATE_EVENTS) {
+    const hit = [...events].reverse().find((e) => e.type === type);
+    if (hit && (hit.payload || {}).candidate_ids) {
+      lastCandidates = hit.payload.candidate_ids;
+      break;
+    }
+  }
+  if (!phase.startsWith("sheriff_election") && phase !== "sheriff_candidacy") {
+    return null;
+  }
+  if (phase === "sheriff_candidacy") {
+    return "现在决定是否上警。所有存活玩家同时表态，此时还看不到别人的选择。";
+  }
+  if (!lastCandidates) return null;
+  const mine = state.session ? state.session.seat : null;
+  const list = lastCandidates
+    .map((id) => (id === mine ? `<b>${seatLabel(id)}（我）</b>` : seatLabel(id)))
+    .join("、");
+  return `本轮上警 <b>${lastCandidates.length}</b> 人：${list}`;
+}
+
+function renderTurn(view) {
+  const packet = view.turn;
+  if (!packet) {
+    $("actionPanel").style.display = "none";
+    if (!view.finished) {
+      $("waitPanel").style.display = "block";
+      $("waitText").textContent = view.paused
+        ? "⏸ 已暂停，AI 不再发起新行动。点「继续对局」恢复。"
+        : view.human_alive === false
+        ? "你已出局，正在观战后续对局…"
+        : "AI 正在思考…（12 人局单局约 13–20 分钟）";
+    } else {
+      $("waitPanel").style.display = "none";
+    }
+    return;
+  }
+  renderPrivate(packet);
+  $("waitPanel").style.display = "none";
+  $("actionPanel").style.display = "block";
+
+  // 同一个待办只渲染一次，避免打断正在输入的发言。
+  if (view.turn_revision === state.lastTurnRevision) return;
+  state.lastTurnRevision = view.turn_revision;
+  state.selectedKind = null;
+  state.selectedTarget = null;
+  $("actionErr").textContent = "";
+
+  const request = packet.request || {};
+  const allowed = request.allowed_actions || [];
+  const host = $("actionBody");
+  host.innerHTML = "";
+
+  // 竞选相关阶段：把上警名单直接摆在行动面板上。名单只存在于事件里，
+  // public_state 不含 candidate 字段，所以从 visible_events 反向取最新一条。
+  const context = electionContext(packet);
+  if (context) {
+    const note = document.createElement("p");
+    note.className = "notice-box";
+    note.innerHTML = context;
+    host.appendChild(note);
+  }
+
+  const picker = document.createElement("div");
+  for (const item of allowed) {
+    const label = state.meta.kind_labels[item.kind] || item.kind;
+    const btn = document.createElement("button");
+    btn.className = "ghost";
+    btn.style.marginBottom = "6px";
+    btn.textContent = label;
+    btn.onclick = () => selectKind(item, request, packet);
+    picker.appendChild(btn);
+  }
+  host.appendChild(picker);
+  const form = document.createElement("div");
+  form.id = "actionForm";
+  host.appendChild(form);
+
+  if (allowed.length === 1) selectKind(allowed[0], request, packet);
+}
+
+function selectKind(allowed, request, packet) {
+  state.selectedKind = allowed;
+  state.selectedTarget = null;
+  const form = $("actionForm");
+  form.innerHTML = "";
+  const kind = allowed.kind;
+  const label = state.meta.kind_labels[kind] || kind;
+
+  const title = document.createElement("p");
+  title.className = "hint";
+  title.textContent = `当前选择：${label}`;
+  form.appendChild(title);
+
+  if (kind === "speak" || kind === "last_words") {
+    const area = document.createElement("textarea");
+    area.id = "speechText";
+    area.placeholder = allowed.require_chinese ? "发言需包含中文…" : "输入发言…";
+    const counter = document.createElement("div");
+    counter.className = "counter";
+    const max = allowed.max_chars || 200;
+    const sync = () => {
+      counter.textContent = `${area.value.length} / ${max}`;
+      counter.className = "counter" + (area.value.length > max ? " over" : "");
+    };
+    area.oninput = sync;
+    form.appendChild(area);
+    form.appendChild(counter);
+    sync();
+  } else if (kind === "sheriff_speech_order") {
+    form.appendChild(buildTargets([
+      { id: "next", label: "正序（下一位）" },
+      { id: "previous", label: "逆序（上一位）" },
+    ]));
+  } else if (allowed.target_ids && allowed.target_ids.length) {
+    form.appendChild(
+      buildTargets(allowed.target_ids.map((id) => ({ id, label: seatLabel(id) })))
+    );
+  }
+
+  const submit = document.createElement("button");
+  submit.textContent = "提交行动";
+  submit.style.marginTop = "10px";
+  submit.onclick = () => submitAction(request);
+  form.appendChild(submit);
+}
+
+function buildTargets(items) {
+  const wrap = document.createElement("div");
+  wrap.className = "targets";
+  for (const item of items) {
+    const btn = document.createElement("button");
+    btn.className = "ghost";
+    btn.textContent = item.label;
+    btn.onclick = () => {
+      state.selectedTarget = item.id;
+      for (const child of wrap.children) child.className = "ghost";
+      btn.className = "ghost sel";
+    };
+    wrap.appendChild(btn);
+  }
+  return wrap;
+}
+
+async function submitAction(request) {
+  const allowed = state.selectedKind;
+  if (!allowed) return;
+  const action = { kind: allowed.kind };
+  if (allowed.kind === "speak" || allowed.kind === "last_words") {
+    action.text = ($("speechText") || {}).value || "";
+  } else if (
+    allowed.kind === "sheriff_speech_order" ||
+    (allowed.target_ids && allowed.target_ids.length)
+  ) {
+    if (!state.selectedTarget) {
+      $("actionErr").textContent = "请先选择一个目标。";
+      return;
+    }
+    action.target_id = state.selectedTarget;
+  }
+  $("actionErr").textContent = "";
+  try {
+    const res = await fetch(`/api/games/${state.session.session_id}/action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request_id: request.request_id, action }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "提交失败");
+    $("actionPanel").style.display = "none";
+    $("waitPanel").style.display = "block";
+    $("waitText").textContent = "行动已提交，等待其他玩家…";
+  } catch (error) {
+    $("actionErr").textContent = error.message;
+  }
+}
+
+function renderResult(result, error) {
+  const host = $("resultBody");
+  if (error) {
+    host.innerHTML = `<p class="err">${escapeHtml(error)}</p>`;
+  } else if (result) {
+    const winner = result.winner === "wolf" ? "狼人阵营获胜" : "好人阵营获胜";
+    const roles = (result.public_state && result.public_state.roles_revealed) || null;
+    let rows = `<div class="kv"><span>结果</span><span>${winner}</span></div>` +
+      `<div class="kv"><span>轮次</span><span>第 ${result.round} 轮</span></div>`;
+    if (roles) {
+      const items = Object.entries(roles)
+        .sort((a, b) => Number(a[0].slice(1)) - Number(b[0].slice(1)))
+        .map(([pid, role]) => {
+          const label = state.meta.role_labels[role] || role;
+          const isWolf = role === "wolf";
+          return `<span class="pill ${isWolf ? "wolf" : "good"}">${seatLabel(pid)} ${label}</span>`;
+        })
+        .join("");
+      rows += `<div style="margin-top:8px">${items}</div>`;
+    }
+    host.innerHTML = rows;
+  }
+  // 结束后给出明确出口：看复盘，或换个身份/对手强度再来一局。
+  const actions = document.createElement("div");
+  actions.style.marginTop = "12px";
+  actions.style.display = "grid";
+  actions.style.gap = "6px";
+  const replayBtn = document.createElement("button");
+  replayBtn.textContent = "查看完整复盘";
+  replayBtn.onclick = showReplay;
+  const againBtn = document.createElement("button");
+  againBtn.className = "ghost";
+  againBtn.textContent = "再来一局";
+  againBtn.onclick = resetToSetup;
+  actions.appendChild(replayBtn);
+  actions.appendChild(againBtn);
+  host.appendChild(actions);
+
+  $("resultPanel").style.display = "block";
+  $("waitPanel").style.display = "none";
+  $("actionPanel").style.display = "none";
+}
+
+function resetToSetup() {
+  if (state.stream) {
+    state.stream.close();
+    state.stream = null;
+  }
+  state.session = null;
+  state.cursor = 0;
+  state.lastTurnRevision = -1;
+  state.revealedRoles = null;
+  state.paused = false;
+  state.seenEvents = new Set();
+  lastCandidates = null;
+  $("setup").style.display = "block";
+  $("start").disabled = false;
+  $("setupErr").textContent = "";
+  $("resultPanel").style.display = "none";
+  $("privatePanel").style.display = "none";
+  $("rosterPanel").style.display = "none";
+  $("replayPanel").style.display = "none";
+  $("controlPanel").style.display = "none";
+  $("godPanel").style.display = "none";
+  $("waitPanel").style.display = "none";
+  $("log").innerHTML = '<p class="hint">尚未开始。</p>';
+  $("phase").textContent = "";
+  renderSeats(null);
+  window.scrollTo(0, 0);
+}
+
+// ---------- 复盘 ----------
+
+async function showReplay() {
+  const panel = $("replayPanel");
+  const body = $("replayBody");
+  panel.style.display = "block";
+  body.innerHTML = '<p class="hint">正在加载复盘…</p>';
+  try {
+    const res = await fetch(`/api/games/${state.session.session_id}/replay`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "复盘加载失败");
+    renderReplay(data);
+  } catch (error) {
+    body.innerHTML = `<p class="err">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+const NIGHT_ACTION_LABELS = {
+  witch_heal: "女巫解药", witch_poison: "女巫毒药", witch_pass: "女巫放弃用药",
+};
+
+function renderReplay(data) {
+  const body = $("replayBody");
+  const rounds = data.rounds || [];
+  if (!rounds.length) {
+    body.innerHTML = '<p class="hint">没有可展示的复盘内容。</p>';
+    return;
+  }
+
+  // 身份牌总览：复盘是上帝视角，先把底牌摊开。
+  let header = "";
+  if (data.roles) {
+    const pills = Object.entries(data.roles)
+      .sort((a, b) => Number(a[0].slice(1)) - Number(b[0].slice(1)))
+      .map(([pid, role]) => {
+        const label = state.meta.role_labels[role] || role;
+        const mine = state.session && pid === state.session.seat;
+        return `<span class="pill ${role === "wolf" ? "wolf" : "good"}">` +
+          `${seatLabel(pid)} ${label}${mine ? "（我）" : ""}</span>`;
+      })
+      .join("");
+    header = `<div class="rp-sec"><div class="rp-title">全部身份</div>${pills}</div>`;
+  }
+
+  const blocks = rounds.map((r) => {
+    const parts = [];
+
+    // 夜间：狼队私聊 + 各角色行动（上帝视角才有）。
+    if ((r.wolf_speeches || []).length) {
+      parts.push(section("🐺 狼队私聊", (r.wolf_speeches || []).map(
+        (s) => `${seatLabel(s.player_id)}：${escapeHtml(s.text || "")}`
+      )));
+    }
+    if ((r.night_actions || []).length) {
+      parts.push(section("夜间行动", (r.night_actions || []).map((a) => {
+        // 注意 rounds_from_record 里 **payload 会用 witch_heal 覆盖中文 kind。
+        const kind = NIGHT_ACTION_LABELS[a.kind] || a.kind;
+        const actor = a.player_id ? `${seatLabel(a.player_id)} ` : "";
+        const target = a.target_id ? `→ ${seatLabel(a.target_id)}` : "";
+        const extra = a.team ? `（${a.team === "wolf" ? "狼人" : "好人"}）` : "";
+        return `${actor}${kind} ${target}${extra}`;
+      })));
+    }
+    if ((r.night_hunter_reactions || []).length) {
+      parts.push(section("猎人反应", (r.night_hunter_reactions || []).map(
+        (a) => `${seatLabel(a.player_id)} ${a.kind}${
+          a.target_id ? " → " + seatLabel(a.target_id) : ""}`
+      )));
+    }
+
+    const election = r.sheriff_election || {};
+    if ((election.candidates || []).length) {
+      parts.push(section("警长竞选", [
+        `上警：${seatList(election.candidates)}`,
+        ...(election.speeches || []).map(
+          (s) => `${seatLabel(s.player_id)}：${escapeHtml(s.text || "")}`
+        ),
+        ...votesLine(election.votes),
+      ]));
+    }
+    if ((r.night_last_words || []).length) {
+      parts.push(section("遗言", (r.night_last_words || []).map(
+        (s) => `${seatLabel(s.player_id)}：${escapeHtml(s.text || "")}`
+      )));
+    }
+    if (r.dawn || (r.deaths || []).length) {
+      const dead = (r.deaths || []).map((d) => seatLabel(d.player_id || d));
+      parts.push(section("天亮", [dead.length ? `死亡：${dead.join("、")}` : "平安夜"]));
+    }
+    if ((r.day_speeches || []).length) {
+      parts.push(section("白天发言", (r.day_speeches || []).map(
+        (s) => `${seatLabel(s.player_id)}：${escapeHtml(s.text || "")}`
+      )));
+    }
+    if ((r.votes || []).length) {
+      parts.push(section("投票", votesLine(r.votes)));
+    }
+    if (r.eliminated) {
+      const pid = r.eliminated.player_id || r.eliminated;
+      parts.push(section("出局", [`${seatLabel(pid)} 被放逐`]));
+    }
+    if ((r.day_hunter_reactions || []).length) {
+      parts.push(section("猎人反应", (r.day_hunter_reactions || []).map(
+        (a) => `${seatLabel(a.player_id)} ${a.kind}${
+          a.target_id ? " → " + seatLabel(a.target_id) : ""}`
+      )));
+    }
+    if ((r.day_last_words || []).length) {
+      parts.push(section("遗言", (r.day_last_words || []).map(
+        (s) => `${seatLabel(s.player_id)}：${escapeHtml(s.text || "")}`
+      )));
+    }
+    if (!parts.length) return "";
+    return `<details><summary>第 ${r.round} 轮</summary>${parts.join("")}</details>`;
+  });
+  const rendered = blocks.filter(Boolean).join("");
+  body.innerHTML = header + (rendered ||
+    '<p class="hint">没有可展示的复盘内容。</p>');
+}
+
+function section(title, lines) {
+  if (!lines || !lines.length) return "";
+  return `<div class="rp-sec"><div class="rp-title">${title}</div>` +
+    lines.map((l) => `<div class="rp-line">${l}</div>`).join("") + "</div>";
+}
+
+function votesLine(votes) {
+  return (votes || []).map((v) => {
+    const voter = seatLabel(v.voter_id || v.player_id);
+    return v.target_id
+      ? `${voter} → ${seatLabel(v.target_id)}`
+      : `${voter} → 弃票`;
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = String(text == null ? "" : text);
+  return div.innerHTML;
+}
+
+boot();
+</script>
+</body>
+</html>

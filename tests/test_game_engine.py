@@ -7,7 +7,7 @@ import stat
 import tempfile
 import unittest
 
-from werewolf_game import (
+from game import (
     GameEngine,
     GameRunner,
     PublicRecorder,
@@ -15,7 +15,7 @@ from werewolf_game import (
     create_default_rules,
     create_rules_for_player_count,
 )
-from werewolf_game.core.constants import (
+from game.core.constants import (
     ACTION_GUARD_PROTECT,
     ACTION_HUNTER_SHOOT,
     ACTION_LAST_WORDS,
@@ -37,8 +37,8 @@ from werewolf_game.core.constants import (
     ROLE_VILLAGER,
     ROLE_WOLF,
 )
-from werewolf_game.core.errors import RuleViolationError
-from werewolf_game.agents.participants import ScriptedParticipant
+from game.core.errors import RuleViolationError
+from game.agents.participants import ScriptedParticipant
 
 
 def players(count: int = 7) -> list[dict[str, str]]:

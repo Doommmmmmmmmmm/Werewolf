@@ -6,15 +6,15 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from werewolf_game import GameEngine, GameRunner, create_rules_for_player_count
-from werewolf_game.core.constants import ACTION_SPEAK, ROLE_WOLF
-from werewolf_game.web.participant import WebHumanParticipant
-from werewolf_game.web.roster import (
+from game import GameEngine, GameRunner, create_rules_for_player_count
+from game.core.constants import ACTION_SPEAK, ROLE_WOLF
+from game.web.participant import WebHumanParticipant
+from game.web.roster import (
     RosterEntry,
     best_role_nodes,
     role_node_map,
 )
-from werewolf_game.web.server import HttpError, Request, WebDemoServer
+from game.web.server import HttpError, Request, WebDemoServer
 
 
 def _packet(request_id: str = "g:1:day_discussion:p1:0") -> dict:
@@ -441,7 +441,7 @@ class FrontendPayloadFieldTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        root = Path(__file__).resolve().parents[1] / "werewolf_game"
+        root = Path(__file__).resolve().parents[1] / "game"
         self.engine_source = (root / "core" / "engine.py").read_text(encoding="utf-8")
         self.frontend = (root / "web" / "static" / "index.html").read_text(
             encoding="utf-8"
@@ -472,7 +472,7 @@ class FrontendEventCoverageTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        root = Path(__file__).resolve().parents[1] / "werewolf_game"
+        root = Path(__file__).resolve().parents[1] / "game"
         self.engine_source = (root / "core" / "engine.py").read_text(encoding="utf-8")
         self.frontend = (root / "web" / "static" / "index.html").read_text(
             encoding="utf-8"
@@ -524,7 +524,7 @@ class VisibleEventSourceTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.web = Path(__file__).resolve().parents[1] / "werewolf_game" / "web"
+        self.web = Path(__file__).resolve().parents[1] / "game" / "web"
         self.session = (self.web / "session.py").read_text(encoding="utf-8")
         self.frontend = (self.web / "static" / "index.html").read_text(encoding="utf-8")
 
@@ -564,7 +564,7 @@ class PauseAndGodViewTest(unittest.TestCase):
     """暂停闸门与死后上帝视角。"""
 
     def setUp(self) -> None:
-        self.web = Path(__file__).resolve().parents[1] / "werewolf_game" / "web"
+        self.web = Path(__file__).resolve().parents[1] / "game" / "web"
         self.session = (self.web / "session.py").read_text(encoding="utf-8")
         self.server = (self.web / "server.py").read_text(encoding="utf-8")
         self.frontend = (self.web / "static" / "index.html").read_text(encoding="utf-8")
@@ -625,7 +625,7 @@ class EventDedupAndActorTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        root = Path(__file__).resolve().parents[1] / "werewolf_game"
+        root = Path(__file__).resolve().parents[1] / "game"
         self.frontend = (root / "web" / "static" / "index.html").read_text(
             encoding="utf-8"
         )
@@ -665,7 +665,7 @@ class ReplayAndRulesTest(unittest.TestCase):
     """复盘和规则说明的结构性检查（不跑对局）。"""
 
     def setUp(self) -> None:
-        self.web = Path(__file__).resolve().parents[1] / "werewolf_game" / "web"
+        self.web = Path(__file__).resolve().parents[1] / "game" / "web"
         self.frontend = (self.web / "static" / "index.html").read_text(encoding="utf-8")
 
     def test_replay_is_god_view(self) -> None:
@@ -704,7 +704,7 @@ class ReplayAndRulesTest(unittest.TestCase):
 
 class StaticFileTest(unittest.TestCase):
     def test_frontend_is_shipped(self) -> None:
-        index = Path(__file__).resolve().parents[1] / "werewolf_game" / "web" / "static" / "index.html"
+        index = Path(__file__).resolve().parents[1] / "game" / "web" / "static" / "index.html"
         self.assertTrue(index.is_file())
         text = index.read_text(encoding="utf-8")
         # 前端必须消费引擎给出的合法行动契约，而不是自己硬编码行动种类。

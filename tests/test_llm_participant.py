@@ -5,12 +5,12 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from werewolf_game import (
+from game import (
     GameEngine,
     LlmPublicNarrator,
     create_default_rules,
 )
-from werewolf_game.core.constants import (
+from game.core.constants import (
     ROLE_GUARD,
     ROLE_HUNTER,
     ROLE_IDIOT,
@@ -19,9 +19,9 @@ from werewolf_game.core.constants import (
     ROLE_WITCH,
     ROLE_WOLF,
 )
-from werewolf_game.core.errors import ModelClientError
-from werewolf_game.agents.participants import LlmParticipant
-from werewolf_game.agents.llm.client import ModelClient, ModelResponse, get_model_config
+from game.core.errors import ModelClientError
+from game.agents.participants import LlmParticipant
+from game.agents.llm.client import ModelClient, ModelResponse, get_model_config
 
 
 def players() -> list[dict[str, str]]:
@@ -54,7 +54,7 @@ class SequenceModelClient:
 
 class LlmParticipantTest(unittest.IsolatedAsyncioTestCase):
     async def test_every_supported_role_has_base_and_task_file(self) -> None:
-        role_directory = Path(__file__).resolve().parents[1] / "werewolf_game" / "prompts" / "roles"
+        role_directory = Path(__file__).resolve().parents[1] / "game" / "prompts" / "roles"
         for role in (
             ROLE_WOLF,
             ROLE_VILLAGER,

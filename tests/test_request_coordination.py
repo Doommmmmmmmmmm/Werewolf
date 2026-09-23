@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from werewolf_game.agents.llm import ModelRequestCoordinator
+from game.agents.llm import ModelRequestCoordinator
 
 
 class BlockingClient:

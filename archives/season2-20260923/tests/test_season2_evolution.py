@@ -6,23 +6,23 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from werewolf_game.season2.archive import EvolutionArchive, NodeStatus, core_snapshot_hash
-from werewolf_game.season2.config import load_season2_config
-from werewolf_game.season2.evolution import EvolutionManager
-from werewolf_game.season2.code_agent import PiServiceUnavailable
-from werewolf_game.season2.evaluator import EvolutionEvaluator
-from werewolf_game.season2.meta_agent import MetaAgent
-from werewolf_game.season2.resources import MetaResourceCatalog
-from werewolf_game.season2.runtime import CandidateModuleLoader
-from werewolf_game.season2.scheduler import EvolutionScheduler
-from werewolf_game.season2.smoke import smoke_test_candidate
-from werewolf_game.season2.validation import (
+from game.season2.archive import EvolutionArchive, NodeStatus, core_snapshot_hash
+from game.season2.config import load_season2_config
+from game.season2.evolution import EvolutionManager
+from game.season2.code_agent import PiServiceUnavailable
+from game.season2.evaluator import EvolutionEvaluator
+from game.season2.meta_agent import MetaAgent
+from game.season2.resources import MetaResourceCatalog
+from game.season2.runtime import CandidateModuleLoader
+from game.season2.scheduler import EvolutionScheduler
+from game.season2.smoke import smoke_test_candidate
+from game.season2.validation import (
     validate_candidate_files,
     validate_candidate_source,
     validate_task_agent_class,
 )
-from werewolf_game import GameEngine, GameRunner, create_rules_for_player_count
-from werewolf_game.season2.runtime import VersionedTaskAgentParticipant
+from game import GameEngine, GameRunner, create_rules_for_player_count
+from game.season2.runtime import VersionedTaskAgentParticipant
 
 
 def write_config(root: Path, *, roles: list[str] | None = None) -> Path:
@@ -233,7 +233,7 @@ class Season2EvolutionTest(unittest.TestCase):
             import unittest.mock
 
             with unittest.mock.patch(
-                "werewolf_game.season2.archive.core_snapshot_hash",
+                "game.season2.archive.core_snapshot_hash",
                 return_value="changed-core",
             ):
                 with self.assertRaisesRegex(ValueError, "Game core 已发生变化"):

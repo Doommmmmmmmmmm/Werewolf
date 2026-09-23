@@ -6,10 +6,10 @@ import importlib.util
 import sys
 from typing import Any
 
-from werewolf_game.agents.participants.base import Participant
-from werewolf_game.agents.participants.llm import TaskModelBoundary
-from werewolf_game.agents.task_agent import DEFAULT_MAX_PROMPT_CHARS
-from werewolf_game.prompts import RoleProfile, RoleProfileStore
+from game.agents.participants.base import Participant
+from game.agents.participants.llm import TaskModelBoundary
+from game.agents.task_agent import DEFAULT_MAX_PROMPT_CHARS
+from game.prompts import RoleProfile, RoleProfileStore
 from .archive import EvolutionArchive
 
 
@@ -28,7 +28,7 @@ class CandidateModuleLoader:
         node = self.archive.node(node_id)
         path = self.archive.node_code_directory(node_id) / "task_agent.py"
         # 候选代码使用 agents 包名加载，使其相对导入能够访问稳定 core 包。
-        module_name = f"werewolf_game.agents._season2_{node.role}_{node.code_hash[:16]}"
+        module_name = f"game.agents._season2_{node.role}_{node.code_hash[:16]}"
         spec = importlib.util.spec_from_file_location(module_name, path)
         if spec is None or spec.loader is None:
             raise RuntimeError(f"无法加载候选模块：{path}")

@@ -148,5 +148,63 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertIn("replace-with-your-key", text)
 
 
+
+class DocsAccuracyTest(unittest.TestCase):
+    """文档里承诺的入口和路径必须真实存在。
+
+    文档失准比没有文档更糟：照着跑不通会直接挡住新用户。
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(__file__).resolve().parents[1]
+
+    def test_readmes_exist(self) -> None:
+        for relative in (
+            "README.md",
+            "game/README.md",
+            "archives/season2-20260923/README.md",
+        ):
+            self.assertTrue((self.root / relative).is_file(), relative)
+
+    def test_documented_entry_points_exist(self) -> None:
+        for name in (
+            "run_scripted_game.py",
+            "run_human_game.py",
+            "run_llm_game.py",
+            "run_web_demo.py",
+            "run_base_games.py",
+        ):
+            self.assertTrue((self.root / "game" / "examples" / name).is_file(), name)
+
+    def test_game_readme_commands_reference_real_paths(self) -> None:
+        text = (self.root / "game" / "README.md").read_text(encoding="utf-8")
+        # 文档用的是 game/examples/... 形式，不能残留旧包名。
+        self.assertIn("python3 game/examples/run_web_demo.py", text)
+        self.assertNotIn("werewolf_game/", text)
+
+    def test_root_readme_links_resolve(self) -> None:
+        import re
+
+        text = (self.root / "README.md").read_text(encoding="utf-8")
+        for target in re.findall(r"\]\(([^)]+\.md)\)", text):
+            self.assertTrue((self.root / target).is_file(), f"失效链接：{target}")
+
+    def test_archive_readme_hash_matches_manifest(self) -> None:
+        import json
+
+        manifest = (
+            self.root
+            / "archives/season2-20260923/records/evolution/archive/manifest.json"
+        )
+        if not manifest.is_file():
+            self.skipTest("归档 records 不在当前磁盘上")
+        expected = json.loads(manifest.read_text(encoding="utf-8"))[
+            "core_snapshot_hash"
+        ]
+        text = (
+            self.root / "archives/season2-20260923/README.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(expected, text, "归档 README 里的哈希与 manifest 不一致")
+
 if __name__ == "__main__":
     unittest.main()

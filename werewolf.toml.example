@@ -1,0 +1,25 @@
+# 狼人杀模型接入配置示例。
+#
+# 复制为 werewolf.toml 后填写。也可以放到 ~/.config/werewolf/config.toml，
+# 或用 WEREWOLF_CONFIG 指定任意路径。
+#
+# 优先级：进程环境变量 > 本文件 > .env
+# 不要把真实密钥提交进版本库。
+
+[model]
+# 模型服务地址与密钥（必填）
+base_url = "https://your-gateway.example.com/v1"
+api_key = "replace-with-your-key"
+
+# 协议：responses / messages / chat_completions
+api_mode = "responses"
+# 可选，覆盖协议默认路径（responses 默认 /responses）
+# api_path = "/responses"
+
+# 局内玩家使用的模型；默认关闭 reasoning，追求速度和成本
+task_model = "qwen3.8-flash"
+
+# 单次回复的输出上限与传输参数
+max_output_tokens = 900
+timeout_ms = 180000
+max_retries = 2

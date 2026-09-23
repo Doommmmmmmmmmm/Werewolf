@@ -620,11 +620,21 @@ class ModelClient:
         mode: str | None = None,
         *,
         profile: str | None = None,
+        overrides: Mapping[str, str] | None = None,
     ) -> "ModelClient":
-        load_dotenv()
+        """按配置解析顺序构造客户端。
+
+        值来自 `game.config.resolve_model_env`：进程环境 > TOML 配置文件 >
+        `.env`（向上查找，不再依赖当前工作目录）。``overrides`` 供代码显式传参。
+        """
+
+        from ...config import resolve_model_env
+
+        values = resolve_model_env(overrides=overrides)
         return cls(
             get_model_config(
-                mode or os.environ.get("DEFAULT_MODEL_MODE", "api"),
+                mode or values.get("DEFAULT_MODEL_MODE", "api"),
+                values,
                 profile=profile,
             )
         )

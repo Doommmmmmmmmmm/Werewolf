@@ -195,13 +195,13 @@ def get_model_config(
         raise ValueError(f"不支持的模型 profile：{profile}")
 
     if normalized_profile == "task":
-        profile_model = first("WEREWOLF_TASK_MODEL") or "qwen3.8-flash"
+        profile_model = first("TASK_MODEL", "WEREWOLF_TASK_MODEL") or "qwen3.8-flash"
         profile_reasoning_effort = (
-            first("WEREWOLF_TASK_REASONING_EFFORT") or "none"
+            first("TASK_REASONING_EFFORT", "WEREWOLF_TASK_REASONING_EFFORT") or "none"
         )
     elif normalized_profile == "meta":
-        profile_model = first("WEREWOLF_META_MODEL")
-        profile_reasoning_effort = first("WEREWOLF_META_REASONING_EFFORT") or None
+        profile_model = first("META_MODEL", "WEREWOLF_META_MODEL")
+        profile_reasoning_effort = first("META_REASONING_EFFORT", "WEREWOLF_META_REASONING_EFFORT") or None
     else:
         profile_model = ""
         profile_reasoning_effort = None
@@ -216,11 +216,24 @@ def get_model_config(
         enable_thinking = boolean("SELF_HOSTED_MODEL_ENABLE_THINKING", False)
         response_limit = number("SELF_HOSTED_MODEL_RESPONSES_MAX_OUTPUT_TOKENS", 0, 0, 32000)
     else:
-        protocol = normalize_protocol(first("API_MODEL_API_MODE", "MODEL_API_MODE"), "responses")
-        model = profile_model or first("API_MODEL_NAME", "OPENAI_MODEL", "MODEL_ID")
-        base_url = first("API_MODEL_BASE_URL", "OPENAI_BASE_URL", "MODEL_BASE_URL")
-        api_key = first("API_MODEL_API_KEY", "OPENAI_API_KEY", "MODEL_API_KEY")
-        api_path = first("API_MODEL_API_PATH", "MODEL_API_PATH")
+        if normalized_profile == "task":
+            protocol = normalize_protocol(first("TASK_API_MODE", "API_MODEL_API_MODE", "MODEL_API_MODE"), "chat_completions")
+            model = profile_model or first("TASK_MODEL", "API_MODEL_NAME", "OPENAI_MODEL", "MODEL_ID")
+            base_url = first("TASK_BASE_URL", "API_MODEL_BASE_URL", "OPENAI_BASE_URL", "MODEL_BASE_URL")
+            api_key = first("TASK_API_KEY", "API_MODEL_API_KEY", "OPENAI_API_KEY", "MODEL_API_KEY")
+            api_path = first("TASK_API_PATH", "API_MODEL_API_PATH", "MODEL_API_PATH")
+        elif normalized_profile == "meta":
+            protocol = normalize_protocol(first("META_API_MODE", "WEREWOLF_META_API_MODE", "API_MODEL_API_MODE", "MODEL_API_MODE"), "chat_completions")
+            model = profile_model or first("META_MODEL", "API_MODEL_NAME", "OPENAI_MODEL", "MODEL_ID")
+            base_url = first("META_BASE_URL", "WEREWOLF_META_BASE_URL", "API_MODEL_BASE_URL", "OPENAI_BASE_URL", "MODEL_BASE_URL")
+            api_key = first("META_API_KEY", "WEREWOLF_META_API_KEY", "API_MODEL_API_KEY", "OPENAI_API_KEY", "MODEL_API_KEY")
+            api_path = first("META_API_PATH", "WEREWOLF_META_API_PATH", "API_MODEL_API_PATH", "MODEL_API_PATH")
+        else:
+            protocol = normalize_protocol(first("API_MODEL_API_MODE", "MODEL_API_MODE"), "responses")
+            model = profile_model or first("API_MODEL_NAME", "OPENAI_MODEL", "MODEL_ID")
+            base_url = first("API_MODEL_BASE_URL", "OPENAI_BASE_URL", "MODEL_BASE_URL")
+            api_key = first("API_MODEL_API_KEY", "OPENAI_API_KEY", "MODEL_API_KEY")
+            api_path = first("API_MODEL_API_PATH", "MODEL_API_PATH")
         requires_api_key = True
         # The Task profile explicitly disables thinking.  Meta keeps the
         # provider's original behavior unless its protocol has a dedicated

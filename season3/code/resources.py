@@ -10,7 +10,7 @@ from typing import Any
 
 from game.prompts import RoleProfileStore
 from .archive import EvolutionArchive
-from .config import Season2Config
+from .config import Season2Config, base_role_for
 
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -75,7 +75,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "read_previous_diagnosis": {
         "name": "read_previous_diagnosis",
-        "description": "读取同角色某节点关联的历史诊断。",
+        "description": "读取同角色某节点关联的历史诊断。注意：历史诊断仅供对照证伪，严禁直接照抄其假设，必须以实际对局事实为准。",
         "parameters": {
             "type": "object",
             "properties": {"node_id": {"type": "string"}},
@@ -115,7 +115,7 @@ class MetaResourceCatalog:
         self.config = config
         self.archive = archive
         self.node = archive.node(node_id)
-        self.profile = RoleProfileStore().profile(self.node.role)
+        self.profile = RoleProfileStore().profile(base_role_for(self.node.role))
         self.tool_trace: list[dict[str, Any]] = []
         # 分支扩展时由调用方提前选定一局，保证同一批诊断各自使用不同回放。
         self.required_replay_item = required_replay_item
@@ -152,6 +152,7 @@ class MetaResourceCatalog:
             return json.dumps(
                 {
                     "role": self.node.role,
+                    "base_role": base_role_for(self.node.role),
                     "team_goal": "wolf 获得狼人阵营胜利；其他角色获得好人阵营胜利",
                     "role_rule": self.profile.base,
                     "task": (self.archive.node_code_directory(self.node.node_id) / "task.md").read_text(encoding="utf-8"),
@@ -310,7 +311,7 @@ class MetaResourceCatalog:
         }
 
     def _random_game_replay(self) -> dict[str, Any]:
-        """读取本次诊断指定的一局完整回放。"""
+        """读取本次诊断指定的一局完整回放。优先选取失败对局以打破自满/自指偏见。"""
 
         if self.required_replay_item is not None:
             return self._load_replay_item(self.required_replay_item, selection="preselected")
@@ -331,14 +332,21 @@ class MetaResourceCatalog:
                 "reason": "当前节点尚无可用评测回放；应先完成基线评测",
                 "node_id": self.node.node_id,
             }
+
+        # 优先从失败对局中抽取回放，以便诊断真实失败原因
+        loss_candidates = [c for c in candidates if not c.get("focus_won", False)]
+        target_pool = loss_candidates if loss_candidates else candidates
+
         seed_text = f"{self.config.evolution.random_seed}:{self.node.node_id}:required-replay"
         selected = random.Random(
             int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest(), 16)
-        ).choice(sorted(candidates, key=lambda item: int(item.get("game_index", 0))))
+        ).choice(sorted(target_pool, key=lambda item: int(item.get("game_index", 0))))
         return self._load_replay_item(selected, selection="deterministic_random", seed_text=seed_text)
 
     def select_random_replay_items(self, count: int) -> list[dict[str, Any]]:
-        """无放回抽样指定数量的评测条目，供一次多分支扩展使用。"""
+        """无放回抽样指定数量的评测条目，供一次多分支扩展使用。
+        尽量配对胜负局（若存在负局则保证至少包含负局），提供对比证据以打破自指循环。
+        """
 
         summary = self._evaluation_summary()
         results = summary.get("results") if isinstance(summary, dict) else None
@@ -358,6 +366,25 @@ class MetaResourceCatalog:
             )
         seed_text = f"{self.config.evolution.random_seed}:{self.node.node_id}:expansion-replays"
         rng = random.Random(int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest(), 16))
+
+        # 区分胜局与负局
+        losses = [c for c in candidates if not c.get("focus_won", False)]
+        wins = [c for c in candidates if c.get("focus_won", False)]
+
+        # 如果同时存在胜负局且 requested >= 2，尽量进行胜负配对采样
+        if losses and wins and requested >= 2:
+            num_losses = max(1, min(len(losses), requested // 2))
+            num_wins = requested - num_losses
+            if num_wins > len(wins):
+                # 胜局不足以填满剩余名额，多用负局
+                num_wins = len(wins)
+                num_losses = requested - num_wins
+            sampled_losses = rng.sample(losses, num_losses)
+            sampled_wins = rng.sample(wins, num_wins)
+            combined = sampled_losses + sampled_wins
+            rng.shuffle(combined)
+            return combined
+
         return rng.sample(candidates, requested)
 
     def _load_replay_item(
@@ -411,7 +438,14 @@ class MetaResourceCatalog:
             return {"error": "只能读取当前角色的诊断"}
         if not node.diagnosis_path or not Path(node.diagnosis_path).exists():
             return {"error": "该节点没有关联诊断"}
-        return json.loads(Path(node.diagnosis_path).read_text(encoding="utf-8"))
+        raw_diagnosis = json.loads(Path(node.diagnosis_path).read_text(encoding="utf-8"))
+        return {
+            "warning": (
+                "【严格警示】：历史诊断仅用于对照与证伪，绝不可在没有本轮对局证据支持的情况下重复其归因与结论。"
+                "你必须根据实际对局回放和指标独立推导因果。"
+            ),
+            "historical_diagnosis": raw_diagnosis,
+        }
 
     def _tool_list_skills(self, arguments: dict[str, Any]) -> object:
         del arguments
@@ -462,4 +496,20 @@ class MetaResourceCatalog:
         path = Path(self.node.evaluation_summary_path)
         if not path.exists():
             return {"node_id": self.node.node_id, "available": False, "missing_path": str(path)}
-        return json.loads(path.read_text(encoding="utf-8"))
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(summary, dict) and "code_budget_status" not in summary:
+            # 增强反向膨胀反馈：在诊断读取评测汇总时直观展现代码与 Prompt 预算健康度
+            code_bytes = summary.get("code_size_bytes")
+            delta_bytes = summary.get("delta_code_bytes")
+            over_limit = summary.get("prompt_over_limit_count", 0)
+            summary["code_budget_status"] = {
+                "code_size_bytes": code_bytes,
+                "delta_code_bytes": delta_bytes,
+                "prompt_over_limit_count": over_limit,
+                "budget_advice": (
+                    "Prompt/代码已出现超限或显著膨胀，请积极重构、删除冗余逻辑与简化 Prompt！"
+                    if (over_limit > 0 or (delta_bytes and delta_bytes > 3000))
+                    else "预算状态正常；可根据需要继续精简或修改。"
+                ),
+            }
+        return summary

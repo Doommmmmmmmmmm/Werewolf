@@ -10,6 +10,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import sys
 from typing import Any
 
 from .archive import EvolutionArchive
@@ -72,12 +73,19 @@ class MetaVersionManager:
             raise FileNotFoundError(f"Meta-Agent 版本目录不存在: {version_dir}")
 
         module_path = version_dir / "meta_agent.py"
-        spec = importlib.util.spec_from_file_location(f"meta_agent_{version_id}", module_path)
+        module_name = f"season3.code._meta_{version_id.replace('-', '_')}"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"无法为 {module_path} 创建 module spec")
 
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        module.__package__ = "season3.code"
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
         meta_agent_cls = getattr(module, "MetaAgent")
 
         # 实例化该版本的 MetaAgent
@@ -114,7 +122,7 @@ class MetaVersionManager:
             f"【当前 Meta-Agent 的代码与提示词】\n"
             f"--- meta_system.txt ---\n{current_system}\n\n"
             f"--- meta_task.txt ---\n{current_task}\n\n"
-            f"--- meta_agent.py (关键实现) ---\n{current_code[:4000]}\n\n"
+            f"--- meta_agent.py (完整代码) ---\n{current_code}\n\n"
             f"【你的任务】\n"
             f"根据事实清单分析 Task-Agent 进化的阻碍（例如：代码是否严重膨胀、Prompt 字符是否超限导致 fallback、是否陷入千篇一律的记忆结构、是否忽略回放对局事实等）。\n"
             f"自主决定如何改进 Meta-Agent 的工作逻辑。你可以重构 meta_system.txt、meta_task.txt 或 meta_agent.py 中的逻辑。\n"
@@ -133,6 +141,11 @@ class MetaVersionManager:
                 max_tokens=self.config.meta.max_output_tokens,
             )
         except Exception as error:
+            from .code_agent import is_quota_exhausted_failure, QuotaExhaustedError
+            if is_quota_exhausted_failure(error):
+                raise QuotaExhaustedError(
+                    f"Meta-Agent 进化模型网关配额用尽（终止进化）：{type(error).__name__}: {error}"
+                ) from error
             report(f"Meta-Agent 进化模型调用失败，沿用当前版本: {error}")
             shutil.rmtree(new_dir, ignore_errors=True)
             return current_v_id
@@ -142,6 +155,15 @@ class MetaVersionManager:
         new_system = response.get("new_meta_system") or current_system
         new_task = response.get("new_meta_task") or current_task
         new_py = response.get("new_meta_agent_py") or current_code
+
+        # 语法校验：若返回了 Python 代码，必须能通过 ast 语法检查
+        if new_py and new_py.strip():
+            import ast
+            try:
+                ast.parse(new_py, filename="meta_agent.py")
+            except SyntaxError as err:
+                report(f"Meta-Agent 生成的代码存在语法错误，回退使用上一代代码: {err}")
+                new_py = current_code
 
         # 写入新版本文件
         (new_dir / "meta_system.txt").write_text(new_system, encoding="utf-8")

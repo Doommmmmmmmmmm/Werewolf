@@ -13,7 +13,7 @@ import shutil
 from typing import Any, Iterable
 
 from game.prompts import PROMPT_DIRECTORY
-from .config import Season2Config
+from .config import Season2Config, base_role_for
 
 
 class NodeStatus(StrEnum):
@@ -149,7 +149,11 @@ class EvolutionArchive:
             directory = self.node_code_directory(node_id)
             directory.mkdir(parents=True, exist_ok=False)
 
+            base_role = base_role_for(role)
             seed_role_dir = seeds_root / role
+            if not seed_role_dir.is_dir() and base_role != role:
+                seed_role_dir = seeds_root / base_role
+
             seed_info_path = seed_role_dir / "seed_info.json"
             source_seed = "base"
             if seed_info_path.is_file():
@@ -168,7 +172,7 @@ class EvolutionArchive:
                 shutil.copy2(seed_role_dir / "task.md", directory / "task.md")
             else:
                 shutil.copy2(
-                    PROMPT_DIRECTORY / "roles" / role / "task.md", directory / "task.md"
+                    PROMPT_DIRECTORY / "roles" / base_role / "task.md", directory / "task.md"
                 )
 
             node = EvolutionNode(

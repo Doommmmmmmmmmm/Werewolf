@@ -60,24 +60,13 @@ async def main() -> None:
         return
 
     # 2. 模型配置解析与客户端初始化
-    # Task 局内模型使用 qwen3.8-flash，Meta/Pi 模型使用 gemini-3.8-flash
-    task_env = resolve_model_env(overrides={
-        "WEREWOLF_MODEL_NAME": "qwen3.8-flash",
-        "WEREWOLF_MODEL_API_MODE": "chat_completions",
-        "WEREWOLF_MODEL_API_PATH": "/chat/completions",
-        "WEREWOLF_TASK_MODEL": "qwen3.8-flash",
-        "WEREWOLF_TASK_REASONING_EFFORT": "none",
-    })
-    meta_env = resolve_model_env(overrides={
-        "WEREWOLF_MODEL_NAME": "gemini-3.8-flash",
-        "WEREWOLF_MODEL_API_MODE": "chat_completions",
-        "WEREWOLF_MODEL_API_PATH": "/chat/completions",
-        "WEREWOLF_META_MODEL": "gemini-3.8-flash",
-        "WEREWOLF_META_REASONING_EFFORT": "none",
-    })
-
-    task_client = ModelClient.from_env(env=task_env, profile="task")
-    meta_client = ModelClient.from_env(env=meta_env, profile="meta")
+    # Task 局内模型与 Meta 诊断模型均由 .env / 进程环境变量配置提供
+    task_client = ModelClient.from_env(
+        profile="task",
+    )
+    meta_client = ModelClient.from_env(
+        profile="meta",
+    )
 
     coordinator = ModelRequestCoordinator(
         max_in_flight=config.evaluation.model_max_in_flight

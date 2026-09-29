@@ -30,8 +30,38 @@ class PiServiceUnavailable(RuntimeError):
     """
 
 
+class QuotaExhaustedError(RuntimeError):
+    """网关额度/配额耗尽不可恢复错误。
+
+    此类错误意味着底层模型服务已无可用额度（例如 403 quota_exceeded 或 daily quota exhausted），
+    不能视作候选策略失败或普通可恢复错误，必须立即中断整个自进化流程退出。
+    """
+
+
+def is_quota_exhausted_failure(value: object) -> bool:
+    """识别网关配额/额度用尽错误。"""
+    text = str(value).lower()
+    return any(
+        marker in text
+        for marker in (
+            "quota_exceeded",
+            "quota exceeded",
+            "quota exhausted",
+            "daily quota",
+            "insufficient quota",
+            "aigw_group_daily_quota_exceeded",
+            "额度限制",
+            "额度已用尽",
+            "配额不足",
+            "配额已用尽",
+        )
+    )
+
+
 def is_transient_service_failure(value: object) -> bool:
     text = str(value).lower()
+    if is_quota_exhausted_failure(text):
+        return False
     return any(
         marker in text
         for marker in (
@@ -82,6 +112,10 @@ class PiCodeAgent:
                     ) + "\n",
                     encoding="utf-8",
                 )
+                if is_quota_exhausted_failure(error):
+                    raise QuotaExhaustedError(
+                        f"Pi 外部网关配额用尽（终止进化）：{type(error).__name__}: {error}"
+                    ) from error
                 if is_transient_service_failure(error) and attempt < self.config.pi.max_attempts:
                     await asyncio.sleep(self._retry_delay(attempt))
                 continue
@@ -99,6 +133,10 @@ class PiCodeAgent:
                 ) + "\n",
                 encoding="utf-8",
             )
+            if is_quota_exhausted_failure(result.stderr) or is_quota_exhausted_failure(result.stdout):
+                raise QuotaExhaustedError(
+                    f"Pi 外部网关配额用尽（终止进化）：{result.stderr[-1000:]}"
+                )
             if result.returncode == 0:
                 validate_candidate_files(workspace, self.config.pi.allowed_files)
                 validate_candidate_source(workspace)
@@ -111,6 +149,10 @@ class PiCodeAgent:
 
         if last_result is None:
             assert last_error is not None
+            if is_quota_exhausted_failure(last_error):
+                raise QuotaExhaustedError(
+                    f"Pi 外部网关配额用尽（终止进化）：{type(last_error).__name__}: {last_error}"
+                ) from last_error
             if is_transient_service_failure(last_error):
                 raise PiServiceUnavailable(
                     f"Pi 外部服务暂时不可用（已尝试 {self.config.pi.max_attempts} 次）："
@@ -121,6 +163,12 @@ class PiCodeAgent:
                 f"{type(last_error).__name__}: {last_error}"
             ) from last_error
         assert last_result is not None
+        if is_quota_exhausted_failure(last_result.stderr) or is_quota_exhausted_failure(
+            last_result.stdout
+        ):
+            raise QuotaExhaustedError(
+                f"Pi 外部网关配额用尽（终止进化）：{last_result.stderr[-1000:]}"
+            )
         if is_transient_service_failure(last_result.stderr) or is_transient_service_failure(
             last_result.stdout
         ):
@@ -142,12 +190,19 @@ class PiCodeAgent:
         # 延迟导入，避免未启用 Pi 的普通游戏/测试进程加载进程管理模块。
         import os
         import subprocess
+        from game.config import resolve_model_env
 
         command = self._command(workspace, prompt)
+        merged_env = {**os.environ, **resolve_model_env()}
+        # 兼容 PI_API_KEY 与历史 PI_OPENAI_API_KEY
+        if "PI_API_KEY" in merged_env:
+            merged_env.setdefault("PI_OPENAI_API_KEY", merged_env["PI_API_KEY"])
+        if "PI_BASE_URL" in merged_env:
+            merged_env.setdefault("PI_OPENAI_BASE_URL", merged_env["PI_BASE_URL"])
         environment = {
-            name: os.environ[name]
+            name: merged_env[name]
             for name in self.config.pi.environment_allowlist
-            if name in os.environ
+            if name in merged_env
         }
         # 非 bwrap 模式下直接把本机 Pi 配置目录交给 Pi；目录本身仍由外部配置决定。
         if self.config.pi.agent_dir:
@@ -180,9 +235,12 @@ class PiCodeAgent:
         executable = Path(base_command[0])
         if not executable.is_absolute():
             executable = pi_root / executable
+        model_name = pi.model
+        if model_name and "/" not in model_name:
+            model_name = f"youdao/{model_name}"
         args = [str(executable), *base_command[1:], "--print", "--no-session", "--no-approve"]
-        if pi.model:
-            args.extend(("--model", pi.model))
+        if model_name:
+            args.extend(("--model", model_name))
         args.append(prompt)
         if not pi.use_bwrap:
             # 关闭 bwrap 只适合受控开发机；真实实验建议保持默认隔离。
@@ -205,8 +263,8 @@ class PiCodeAgent:
         except ValueError as error:
             raise ValueError("启用 bwrap 时，Pi 可执行文件必须位于 paths.pi_root 内") from error
         sandbox_args = [f"/pi/{relative_executable.as_posix()}", *base_command[1:], "--print", "--no-session", "--no-approve"]
-        if pi.model:
-            sandbox_args.extend(("--model", pi.model))
+        if model_name:
+            sandbox_args.extend(("--model", model_name))
         sandbox_args.append(prompt)
         node_root = pi.node_bin.resolve().parent.parent
         try:

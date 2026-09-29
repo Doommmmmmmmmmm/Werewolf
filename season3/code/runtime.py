@@ -11,6 +11,7 @@ from game.agents.participants.llm import TaskModelBoundary
 from game.agents.task_agent import DEFAULT_MAX_PROMPT_CHARS
 from game.prompts import RoleProfile, RoleProfileStore
 from .archive import EvolutionArchive
+from .config import base_role_for
 
 
 class CandidateModuleLoader:
@@ -124,10 +125,10 @@ class VersionedTaskAgentParticipant(Participant):
         except KeyError as error:
             raise ValueError(f"本局没有为角色 {role} 分配候选节点") from error
         node = self.archive.node(node_id)
-        if node.role != role:
+        if base_role_for(node.role) != base_role_for(role):
             raise ValueError(f"节点 {node_id} 属于 {node.role}，不能分配给 {role}")
         # 固定 base 规则仍从主项目读取，候选只替换可进化的 task/代码部分。
-        base_profile = self.profile_store.profile(role)
+        base_profile = self.profile_store.profile(base_role_for(role))
         task = (
             self.archive.node_code_directory(node_id) / "task.md"
         ).read_text(encoding="utf-8").strip()

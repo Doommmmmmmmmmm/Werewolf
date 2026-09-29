@@ -83,16 +83,33 @@
 
 ---
 
-## 4. 事后检验与结论判定
+## 5. 运行与操作命令
 
-实验全程由系统自主推进。在设定的总预算（如跑完预定的 Epoch 数量）结束后，统一进行全量离线分析：
+实验运行所需的依赖与环境由仓库根目录下的 `.env` 提供（包含且仅包含 `TASK_*`、`META_*`、`PI_*` 三组模型配置）。
 
-1. **整体强度曲线**：
-   - 提取全部对局记录，使用相同的 Logistic 团队模型做全局拟合；
-   - 检验：随 Epoch 演进，各角色 Task-Agent 的真实强度（相对 S2 起点）是否呈现自发上升趋势？
-2. **Meta 层的自主调优能力**：
-   - 分析历代 Meta-Agent 修改 `meta_prompt.md` 和配置的轨迹；
-   - 观察其是否自发展现出对膨胀的抑制、对真实战术的探索、以及对特定失败模式的自愈能力。
-3. **最终结论**：
-   - 如果最终节点的综合表现显著优于 S2 起点，且全过程无人工干预，即证明 Meta-Agent 进化机制的有效性；
-   - 反之，如出现退化或震荡，则完整复盘变异轨迹，作为后续算法迭代的严谨实证依据。
+### 5.1 全新初始化（仅在清空重置或首次部署时使用）
+
+如果需要彻底重置 Season 3 的进化树与评测数据：
+
+```bash
+# 1. 清空旧实验记录（归档树与评测数据）
+rm -rf season3/records/season3/evolution/archive
+rm -rf season3/records/season3/evolution/evaluations
+rm -rf season3/records/season3/evolution/operations
+
+# 2. 执行全新纯净初始化（生成 12 角色基线种子、meta-v000 与 manifest 冻结快照，不调用大模型）
+python season3/run_season3_evolution.py --config season3/configs/season3.json --initialize-only
+```
+
+### 5.2 启动/恢复进化
+
+正常推进 Season 3 自动化进化（支持随时中途停机，下次启动时会自动断点续传）：
+
+```bash
+# 推进指定步数（例如推进 12 步）
+python season3/run_season3_evolution.py --config season3/configs/season3.json --steps 12
+
+# 后台不挂断运行（推荐）
+nohup python season3/run_season3_evolution.py --config season3/configs/season3.json --steps 120 > season3_evolution.log 2>&1 &
+```
+

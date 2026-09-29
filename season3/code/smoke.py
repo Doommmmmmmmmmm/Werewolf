@@ -9,7 +9,7 @@ from game.core.engine import GameEngine
 from game.core.rules import create_rules_for_player_count
 from game.core.runner import GameRunner
 from .archive import EvolutionArchive
-from .config import Season2Config
+from .config import Season2Config, base_role_for, SEAT_SLOTS_12
 from .runtime import CandidateModuleLoader, VersionedTaskAgentParticipant
 
 
@@ -78,26 +78,54 @@ async def smoke_test_candidate(
         {"id": f"p{index}", "name": f"P{index}"}
         for index in range(1, config.evaluation.player_count + 1)
     ]
-    loader = CandidateModuleLoader(archive)
-    model = ContractSmokeModel()
-    participants = {
-        player["id"]: VersionedTaskAgentParticipant(
-            player_id=player["id"],
-            model_client=model,
-            role_nodes=role_nodes,
-            archive=archive,
-            module_loader=loader,
-            max_decision_retries=0,
-            max_tool_calls_per_decision=0,
-        )
-        for player in players
-    }
+    is_seat_slot_mode = (
+        config.evaluation.player_count == 12
+        and not config.evaluation.optional_roles
+        and any(p in SEAT_SLOTS_12 and SEAT_SLOTS_12[p] == focus.role for p in SEAT_SLOTS_12)
+    )
+    if is_seat_slot_mode:
+        fixed_roles: dict[str, str] | None = {
+            seat: base_role_for(slot_role) for seat, slot_role in SEAT_SLOTS_12.items()
+        }
+        loader = CandidateModuleLoader(archive)
+        model = ContractSmokeModel()
+        participants = {
+            player["id"]: VersionedTaskAgentParticipant(
+                player_id=player["id"],
+                model_client=model,
+                role_nodes={
+                    base_role_for(SEAT_SLOTS_12[player["id"]]): role_nodes[SEAT_SLOTS_12[player["id"]]]
+                },
+                archive=archive,
+                module_loader=loader,
+                max_decision_retries=0,
+                max_tool_calls_per_decision=0,
+            )
+            for player in players
+        }
+    else:
+        fixed_roles = None
+        loader = CandidateModuleLoader(archive)
+        model = ContractSmokeModel()
+        participants = {
+            player["id"]: VersionedTaskAgentParticipant(
+                player_id=player["id"],
+                model_client=model,
+                role_nodes=role_nodes,
+                archive=archive,
+                module_loader=loader,
+                max_decision_retries=0,
+                max_tool_calls_per_decision=0,
+            )
+            for player in players
+        }
     report = await GameRunner(
         engine=GameEngine(
             game_id=f"smoke-{focus_node_id}",
             players=players,
             rules=rules,
             seed=f"smoke-{focus_node_id}",
+            fixed_roles=fixed_roles,
         ),
         participants=participants,
         record_store=False,

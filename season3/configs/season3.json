@@ -1,5 +1,5 @@
 {
-  "说明": "Season 2 Task-Agent 自进化实验配置。带下划线或说明字样的字段仅用于阅读，不参与运行逻辑。初始化 archive 后，实际配置会被冻结。",
+  "说明": "Season 3 Agent 自进化实验配置。带下划线或说明字样的字段仅用于阅读，不参与运行逻辑。初始化 archive 后，实际配置会被冻结。",
   "paths": {
     "说明": "实验产物和运行依赖的路径。相对路径均相对于本配置文件所在目录 configs/ 解析。",
     "参数说明": {
@@ -28,12 +28,18 @@
       "role_scheduler": "角色选择策略；least_evolved_random 优先选择累计进化次数较少的角色。"
     },
     "roles": [
-      "wolf",
-      "villager",
+      "wolf_1",
+      "wolf_2",
+      "wolf_3",
+      "wolf_4",
       "seer",
       "witch",
       "guard",
-      "hunter"
+      "hunter",
+      "villager_1",
+      "villager_2",
+      "villager_3",
+      "villager_4"
     ],
     "random_seed": "season3-evolution",
     "max_children_per_node": 3,
@@ -42,7 +48,7 @@
     "max_successful_evolutions_per_role": 20,
     "children_per_expansion": 3,
     "role_scheduler": "least_evolved_random",
-    "epoch_size": 12
+    "epoch_size": 6
   },
   "evaluation": {
     "说明": "Task-Agent 真实对局评测和资源限制。",
@@ -65,13 +71,13 @@
     "games_per_pending_node": 20,
     "player_count": 12,
     "optional_roles": [],
-    "game_concurrency": 8,
-    "model_max_in_flight": 10,
+    "game_concurrency": 10,
+    "model_max_in_flight": 30,
     "decision_timeout_seconds": 180,
     "max_decision_retries": 2,
     "max_tool_calls_per_decision": 5,
     "max_tool_result_tokens": 1000,
-    "max_prompt_chars": 12000,
+    "max_prompt_chars": 15000,
     "max_failed_games": 18,
     "max_fallback_rate": 0.2,
     "max_invalid_decisions": 10,
@@ -87,7 +93,7 @@
       "required_resources": "启动时直接注入 Meta-Agent 的必读资料名称。",
       "enabled_tools": "Meta-Agent 可以按需调用的只读工具白名单。"
     },
-    "max_output_tokens": 4000,
+    "max_output_tokens": 24000,
     "max_tool_calls": 20,
     "max_tool_result_tokens": 8000,
     "max_attempts": 2,
@@ -132,8 +138,8 @@
       "./pi-test.sh"
     ],
     "model": "youdao-chat/gemini-3.8-flash",
-    "node_bin": "../../../../../anaconda3/envs/wolf/bin/node",
-    "agent_dir": "../../../.local/pi",
+    "node_bin": "/ssd15/exec/zhangbo08/anaconda3/envs/wolf/bin/node",
+    "agent_dir": "../../.local/pi",
     "timeout_seconds": 1200,
     "max_attempts": 3,
     "retry_backoff_seconds": 60,
@@ -153,6 +159,10 @@
       "HTTP_PROXY",
       "HTTPS_PROXY",
       "NO_PROXY",
+      "PI_API_KEY",
+      "PI_BASE_URL",
+      "PI_OPENAI_API_KEY",
+      "PI_OPENAI_BASE_URL",
       "OPENAI_API_KEY",
       "ANTHROPIC_API_KEY",
       "ANTHROPIC_OAUTH_TOKEN",

@@ -17,7 +17,7 @@ from game.recording.records import GAMES_PER_ROUND, RoundGameRecordStore
 from game.core.rules import create_rules_for_player_count
 from game.core.runner import GameRunner
 from .archive import EvolutionArchive, EvolutionNode
-from .config import Season2Config
+from .config import Season2Config, base_role_for, SEAT_SLOTS_12
 from .runtime import CandidateModuleLoader, VersionedTaskAgentParticipant
 from .progress import report, report_error
 
@@ -39,13 +39,14 @@ class EvolutionEvaluator:
         rules = create_rules_for_player_count(
             config.evaluation.player_count, config.evaluation.optional_roles
         )
-        missing = sorted(set(config.evolution.roles) - set(rules.role_deck))
+        base_evolution_roles = {base_role_for(r) for r in config.evolution.roles}
+        missing = sorted(base_evolution_roles - set(rules.role_deck))
         if missing:
             raise ValueError(
-                "以下进化角色不在评测牌组中：" + "、".join(missing)
+                "以下进化角色基础身份不在评测牌组中：" + "、".join(missing)
                 + "；请调整 evolution.roles 或 evaluation.optional_roles"
             )
-        uncovered = sorted(set(rules.role_deck) - set(config.evolution.roles))
+        uncovered = sorted(set(rules.role_deck) - base_evolution_roles)
         if uncovered:
             raise ValueError(
                 "评测牌组中的角色没有候选池：" + "、".join(uncovered)
@@ -207,7 +208,7 @@ class EvolutionEvaluator:
         signature = self._evaluation_signature(role_nodes, seed_text)
         return {
             "game_index": game_index,
-            "game_id": f"s2-{node.node_id}-game{game_index}",
+            "game_id": f"s3-{node.node_id}-game{game_index}",
             "seed": seed_text,
             "focus_node": node.node_id,
             "role_nodes": role_nodes,
@@ -301,11 +302,21 @@ class EvolutionEvaluator:
         public_state = snapshot.get("public_state") or {}
         audit_state = snapshot.get("audit_state") or {}
         roles = audit_state.get("roles") if isinstance(audit_state, dict) else {}
-        focus_players = {
-            player_id
-            for player_id, role in (roles.items() if isinstance(roles, dict) else ())
-            if role == node.role
-        }
+        base_role = base_role_for(node.role)
+        is_seat_slot_mode = any(p in SEAT_SLOTS_12 and SEAT_SLOTS_12[p] == node.role for p in SEAT_SLOTS_12)
+        if is_seat_slot_mode:
+            target_players = {p for p, slot in SEAT_SLOTS_12.items() if slot == node.role}
+            focus_players = {
+                player_id
+                for player_id in target_players
+                if (roles.get(player_id) if isinstance(roles, dict) else None) == base_role
+            }
+        else:
+            focus_players = {
+                player_id
+                for player_id, role in (roles.items() if isinstance(roles, dict) else ())
+                if role == base_role
+            }
         events = record.get("events") or []
         runner_events = record.get("runner_events") or []
         focus_errors = [
@@ -330,7 +341,7 @@ class EvolutionEvaluator:
             **assignment,
             "complete": True,
             "winner": public_state.get("winner"),
-            "focus_won": public_state.get("winner") == team_for_role(node.role),
+            "focus_won": public_state.get("winner") == team_for_role(base_role),
             "decision_count": sum(
                 1 for event in events
                 if isinstance(event, dict) and event.get("type") == "ACTION_SUBMITTED"
@@ -392,10 +403,19 @@ class EvolutionEvaluator:
         events = record.get("events") or []
         audit_state = (record.get("final_snapshot") or {}).get("audit_state") or {}
         roles = audit_state.get("roles") if isinstance(audit_state, dict) else {}
-        focus_players = {
-            player_id for player_id, role in (roles.items() if isinstance(roles, dict) else ())
-            if role == node.role
-        }
+        base_role = base_role_for(node.role)
+        is_seat_slot_mode = any(p in SEAT_SLOTS_12 and SEAT_SLOTS_12[p] == node.role for p in SEAT_SLOTS_12)
+        if is_seat_slot_mode:
+            target_players = {p for p, slot in SEAT_SLOTS_12.items() if slot == node.role}
+            focus_players = {
+                player_id for player_id in target_players
+                if (roles.get(player_id) if isinstance(roles, dict) else None) == base_role
+            }
+        else:
+            focus_players = {
+                player_id for player_id, role in (roles.items() if isinstance(roles, dict) else ())
+                if role == base_role
+            }
         runner_events = record.get("runner_events") or []
         focus_errors = [
             item for item in runner_events
@@ -423,7 +443,7 @@ class EvolutionEvaluator:
             "role_nodes": assignment.get("role_nodes", {}),
             "complete": True,
             "winner": winner,
-            "focus_won": winner == team_for_role(node.role),
+            "focus_won": winner == team_for_role(base_role),
             "decision_count": sum(1 for event in events if event.get("type") == "ACTION_SUBMITTED"),
             "fallback_count": 0,
             "fallback_rate": 0.0,
@@ -456,22 +476,50 @@ class EvolutionEvaluator:
             {"id": f"p{index}", "name": f"Player {index}"}
             for index in range(1, self.config.evaluation.player_count + 1)
         ]
-        participants = {
-            player["id"]: VersionedTaskAgentParticipant(
-                player_id=player["id"],
-                model_client=self.model_client,
-                role_nodes=role_nodes,
-                archive=self.archive,
-                module_loader=self.loader,
-                request_coordinator=self.request_coordinator,
-                max_decision_retries=self.config.evaluation.max_decision_retries,
-                max_tool_calls_per_decision=self.config.evaluation.max_tool_calls_per_decision,
-                max_tool_result_tokens=self.config.evaluation.max_tool_result_tokens,
-                max_prompt_chars=self.config.evaluation.max_prompt_chars,
-            )
-            for player in players
-        }
-        game_id = f"s2-{node.node_id}-game{game_index}"
+        is_seat_slot_mode = (
+            self.config.evaluation.player_count == 12
+            and not self.config.evaluation.optional_roles
+            and any(p in SEAT_SLOTS_12 and SEAT_SLOTS_12[p] == node.role for p in SEAT_SLOTS_12)
+        )
+        if is_seat_slot_mode:
+            fixed_roles: dict[str, str] | None = {
+                seat: base_role_for(slot_role) for seat, slot_role in SEAT_SLOTS_12.items()
+            }
+            participants = {
+                player["id"]: VersionedTaskAgentParticipant(
+                    player_id=player["id"],
+                    model_client=self.model_client,
+                    role_nodes={
+                        base_role_for(SEAT_SLOTS_12[player["id"]]): role_nodes[SEAT_SLOTS_12[player["id"]]]
+                    },
+                    archive=self.archive,
+                    module_loader=self.loader,
+                    request_coordinator=self.request_coordinator,
+                    max_decision_retries=self.config.evaluation.max_decision_retries,
+                    max_tool_calls_per_decision=self.config.evaluation.max_tool_calls_per_decision,
+                    max_tool_result_tokens=self.config.evaluation.max_tool_result_tokens,
+                    max_prompt_chars=self.config.evaluation.max_prompt_chars,
+                )
+                for player in players
+            }
+        else:
+            fixed_roles = None
+            participants = {
+                player["id"]: VersionedTaskAgentParticipant(
+                    player_id=player["id"],
+                    model_client=self.model_client,
+                    role_nodes=role_nodes,
+                    archive=self.archive,
+                    module_loader=self.loader,
+                    request_coordinator=self.request_coordinator,
+                    max_decision_retries=self.config.evaluation.max_decision_retries,
+                    max_tool_calls_per_decision=self.config.evaluation.max_tool_calls_per_decision,
+                    max_tool_result_tokens=self.config.evaluation.max_tool_result_tokens,
+                    max_prompt_chars=self.config.evaluation.max_prompt_chars,
+                )
+                for player in players
+            }
+        game_id = f"s3-{node.node_id}-game{game_index}"
         record_store = RoundGameRecordStore(
             evaluation_directory / "games",
             # 每 10 局切分一个记录 round；节点评测结果仍按全局 game 编号保存。
@@ -494,6 +542,7 @@ class EvolutionEvaluator:
                 players=players,
                 rules=rules,
                 seed=seed_text,
+                fixed_roles=fixed_roles,
             )
             report = await GameRunner(
                 engine=engine,
@@ -504,11 +553,20 @@ class EvolutionEvaluator:
             winner = report["public_state"].get("winner")
             errors = report.get("errors", [])
             role_assignments = engine.role_assignments()
-            focus_players = {
-                player_id
-                for player_id, role in role_assignments.items()
-                if role == node.role
-            }
+            base_role = base_role_for(node.role)
+            if is_seat_slot_mode:
+                target_players = {p for p, slot in SEAT_SLOTS_12.items() if slot == node.role}
+                focus_players = {
+                    player_id
+                    for player_id in target_players
+                    if role_assignments.get(player_id) == base_role
+                }
+            else:
+                focus_players = {
+                    player_id
+                    for player_id, role in role_assignments.items()
+                    if role == base_role
+                }
             focus_errors = [
                 item for item in errors
                 if str(item.get("player_id", "")) in focus_players
@@ -528,7 +586,7 @@ class EvolutionEvaluator:
                 **assignment,
                 "complete": winner in {"wolf", "village"},
                 "winner": winner,
-                "focus_won": winner == team_for_role(node.role),
+                "focus_won": winner == team_for_role(base_role),
                 "decision_count": report.get("decision_count", 0),
                 "fallback_count": report.get("fallback_count", 0),
                 "fallback_rate": report.get("fallback_rate", 0.0),
@@ -545,6 +603,12 @@ class EvolutionEvaluator:
                 "model_token_usage": report.get("model_token_usage"),
             }
         except Exception as error:
+            from .code_agent import is_quota_exhausted_failure, QuotaExhaustedError
+            if is_quota_exhausted_failure(error):
+                report_error("评测对局网关配额用尽，硬终止进化", node=node.node_id, game=game_index, error=str(error))
+                raise QuotaExhaustedError(
+                    f"评测对局模型网关配额用尽（硬终止进化）：{type(error).__name__}: {error}"
+                ) from error
             report_error("对局失败", node=node.node_id, game=game_index, error=type(error).__name__)
             result = {
                 **assignment,
@@ -615,10 +679,39 @@ class EvolutionEvaluator:
             )
         if self.config.evaluation.discard_all_losses and complete and wins == 0:
             reasons.append("all_completed_games_lost")
+
+        # 统计代码与 Prompt 膨胀相关指标
+        child_code_bytes = 0
+        node_dir = self.archive.node_code_directory(node.node_id)
+        for allowed_file in self.config.pi.allowed_files:
+            file_path = node_dir / allowed_file
+            if file_path.exists() and file_path.is_file():
+                child_code_bytes += file_path.stat().st_size
+
+        parent_code_bytes = 0
+        delta_code_bytes = 0
+        if node.parent_id:
+            parent_dir = self.archive.node_code_directory(node.parent_id)
+            for allowed_file in self.config.pi.allowed_files:
+                p_file_path = parent_dir / allowed_file
+                if p_file_path.exists() and p_file_path.is_file():
+                    parent_code_bytes += p_file_path.stat().st_size
+            delta_code_bytes = child_code_bytes - parent_code_bytes
+
+        prompt_over_limit_count = 0
+        for item in results:
+            for error in item.get("focus_errors", []):
+                msg = str(error.get("message", ""))
+                if "超过外部上限" in msg or "max_prompt_chars" in msg:
+                    prompt_over_limit_count += 1
+            usage = item.get("model_token_usage") or {}
+            if isinstance(usage, dict):
+                prompt_over_limit_count += int(usage.get("prompt_over_limit_count", 0) or 0)
+
         return {
             "node_id": node.node_id,
             "role": node.role,
-            "team": team_for_role(node.role),
+            "team": team_for_role(base_role_for(node.role)),
             "game_count": len(results),
             "complete_game_count": len(complete),
             "failed_game_count": failed_games,
@@ -629,6 +722,10 @@ class EvolutionEvaluator:
             "fallback_count": fallbacks,
             "fallback_rate": fallback_rate,
             "invalid_decision_count": invalid_decisions,
+            "code_size_bytes": child_code_bytes,
+            "parent_code_size_bytes": parent_code_bytes,
+            "delta_code_bytes": delta_code_bytes,
+            "prompt_over_limit_count": prompt_over_limit_count,
             "quality_scope": "focus_role_only",
             "total_decision_count": total_decisions,
             "total_fallback_count": total_fallbacks,

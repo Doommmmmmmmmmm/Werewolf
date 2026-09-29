@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .archive import EvolutionArchive, NodeStatus
-from .code_agent import PiCodeAgent, PiServiceUnavailable
+from .code_agent import PiCodeAgent, PiServiceUnavailable, QuotaExhaustedError, is_quota_exhausted_failure
 from .config import Season2Config
 from .evaluator import EvolutionEvaluator
 from .meta_agent import MetaAgent
@@ -99,6 +99,8 @@ class EvolutionManager:
                     validate_task_agent_class(candidate_class)
                     report("Pi 修改恢复完成", node=node.node_id)
                     return None
+                except QuotaExhaustedError:
+                    raise
                 except PiServiceUnavailable as error:
                     self._write(
                         operation_directory / "result.json",
@@ -116,6 +118,12 @@ class EvolutionManager:
                         "node_id": node.node_id,
                         "error": f"{type(error).__name__}: {error}",
                     }
+                except Exception as error:
+                    if is_quota_exhausted_failure(error):
+                        raise QuotaExhaustedError(
+                            f"网关配额用尽（硬终止进化）：{type(error).__name__}: {error}"
+                        ) from error
+                    raise
         return None
 
     async def step(self) -> dict[str, Any]:
@@ -309,6 +317,9 @@ class EvolutionManager:
                         }
                     )
                     report("分支完成", child=child.node_id, status=child.status)
+                except QuotaExhaustedError:
+                    report_error("网关配额用尽，硬终止进化", child=child.node_id)
+                    raise
                 except PiServiceUnavailable as error:
                     # 外部服务故障不代表候选策略失败；保留 pending 节点并暂停整个 step。
                     report_error("外部服务不可用，暂停进化", child=child.node_id)
@@ -341,6 +352,11 @@ class EvolutionManager:
                         "branches": branches,
                     }
                 except Exception as error:
+                    if is_quota_exhausted_failure(error):
+                        report_error("网关配额用尽，硬终止进化", child=child.node_id, error=str(error))
+                        raise QuotaExhaustedError(
+                            f"网关配额用尽（硬终止进化）：{type(error).__name__}: {error}"
+                        ) from error
                     report_error("分支失败", child=child.node_id, error=type(error).__name__)
                     child = self.archive.set_status(
                         child.node_id,

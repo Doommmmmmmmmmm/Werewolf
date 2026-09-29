@@ -10,6 +10,45 @@ from typing import Any, Mapping
 from game.core.constants import ALL_ROLES
 
 
+def base_role_for(role: str) -> str:
+    """将席位角色（如 wolf_1, villager_2）或基础角色统一映射到引擎基础角色名。"""
+    if role.startswith("wolf_"):
+        return "wolf"
+    if role.startswith("villager_"):
+        return "villager"
+    return role
+
+
+def is_valid_evolution_role(role: str) -> bool:
+    """检查角色是否为合法的演进角色（基础角色或 12 席位异构化角色）。"""
+    base = base_role_for(role)
+    if base not in ALL_ROLES:
+        return False
+    if role.startswith("wolf_"):
+        suffix = role[len("wolf_") :]
+        return suffix in {"1", "2", "3", "4"}
+    if role.startswith("villager_"):
+        suffix = role[len("villager_") :]
+        return suffix in {"1", "2", "3", "4"}
+    return True
+
+
+SEAT_SLOTS_12: dict[str, str] = {
+    "p1": "wolf_1",
+    "p2": "wolf_2",
+    "p3": "wolf_3",
+    "p4": "wolf_4",
+    "p5": "seer",
+    "p6": "witch",
+    "p7": "guard",
+    "p8": "hunter",
+    "p9": "villager_1",
+    "p10": "villager_2",
+    "p11": "villager_3",
+    "p12": "villager_4",
+}
+
+
 def _mapping(value: object, name: str) -> Mapping[str, Any]:
     # 配置采用严格的对象结构，避免把拼写错误的列表/字符串当成合法配置。
     if not isinstance(value, Mapping):
@@ -48,7 +87,7 @@ class EvolutionConfig:
     max_successful_evolutions_per_role: int
     children_per_expansion: int
     role_scheduler: str
-    epoch_size: int = 12
+    epoch_size: int = 6
 
 
 @dataclass(frozen=True)
@@ -158,7 +197,7 @@ def load_season2_config(path: str | Path) -> Season2Config:
 
     roles = tuple(str(role) for role in evolution.get("roles", sorted(ALL_ROLES)))
     # 角色集合决定 archive 的根结构；未知角色必须在初始化前报错。
-    unknown_roles = sorted(set(roles) - set(ALL_ROLES))
+    unknown_roles = sorted(role for role in roles if not is_valid_evolution_role(role))
     if unknown_roles:
         raise ValueError("evolution.roles 包含未知角色：" + "、".join(unknown_roles))
     if not roles:
@@ -172,6 +211,12 @@ def load_season2_config(path: str | Path) -> Season2Config:
     # Pi 只能修改工作区内的白名单文件，禁止通过绝对路径或 .. 越界。
     if not allowed_files or any(Path(item).is_absolute() or ".." in Path(item).parts for item in allowed_files):
         raise ValueError("pi.allowed_files 必须是候选工作区内的相对路径")
+
+    pi_model = str(pi.get("model", ""))
+    from game.config import resolve_model_env
+    resolved_env = resolve_model_env(start=base)
+    if "PI_MODEL" in resolved_env and resolved_env["PI_MODEL"]:
+        pi_model = resolved_env["PI_MODEL"]
 
     config = Season2Config(
         source_path=source,
@@ -197,7 +242,7 @@ def load_season2_config(path: str | Path) -> Season2Config:
             ),
             children_per_expansion=_positive(evolution.get("children_per_expansion", 4), "children_per_expansion"),
             role_scheduler=role_scheduler,
-            epoch_size=_positive(evolution.get("epoch_size", 12), "epoch_size"),
+            epoch_size=_positive(evolution.get("epoch_size", 6), "epoch_size"),
         ),
         evaluation=EvaluationConfig(
             games_per_pending_node=_positive(evaluation.get("games_per_pending_node", 20), "games_per_pending_node"),
@@ -209,7 +254,7 @@ def load_season2_config(path: str | Path) -> Season2Config:
             max_decision_retries=_positive(evaluation.get("max_decision_retries", 2), "max_decision_retries", allow_zero=True),
             max_tool_calls_per_decision=_positive(evaluation.get("max_tool_calls_per_decision", 5), "max_tool_calls_per_decision", allow_zero=True),
             max_tool_result_tokens=_positive(evaluation.get("max_tool_result_tokens", 800), "max_tool_result_tokens"),
-            max_prompt_chars=_positive(evaluation.get("max_prompt_chars", 12000), "max_prompt_chars"),
+            max_prompt_chars=_positive(evaluation.get("max_prompt_chars", 15000), "max_prompt_chars"),
             max_failed_games=_positive(evaluation.get("max_failed_games", 3), "max_failed_games", allow_zero=True),
             max_fallback_rate=float(evaluation.get("max_fallback_rate", 0.2)),
             max_invalid_decisions=_positive(evaluation.get("max_invalid_decisions", 10), "max_invalid_decisions", allow_zero=True),
@@ -225,7 +270,7 @@ def load_season2_config(path: str | Path) -> Season2Config:
         ),
         pi=PiConfig(
             command=tuple(str(item) for item in pi.get("command", ("./pi-test.sh",))),
-            model=str(pi.get("model", "")),
+            model=pi_model,
             node_bin=(resolve(pi["node_bin"]) if pi.get("node_bin") else None),
             agent_dir=(
                 resolve(pi["agent_dir"])

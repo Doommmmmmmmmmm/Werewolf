@@ -1,0 +1,199 @@
+--- witch-base/task_agent.py
++++ witch-n00029/task_agent.py
+@@ -246,18 +246,19 @@
+ 
+         self._update_private_state(private)
+         system = self._system_prompt(private)
+-        decision_brief = self._witch_decision_summary(turn_packet)
++        request = turn_packet["request"]
++        game = turn_packet["game"]
++        phase_text = str(game.get("public_phase", game.get("phase", request.get("phase", "")))).lower()
++        is_witch_phase = "witch" in phase_text
++        decision_brief = self._witch_decision_summary(turn_packet) if is_witch_phase else None
+         prompt = {
+-            "game": turn_packet["game"],
++            "game": game,
+             "public_rules": turn_packet["public_rules"],
+             "self": turn_packet["self"],
+             "private_information": private,
+             "public_state": turn_packet["public_state"],
+-            "request": turn_packet["request"],
++            "request": request,
+             "compact_memory": self._render_compact_memory(),
+-            "self_resource_state": dict(self._known_private_state),
+-            "decision_brief": decision_brief,
+-            "witch_decision_summary": decision_brief,
+             "speech_safety": (
+                 "所有发言只能基于公开事实；不要把药水余量、夜刀目标、自己未公开的用药结果、"
+                 "或未公开身份链说成既成事实。"
+@@ -269,11 +270,14 @@
+                 "max_tool_result_tokens": self.max_tool_result_tokens,
+             },
+         }
++        if decision_brief is not None:
++            prompt["witch_decision_summary"] = decision_brief
++            prompt["self_resource_state"] = dict(self._known_private_state)
+ 
+         tool_context = turn_packet.get("tool_context") or {}
+         current_dialogue = tool_context.get("current_round_dialogue") or []
+ 
+-        system = system + "\n\n【女巫专用决策规约】\n先看 decision_brief，再复盘最近票型与死亡。救药只救高价值且能改变轮次的目标；毒药只打高置信狼人或悍跳核心；证据不足时默认保留资源。强对跳、平安夜、关键神职死亡或残局时必须重排优先级。公开发言只谈公开信息，不得泄露私密夜间信息。"
++        system = system + "\n\n【女巫专用决策规约】\n夜间女巫阶段才处理药水。首夜有明确合法夜刀目标时优先救人保轮次；后续夜晚关键好人或存活≤7人时也优先救。毒药只打合法高置信嫌疑；存活≤5且救药已交时，可用强冲突/票型高嫌疑收割。白天只谈公开信息，禁止泄露私密夜间信息。"
+ 
+         def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+             del arguments
+@@ -922,11 +926,24 @@
+             add(bucket, 1, "weak_evidence", "ordinary_vote_pressure", vote.get("round"))
+ 
+         result: list[dict[str, Any]] = []
++        alive_count = self._nonnegative_int(board_state.get("alive_count"), fallback=0) or 0
++        poison_available = self._known_private_state.get("poison_available") is True and self._known_private_state.get("poison_used") is not True
++        heal_spent = self._known_private_state.get("antidote_available") is False or self._known_private_state.get("antidote_used") is True
+         for candidate in candidates.values():
+-            # 至少一个硬证据，或两个真正独立的中强来源；普通票和单人质疑不能触发。
+-            candidate["poison_eligible"] = bool(
+-                candidate["hard_evidence"] >= 1 or candidate["independent_support"] >= 2
++            # 常规局面：至少一个硬证据，或两个真正独立的中强来源；普通票和单人质疑不能触发。
++            strict_eligible = candidate["hard_evidence"] >= 1 or candidate["independent_support"] >= 2
++            # 生死残局且救药已交时，允许用强冲突/多轮票压锁定非已知好人的最高嫌疑，避免携毒出局。
++            endgame_eligible = bool(
++                0 < alive_count <= 5
++                and poison_available
++                and heal_spent
++                and not self._is_known_good_public_target(candidate["player_id"], board_state)
++                and candidate["score"] >= 2
++                and (candidate["independent_support"] >= 1 or candidate["weak_evidence"] >= 2)
+             )
++            candidate["poison_eligible"] = bool(strict_eligible or endgame_eligible)
++            if endgame_eligible and not strict_eligible:
++                candidate["reasons"].append("endgame_vote_or_conflict_suspect")
+             candidate["confidence"] = "high" if candidate["poison_eligible"] else "low"
+             result.append(candidate)
+         return sorted(result, key=lambda item: (-int(item["poison_eligible"]), -int(item["score"]), str(item["player_id"])))[:4]
+@@ -972,24 +989,26 @@
+         heal_targets = self._allowed_targets_for_kind(allowed_actions, "heal")
+         poison_targets = self._allowed_targets_for_kind(allowed_actions, "poison")
+         endgame_pressure = self._endgame_pressure(board_state)
++        alive_count = self._nonnegative_int(board_state.get("alive_count"), fallback=0) or 0
++        round_no = self._nonnegative_int(board_state.get("round"), fallback=0) or 0
+         if heal_available and save_priority:
+             top_save = save_priority[0]
+             target_id = self._select_legal_target(top_save.get("player_id"), heal_targets)
+-            if target_id and (endgame_pressure in ("high", "critical") or self._is_high_value_save_target(target_id, board_state)):
+-                return {"kind": heal_kind, "target_id": target_id, "reason": "high_value_save", "confidence": "high", "priority": 1}
++            if target_id and round_no <= 1:
++                return {"kind": heal_kind, "target_id": target_id, "reason": "first_night_preserve_tempo", "confidence": "high", "priority": 1}
++            if target_id and (
++                0 < alive_count <= 7
++                or endgame_pressure in ("high", "critical")
++                or self._is_high_value_save_target(target_id, board_state)
++            ):
++                return {"kind": heal_kind, "target_id": target_id, "reason": "save_private_night_attack", "confidence": "high", "priority": 1}
+         if poison_available and poison_priority:
+             top_poison = poison_priority[0]
+             if top_poison.get("poison_eligible") is True:
+                 target_id = self._select_legal_target(top_poison.get("player_id"), poison_targets)
+                 if target_id:
+                     return {"kind": poison_kind, "target_id": target_id, "reason": ",".join(top_poison.get("reasons", [])) or "high_confidence_wolf", "confidence": "high", "priority": 1}
+-        if heal_available and save_priority:
+-            top_save = save_priority[0]
+-            if int(board_state.get("alive_count") or 0) <= 7:
+-                target_id = self._select_legal_target(top_save.get("player_id"), heal_targets)
+-                if target_id:
+-                    return {"kind": heal_kind, "target_id": target_id, "reason": "endgame_preserve_life", "confidence": "medium", "priority": 2}
+-        # 没有高置信候选时保留唯一毒药，即使处于残局也不因普通票型强行出手。
++        # 没有可用救药或高置信/残局毒药候选时保留资源。
+         if pass_kind:
+             return {"kind": pass_kind, "reason": "evidence_insufficient", "confidence": "low", "priority": 3}
+         if fallback_kind:
+@@ -1004,11 +1023,13 @@
+     def _endgame_pressure(self, board_state: Mapping[str, Any]) -> str:
+         alive = self._nonnegative_int(board_state.get("alive_count"), fallback=0) or 0
+         round_no = self._nonnegative_int(board_state.get("round"), fallback=0) or 0
+-        if alive <= 4 or round_no >= 5:
++        if alive == 0 and round_no == 0:
++            return "low"
++        if 0 < alive <= 4 or round_no >= 5:
+             return "critical"
+-        if alive <= 6 or round_no >= 4:
++        if 0 < alive <= 6 or round_no >= 4:
+             return "high"
+-        if alive <= 8 or round_no >= 3:
++        if 0 < alive <= 8 or round_no >= 3:
+             return "medium"
+         return "low"
+ 
+@@ -1028,6 +1049,37 @@
+         sheriff = board_state.get("sheriff")
+         if isinstance(sheriff, Mapping):
+             if str(sheriff.get("player_id") or sheriff.get("id")) == target:
++                return True
++        return False
++
++    def _is_known_good_public_target(self, player_id: Any, board_state: Mapping[str, Any]) -> bool:
++        """只依据公开且较确定的信息排除残局毒药目标。"""
++        if player_id is None:
++            return False
++        target = str(player_id)
++        if target == self.player_id:
++            return True
++        sheriff = board_state.get("sheriff")
++        if isinstance(sheriff, Mapping) and str(sheriff.get("player_id") or sheriff.get("id")) == target:
++            return True
++
++        claim_sources: list[Mapping[str, Any]] = []
++        for snapshot in self._compact_history[-4:]:
++            if isinstance(snapshot, Mapping):
++                claim_sources.extend(item for item in snapshot.get("claims", []) if isinstance(item, Mapping))
++        if isinstance(board_state.get("claims"), list):
++            claim_sources.extend(item for item in board_state["claims"] if isinstance(item, Mapping))
++
++        good_tokens = {"good", "villager", "seer", "prophet", "witch", "guardian", "平民", "好人", "金水", "预言家", "女巫", "守卫", "猎人"}
++        for claim in claim_sources:
++            subject = claim.get("target_id") or claim.get("claimed_player_id") or claim.get("speaker_id")
++            if str(subject) != target:
++                continue
++            verified = claim.get("verified") is True or claim.get("verification") in (True, "verified")
++            if not verified:
++                continue
++            text = " ".join(str(claim.get(key) or "") for key in ("claimed_role", "claimed_team", "result", "type", "reason")).lower()
++            if any(token in text for token in good_tokens):
+                 return True
+         return False
+ 
+--- witch-base/task.md
++++ witch-n00029/task.md
+@@ -1,21 +1,18 @@
+ # 女巫 Task-Agent 规约
+ 
+-目标：帮助好人获胜，同时严格保密只有女巫可见的药水状态、当夜狼刀目标和用药结果。
++目标：帮助好人获胜，并严格保密女巫私有信息（药水状态、当夜狼刀目标、用药结果）。
+ 
+-## 决策优先级（可执行）
+-1. **资源状态以当前行动包为准**。`antidote_available`、`poison_available` 及其等价别名会被归一化；明确已使用或状态冲突时按不可用处理，未知状态不主动用药。不同 `game_id` 是全新一局，不得沿用上一局记忆。
+-2. **当夜明确狼刀优先于公开推测**。救药只能针对行动包明确提供的当前夜杀目标，且目标必须存活并出现在当前合法 `heal` 目标中；`save_target`、`heal_target` 等不明确字段不能替代夜杀事实。警长、公开神职声明和残局压力只能帮助排序，不能制造夜杀事实。
+-3. **毒药必须达到高置信阈值**：
+-   - 一个公开验证结果或明确公开查杀，或
+-   - 两个真正独立的中强来源，例如独立发言者的强对跳/身份链冲突与相互支持。
+-   公开自称身份不等于验证；普通票型、单人质疑和同一叙事的重复复述都是弱证据，不能单独用毒。
+-4. 目标必须是当前合法、存活且不是自己。首选目标不合法、死亡、缺失或证据不足时**必须选择当前合法的 `pass`/`wait`**，绝不能自动改投合法列表中的第一个人。
+-5. 本地安全层优先于模型建议：只有 `night_witch` 阶段才允许 `heal`/`poison`；救药必须命中明确当前夜杀，毒药必须命中高置信候选。任何闸门失败都选择已有合法的 `pass`/`wait`。
+-6. 默认保药。平安夜、强对跳、关键神职死亡和残局都要重新排序，不要把上一轮模板或重复票型当成新证据。
++## 决策优先级
++1. 资源状态以当前行动包为准；未知、已用或冲突状态都按不可用处理。不同 `game_id` 不沿用记忆。
++2. 只有 `night_witch` 阶段才考虑 `heal`/`poison`；目标必须存活、合法、不是自己，并通过当前 `allowed_actions.target_ids` 校验。
++3. 救药只救行动包明确给出的当前夜杀目标：首夜有合法夜刀目标时优先开药保轮次；后续夜晚目标是关键好人或存活人数 ≤7 时优先救。
++4. 毒药常规门槛：公开验证/明确查杀，或两个独立中强来源（强对跳、身份链冲突等）。玩家自称、单人质疑、普通票型只是弱证据。
++5. 残局（存活 ≤5）且救药已交、毒药可用时，可结合公开强冲突和高票嫌疑毒非已知好人；仍不得毒合法性不足或公开金水/警长等已知好人。
++6. 闸门失败时选择当前合法的 `pass`/`wait`，绝不能自动改投候选列表第一个人。
+ 
+ ## 白天发言保密
+-- 只能谈公开票型、公开发言、公开遗言、公开死亡、公开警徽和公开对跳。
+-- 不得说出药水余量、当夜狼刀目标、是否已用药、私密身份链或未公开夜间结果。
+-- 玩家自称和模型推测必须标为公开推测，不能包装成系统验证事实。
++- 只谈公开票型、公开发言、公开遗言、公开死亡、警徽和公开对跳。
++- 不得泄露药水余量、当夜狼刀目标、是否已用药、未公开身份链或未公开夜间结果。
++- 推测必须标为公开推测，不能包装成系统验证事实。
+ 
+-最终行动仍必须严格符合当前行动包的 JSON 契约；不要改变行动名称、字段、规则或引擎 schema。
++最终行动必须严格符合当前行动包的 JSON 契约；不要改变行动名称、字段或引擎 schema。

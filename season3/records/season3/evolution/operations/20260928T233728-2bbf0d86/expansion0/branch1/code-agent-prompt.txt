@@ -1,0 +1,41 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-base 胜率仅 15%（3胜17负），其核心缺陷在于代码中充斥着臃肿脆弱的字符串规则与错误启发的启发式风险评分树（_scan_guard_signal_tree, _dialogue_text_signals 等）。该评分系统严重混淆了'狼人刀口'与'白天抗推嫌疑位'，将被怀疑（pressure）、被投票（vote）的嫌疑牌赋予极高权重，导致守卫在实战中连续夜间守护被全场怀疑的狼人（如 game15 中夜间保护狼人 p1、p3），致使真预言家与好人接连被屠。方案要求大幅精炼重构，删除 200+ 行冗余启发式代码，建立清晰轻量的神职/警长/金水保护优先级与无连守约束。",
+  "evidence": [
+    "评测汇总显示：guard-base 胜率仅 15% (3/20)，代码大小为 34065 字节，包含复杂的树遍历与关键字匹配，多次出现由于逻辑偏差导致的负向保护。",
+    "Game 15 第1夜（seq 19）：由于首夜信息为空，代码默认按 candidate 列表首项排序，机械保护了 1 号位狼人 p1，导致真女巫 p6 无保护被狼人首夜击杀。",
+    "Game 15 第3夜（seq 218）：白天好人阵营正对狼人 p1 施压质疑，启发式系统将 p1 的 pressure 与 vote 分数累加至最高，守卫代码再次选择守护狼人 p1，导致真预言家 p5 在夜间毫无防备被狼人击杀出局（seq 238）。",
+    "Game 15 第5夜（seq 339）：残局仅剩 5 人时，守卫 p7 再次根据错误的热度/发言压力判定守护了狼人 p3，放空明金水 p8；随后狼人 p3 击杀守卫 p7 并夺得警徽，好人阵营直接溃败。"
+  ],
+  "root_causes": [
+    "概念混淆的启发式评分：_signal_for_key 与 _dialogue_text_signals 将'怀疑(suspect/压票)'、'投票(vote)'赋予正向高分，错把好人白天的出票焦点当成了狼人夜晚的刀口，导致反向保护被质疑的狼人。",
+    "冗余臃肿的代码与决策强覆盖：_scan_guard_signal_tree 和 _repair_guard_decision 实现过于复杂（数百行深度递归提取），并在 _repair_guard_decision 中强行将模型决策篡改为按该错误分数排序的首位目标，剥夺了模型自身的战术推理能力。",
+    "首夜缺乏合理默认保护机制：信息空白时简单取 target_ids 第一项，导致极易固定守护 1 号位，失去首夜博弈意义。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "删除 _scan_guard_signal_tree、_signal_for_key、_ingest_dialogue_entries、_dialogue_text_signals 等冗长复杂的字典与文本递归扫描逻辑（删除约 150-200 行无用代码）。",
+      "rationale": "彻底消除代码熵增与虚假特征累积，避免将全场怀疑的抗推位当成保护目标的致命缺陷。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构守护候选排序与校验逻辑：代码层仅负责严格执行规则边界（过滤上轮保护目标 last_protected_id 杜绝非法连守、合法 target_ids 校验）；若需安全兜底排序，优先提炼警长（sheriff）、明确自报真神职/金水，其余保持模型自主决断，不做强行逆向篡改。",
+      "rationale": "让守卫的守护焦点回归到狼队真正想拔除的领袖牌（预言家、警长、明好人），同时简化控制流。"
+    },
+    {
+      "file": "task.md",
+      "change": "精简更新守卫规程：明确指出'被集中怀疑或票决的焦点牌是放逐嫌疑位，而非狼刀保护位'；明确夜晚优先保护持徽警长、起跳真预言家、金水与关键带队位；非必要不首夜盲盾单一位。",
+      "rationale": "修正 prompt 引导层面的战术理解偏差，确保大模型自身的输出就符合高胜率防刀博弈。"
+    }
+  ],
+  "risks": [
+    "若白天神职完全不亮明身份或出现真假预言家激烈对跳，守卫可能需要在两名竞选者之间做概率判断，需允许模型综合发言逻辑评估，而非用死板硬编码绑死单个玩家。"
+  ],
+  "code_agent_brief": "1. 删减 task_agent.py 中所有以 _scan_guard_signal_tree、_ingest_dialogue_entries、_signal_for_key、_dialogue_text_signals、_player_risk_bucket 等为代表的启发式扫描代码，降低代码体积与熵值。\n2. 重构 _guard_candidate_targets 与 _repair_guard_decision：核心只保留两件事：(a) 严格过滤上一夜守护目标 last_protected_id（除非规则明确允许连守），(b) 仅当模型输出不在合法 target_ids 时才做 fallback 修正。fallback 优先考虑公开警长（sheriff）和存活好人，不得以'被压票/被怀疑'为加分项。\n3. 同步修改 task.md 和 prompt 约束说明，明确纠正'保护被压票点名者'的表述为'保护公认神职、警长、金水与好人领袖，避免浪费盾在白天嫌疑牌上'。"
+}

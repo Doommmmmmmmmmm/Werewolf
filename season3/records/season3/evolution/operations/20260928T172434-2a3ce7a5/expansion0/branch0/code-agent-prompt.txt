@@ -1,0 +1,41 @@
+你正在修改狼人杀角色 villager_1 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "分析 villager_1-base 节点，平民胜率仅 10%（2胜18负），代码体积达到 62938 字节。代码中存在严重的死代码重复（如重复定义 _phase_summary, _render_turn_summary, _render_vote_summary, _rank_candidates, _score_candidate, _snapshot_mapping, _candidate_pool 等近千行冗余函数）。此外，平民在投票逻辑中在信息不足或平票时容易盲目 pass（如第4轮作为警长持有1.5票权重却弃票 pass，导致票型松散），且规则与台账提示过长，增加了超时和决策降级风险。",
+  "evidence": [
+    "task_agent.py 代码大小高达 62938 字节，包含大段完全重复定义的私有方法（例如 _render_turn_summary, _render_vote_summary, _render_speak_summary, _rank_candidates, _score_candidate, _candidate_pool, _extract_public_notes, _snapshot_mapping 等在文件后半段被整段重复粘贴定义了一遍）。",
+    "评测汇总显示 20 局仅胜 2 局（胜率 10.0%），产生 9 次 fallback_action（fallback_rate 7.08%），主要原因为 TimeoutError。",
+    "回放 round1-game0 中，在 seq 319-326 的第 4 轮白天投票中，p9（villager_1）作为警长拥有 1.5 票加权，在面对 p3（狼人）与 p8 的关键抗推轮次时，竟然提交了 pass（弃票），直接将票权浪费，未履行闭眼民清单中‘少弃票’的要求。"
+  ],
+  "root_causes": [
+    "代码重复与体积虚高：task_agent.py 中包含近一倍的机械重复函数定义，拖慢加载和解析，增加了维护成本并占满代码体积。",
+    "公共台账与规则 prompt 冗长导致模型推理超时：每轮 prompt 组装中包含了冗长的台账字符串和重复规则清单，使模型生成变慢，诱发 TimeoutError 进而触发 runner 降级为 pass。",
+    "投票规则中对 pass 的门槛缺乏明确硬性约束：平民在持有警徽或面对明显对抗阵营（如 p3 与 p5/p9 对立）时缺乏果断归票逻辑，导致警徽 1.5 票白白浪费。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "清理 task_agent.py 中的重复代码与冗余死代码定义（删除重复的 _render_turn_summary, _render_vote_summary, _render_speak_summary, _rank_candidates, _score_candidate, _candidate_pool, _extract_public_notes, _walk_public_payload, _snapshot_mapping 等），将代码体积减少 40% 以上。",
+      "rationale": "消除冗余代码，符合 Season 3 防单向膨胀与重构要求，降低代码维护复杂度和运行开销。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "精简 render_villager_decision_checklist 和 _turn_instruction 注入的文本长度，优化公共台账抽取；在候选评分 _score_candidate 中，若玩家身为警长或处于生死决选阶段，禁止将 pass 作为优先选项，强化‘必须选出证据相对较优的一张牌’。",
+      "rationale": "缩短 Prompt 长度降低超时风险；确保平民在持有警徽时不弃票，避免丢失关键好人轮次胜率。"
+    },
+    {
+      "file": "task.md",
+      "change": "精炼 task.md 中的平民任务说明，强化‘警长持有者在白天放逐轮严禁弃票，必须在候选间选出最高疑点者投票’的执行原则，删减泛泛的策略长文。",
+      "rationale": "强化明确的行动契约，压缩冗长指导，提高模型遵循度。"
+    }
+  ],
+  "risks": [
+    "重构删除重复方法时需仔细检查是否有同名但参数/实现不同的方法重载，避免引发 NameError 或 AttributeError。",
+    "强制非 pass 可能会在好人完全无信息时误投到强神，因此投票打分器需确保优先排除金水和已自证强神。"
+  ],
+  "code_agent_brief": "对 villager_1 的 task_agent.py 进行重构与修复：1. 彻底删除文件中重复粘贴的冗余私有方法（包括 _render_turn_summary, _render_vote_summary, _render_speak_summary, _rank_candidates, _score_candidate, _candidate_pool, _extract_public_notes, _snapshot_mapping 等的二次重复声明），大幅精简代码；2. 压缩台账与决策清单的 prompt 长度，防止模型请求超时（TimeoutError）；3. 优化投票辅助逻辑，尤其当自己持有警徽（sheriff）或进入残局时，严格避免投 pass，确保将票投向候选池中疑点分最高的目标。"
+}

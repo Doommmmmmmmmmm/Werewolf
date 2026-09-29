@@ -1,0 +1,41 @@
+你正在修改狼人杀角色 wolf_2 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "分析 wolf_2-base 节点在评测和对局日志中的表现。该节点胜率为 85%（17胜3负），但代码体积较大（约96.5KB），并在夜间杀人投票和白天发言中存在显著的策略与执行脱节：在夜间讨论达成共识后，夜间杀人投票阶段偶发未执行团队锁定目标的情况（如 game9 第 3 夜，讨论一致同意刀 p12，但 p2 最终投票投了 p1；幸因队友 3 票集中才完成击杀）；此外，Prompt 结构中存在冗余重复的字段（state_digest 与 case_summary、wolf_strategy 存在多处数据重叠），日间抗推打法过于单一，容易在好人形成逻辑链时过早暴露团队冲票意图。下一代设计应聚焦于精简冗余 Prompt、增强夜间一致性锁定机制以及优化日间投票跟票逻辑。",
+  "evidence": [
+    "在 random_game_replay（s3-wolf_4-n00001-game9）第 3 轮夜间：seq 225 中 p2 明确发言'同意先p12，p7备。他带队明显，留后手。'，四狼在讨论中全部确认刀 p12；但在 seq 230 的 night_wolf_vote 行动中，p2（即本 Task-Agent）却提交了 target_id='p1'（狼队友），造成狼队分票（3 票 p12，1 票 p1），未能遵从讨论已锁定的共识目标。",
+    "task_agent.py 中 _build_compact_turn_prompt 在打包 prompt 时，同时传入了 state_digest（包含 current_digest、recent_votes、sheriff_changes 等）、case_summary（再次解包 wolf_strategy 和 current_sheriff_id）以及完整 wolf_strategy，造成模型输入中事实数据多处重复，Prompt 字符数在局内峰值达 12249，逼近 15000 字符上限。",
+    "在 _rank_targets 与夜间行动决断中，若模型返回无效决策或非共识目标，本地修复函数 _repair_illegal_target 和夜间目标解析在重试或纠错时未对讨论已锁定的共识目标（locked_target / consensus_target）做严格的强制对齐，导致模型偶尔产生自刀队友或逆共识票。"
+  ],
+  "root_causes": [
+    "夜间投票决断时，虽然在 _build_wolf_strategy 中计算了 locked_plan 和 consensus_target_id，但在生成 turn_instruction 和 action_contract 时，未向模型显式强调'夜间必须投共识锁定目标'；且在校验与修复阶段（_repair_illegal_target），推荐列表仅把 recommended_target_id 作为兜底候选，未优先纠正为 consensus_target_id。",
+    "Prompt 构造机制冗余膨胀：_build_compact_turn_prompt 将 public_state、game、public_ledger、state_digest、case_summary 和 wolf_strategy 分开重复拼装，导致同一个警长变化、死亡名单和投票记录在单次 prompt 中重复出现 3 次以上，不仅消耗上下文，还分散模型对关键决策指令的注意力。",
+    "日间白天投票策略 _build_day_vote_strategy 对场上局势的感知过于依赖静态的 mentions 统计，未充分结合当日公共发言中的'归票/查杀/定狼'等主流风向词，导致狼队在白天容易逆势冲票而暴露身份。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "精简 _build_compact_turn_prompt：删除 case_summary 字段与 state_digest 中的冗余公开发言/自发言重复条目，将核心状态整合为精炼的 public_facts 和 action_plan，压缩整体 prompt 体积 15%-25%。",
+      "rationale": "消除上下文多重冗余，防止 Prompt 接近系统限制（15000 字符），减少无用 token 消耗，提升模型推理聚焦度。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "强化夜间共识锁定与非法/偏移修复逻辑：在 _build_wolf_strategy 的夜间阶段，将 consensus_target 明确指定为 recommended_target_id；在 _repair_illegal_target 以及夜间决策 prompt 指令中，明确夜间投票第一优先级为 consensus_target_id，且严禁将存活狼队友作为刀口（除非所有合法目标均为队友）。",
+      "rationale": "彻底根除第 3 夜出现的'讨论达成共识刀 p12，实际投票分票去投队友 p1'的恶性失误，确保团队夜刀 100% 收敛。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "优化 _build_day_vote_strategy 中的焦点计分与倒钩跟票判定：综合当前轮发言 dialogue_blob 识别真假预言家查杀或好人归票主流，当队友遭遇多数围攻或不可逆定狼时，支持顺势倒钩或优先跟主流好人焦点，避免孤立冲票。",
+      "rationale": "提升白天伪装度与存活率，使公开发言与票型动作一致，避免无意义的自爆式冲票。"
+    }
+  ],
+  "risks": [
+    "若夜间讨论未能提取出有效共识目标（例如首夜队友发言没有号码），夜间收敛算法需平稳回退至高威胁神职/公共目标排序，避免 consensus_target 为 None 导致决断异常。",
+    "重构压缩 prompt 结构时，需确保系统提示中约定的必要上下文字段保持兼容，不能缺失 phase、allowed_actions 或 target_ids。"
+  ],
+  "code_agent_brief": "请对 wolf_2 的 task_agent.py 进行重构与优化：1. 精简 _build_compact_turn_prompt，移除 case_summary 冗余层并精炼 state_digest，压缩 prompt 体积；2. 强化夜间投票对齐逻辑，确保在 night_wolf_vote 阶段严格执行狼队讨论共识 consensus_target，并在 _repair_illegal_target 和决策提示中禁止向存活狼队友分票；3. 改进 _build_day_vote_strategy，引入发言文本中归票主流词匹配，使白天投票更符合倒钩和跟主流生存逻辑。"
+}

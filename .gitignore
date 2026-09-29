@@ -1,0 +1,70 @@
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+# 本机模型接入配置（含 URL 和 key）；示例文件仍然跟踪
+werewolf.toml
+!werewolf.toml.example
+
+# Private keys and credential files
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+secrets*.json
+
+# Repository-specific GitHub deploy credentials
+/.github-werewolf-deploy-key
+/.github-werewolf-deploy-key.pub
+/.github-werewolf-known-hosts
+
+# Runtime output
+records/
+*.log
+/tmp/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Test and coverage output
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python build and packaging output
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local agent and workspace state
+/.agents/
+/.codex/
+/.local/

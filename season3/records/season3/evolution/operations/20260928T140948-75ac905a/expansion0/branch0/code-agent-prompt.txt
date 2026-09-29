@@ -1,0 +1,48 @@
+你正在修改狼人杀角色 villager_3 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager_3-base 存在严重的冗余代码复制（代码体积膨胀至 62KB，半数以上方法重复定义两次）、繁重低效的递归状态抽取与启发式打分，以及高达 8.33% 的执行超时（TimeoutError）退化弃票率。高频的投票超时弃票直接导致关键轮次平票（如 Round 3 的 3:3 平票）并葬送好人局势。下一代需进行彻底的代码重构与去重精简，精简 prompt 与预处理逻辑，降低单次决策开销，消除超时，并强化平民跟从公开查杀链与果断出票的策略。",
+  "evidence": [
+    "read_evaluation_summary 显示当前节点代码体积高达 62938 字节，20 局胜率仅 10% (2/20)，发生 10 次 fallback (fallback_rate=8.33%)，全部为 TimeoutError 导致的超时弃票。",
+    "task_agent.py 源码中存在大段的重复代码粘贴：从第 480 行起，`_candidate_pool`、`_extract_public_notes`、`_walk_public_payload`、`_snapshot_mapping`、`_sort_player_ids`、`_score_candidate` 等数十个方法与前文第 280-470 行完全一模一样，纯属代码单向膨胀与重复定义导致的体积虚高。",
+    "game_replay (game15) 显示 p11 (villager_3) 在 Round 1、Round 3、Round 4 的 day_vote 阶段均因 TimeoutError 触发 fallback_action 变为 pass；其中 Round 3 好人方与狼人形成 3:3 平票（p7 3票 vs p2 3票），p11 超时弃票直接错失放逐狼人 p2 的机会，导致守卫夜间被杀入夜劣势。",
+    "当前 `_walk_public_payload` 和 `_render_turn_summary` 遍历嵌套结构深度达 4 层且对大量文本做多次多模式正则匹配与字符串拼接，且在 decide 中生成过长且重复的说明，导致 LLM 调用响应延迟偏高，极易触发 Runtime 180s 决策超时。"
+  ],
+  "root_causes": [
+    "代码重复与体积恶性膨胀：task_agent.py 存在数百行一字不差的重复方法定义与废弃的方法桩（如空的 `_render_phase_summary`），增加了运行时加载与维护负担，且违反了进化代码整洁性标准。",
+    "台账提取算法过于繁重且臃肿：每轮决策深层遍历公共载荷并进行层层字符串匹配（包括 5 种事件类型正则及多轮启发式加减分），计算冗长，且向 prompt 中注入了大量低质量的候选人分数和解释，稀释了关键查杀链信息。",
+    "模型上下文冗余引发推理延迟：turn_instruction 堆砌了重复的台账摘要、投票参考、发言参考和检查清单，导致 prompt 膨胀，模型输出容易冗长拖沓，在网关负载稍高时频繁突破 180 秒超时阈值被迫 fallback 成 pass。",
+    "缺乏快速决策与果断投票保护：在投票阶段未能优先锁定查杀、明显对跳或高嫌疑目标，未能落实“少弃票”原则，让超时兜底的 pass 成为好人输局的主要推手。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "彻底删除冗余重复代码：清除从 `_collect_claim_block` 开始到文件末尾重复定义的全部冗余函数，保留一套单一、清晰的方法结构，消除重复实现。",
+      "rationale": "落实防单向膨胀与重构要求，代码量预期精简 40% 以上，消除冗余定义，降低维护难度与潜在命名覆盖 bug。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构精简台账提取与候选人生成逻辑：简化 `_walk_public_payload` 和 `_score_candidate`，只针对核心公开事件（死亡公布、查杀/金水自报、投票明细、警徽移交）做单次轻量提取；移除繁复低效的字符串加减分系统，改用直接明确的“已公开查杀/对跳 > 票型异常灰区 > 保护金水与神职”的规则摘要。",
+      "rationale": "降低 Python 层的文本抽取开销，避免不必要的正则计算，同时使注入给 LLM 的摘要更加凝练聚焦于核心查验与票型。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "精简 prompt 结构与 turn_instruction：精简 checklist 和 phase_summary，控制 `validation_feedback` 长度在 500 字符以内；在 day_vote 阶段明确要求模型必须输出有明确 target_id 的投票，禁止主动弃票（除非全场无合法目标）。",
+      "rationale": "缩短 Prompt 长度与 LLM 推理负担，减少请求和生成延时，根治 TimeoutError 导致的 fallback pass。"
+    },
+    {
+      "file": "task.md",
+      "change": "同步更新 task.md 中的平民决策规范：强调投票阶段不可超时与避免弃票，优先遵循真预言家的查杀链及反推冲票狼，发言以言简意赅、逻辑可复盘为主。",
+      "rationale": "使 task 提示与精简后的代码 prompt 保持一致，强化平民在白天的执行效率与协同胜率。"
+    }
+  ],
+  "risks": [
+    "大幅精简启发式打分逻辑后，在极少数完全没有查验信息的平民局中，模型可能需要更多依赖对话历史进行比较；需确保 candidate_pool 依然覆盖全部合法存活目标。",
+    "强调避免弃票可能导致在信息极端模糊时投向好人；但相比超时弃票导致的狼人绑票和平票，果断出票对好人阵营整体胜率收益更确定。"
+  ],
+  "code_agent_brief": "对 villager_3 的 task_agent.py 进行重构与去重：1. 彻底删除第 480 行起重复定义的大段代码（包括重复的 _candidate_pool, _extract_public_notes, _score_candidate, _snapshot_mapping 等全部重复函数），使代码体积显著下降；2. 简化公共台账与事件提取，将深层递归和低效正则精简为轻量的死亡、查杀、金水、票型单次提取；3. 压缩 prompt 文本与 turn_instruction，使单次请求更加精练，严防 TimeoutError；4. 在投票逻辑提示中强制要求根据公开查杀链或最大嫌疑目标给出明确的 target_id，禁止无故 pass 弃票。"
+}

@@ -1,0 +1,47 @@
+你正在修改狼人杀角色 villager_4 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "诊断发现 villager_4-base 胜率仅 5%（1胜19负），且存在 10 次决策超时降级弃票（fallback_rate 6.25%）。核心病因在于：代码库存在近 50% 的巨量完全重复方法定义（文件达 62.9KB），字符串启发式打分机制存在严重反向误判（如否定句匹配），以及每次决策必触发的多轮工具调用导致的 API 往返延迟超时。重构方案执行强减熵：彻底清除重复冗余代码（精简 50% 体积），移除脆弱的子串硬编码打分，简化台账结构，并优化工具调用策略以消除超时降级风险。",
+  "evidence": [
+    "评测汇总显示：20局中仅胜1局（win_rate=0.05），总决策160次中发生10次降级（fallback_count=10, fallback_rate=0.0625），代码体积高达 62938 字节。",
+    "随机回放第4局（round0-game4）中，p12（villager_4）在第3轮白天投票（seq 274）发生 TimeoutError 运行时超时，触发 runner FALLBACK_ACTION 被强制降级为 pass 弃票，而此时好人阵营正合力放逐狼人 p3。",
+    "代码检查显示，task_agent.py 从第 400 行左右开始，将 _collect_claim_block, _public_ledger_snapshot, _render_turn_summary, _rank_candidates, _score_candidate, _snapshot_mapping 等全部辅助解析函数完整重复定义了一遍，构成纯冗余的垃圾代码膨胀。",
+    "_score_candidate 中使用脆弱的子串匹配（如 '狼'、'假'），当好人发言包含 '我不是狼'、'不说假话' 时会被误加疑点分，直接污染 Prompt 中的候选排序输出。"
+  ],
+  "root_causes": [
+    "代码膨胀与极高技术债务：类方法大面积重复粘贴定义（达数百行冗余代码），导致维护熵增并增加解析开销。",
+    "多轮工具调用引发的决策超时：每轮决策首回合无差别挂载受限对话工具，模型必须进行多轮往返调用读取当前轮发言，在复杂对局和网络延迟下极易突破 180s 限制发生 TimeoutError 导致降级弃票。",
+    "反向误导的硬编码启发式打分：_score_candidate 仅凭关键词出现统计评分，无法处理自然语言语义（如否定、转折），导致生成的候选参考排序严重失真，干扰 LLM 正常推理。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "【彻底删除与精简】删除 task_agent.py 尾部重复粘贴的冗余类方法（包括重复的 _collect_claim_block、_render_turn_summary、_phase_summary、_render_vote_summary、_render_speak_summary、_rank_candidates、_score_candidate 等约 300 行代码），将代码体积削减至少 40%。",
+      "rationale": "消除冗余代码与重复定义的技术债务，降低内存占用与执行熵值。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "【重构控制流与精简打分】移除脆弱的 _score_candidate 和 _rank_candidates 关键词启发式打分系统，改为轻量、确定的事实台账提取（存活/死亡列表、查验与金水链、警长持有人、近期投票记录），不再向 Prompt 注入可能存在语义误导的打分列表。",
+      "rationale": "硬编码关键词打分缺乏语义理解能力且易产生反向误导，剔除后将事实整理权与推理判断交还给 LLM，实现逻辑减熵。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "【优化决策耗时与工具调用】在 prompt 构建中直接精炼已有的上下文和台账，在投票等低信息密度阶段或重试会话中避免不必要的工具往返；设置安全超时的工具降级兜底，确保在 180s 决策预算内快速产出合法合规的 JSON 行动，消除 TimeoutError 和 fallback pass。",
+      "rationale": "直接根治回放中观察到的超时降级（TimeoutError 导致的 pass 弃票），保证好人关键轮次票力不流失。"
+    },
+    {
+      "file": "task.md",
+      "change": "【精炼平民任务指令】精简 task.md，强化‘坚决跟从真预言家/持徽金水警长的归票指向，杜绝在残局弃票’的核心好人闭环指引，删去冗长琐碎的分类树描述。",
+      "rationale": "引导模型在阵营领袖（持徽预言家/金水）明确时集中火力放逐查杀与高疑点目标，提高阵营胜率。"
+    }
+  ],
+  "risks": [
+    "删除启发式打分后，模型需要自主从精炼事实台账中对比候选人，若 Prompt 指引不明确可能导致发言关注点分散；需确保精炼台账清晰呈现金水与警徽链条。",
+    "精简工具调用频率时需确保模型依然能获取当前轮关键对话信息，避免因信息缺失造成盲目跟票。"
+  ],
+  "code_agent_brief": "请对 task_agent.py 和 task.md 执行以下精益重构：1. 全面清理 task_agent.py 中的重复定义：彻底删除文件中第二份重复定义的 _collect_claim_block, _public_ledger_snapshot, _phase_summary, _render_turn_summary, _render_vote_summary, _render_speak_summary, _rank_candidates, _least_suspicious_candidate, _score_candidate, _candidate_pool, _extract_public_notes 等所有完全重复的函数，确保每个方法仅保留单一精简版本；2. 重构台账生成逻辑：废除脆弱的关键词包含打分算法（_score_candidate/_rank_candidates），改为清晰简洁的公开事实呈现（存活名单、死亡名单、公认金水/预言家/警长、最新公开票型）；3. 优化 decide 流程：确保工具响应与 prompt 拼接精简快速，杜绝 TimeoutError，确保任何合法行动阶段（尤其是投票阶段）优先输出明确 target_id 而非 pass；4. 更新 task.md，精简 redundant 条款，强化保护金水链、遵从持徽好人归票、严禁关键轮次弃票的纪律。"
+}

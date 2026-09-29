@@ -1,0 +1,49 @@
+你正在修改狼人杀角色 villager_3 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "分析角色 villager_3-base 诊断结果：评测胜率极低（10%），存在 8.33% 的 fallback/超时弃票。代码中存在大量函数重复定义（如 `_collect_claim_block`、`_render_turn_summary`、`_render_vote_summary`、`_render_speak_summary`、`_rank_candidates`、`_least_suspicious_candidate`、`_score_candidate`、`_candidate_pool`、`_extract_public_notes`、`_walk_public_payload`、`_snapshot_mapping`、`_extract_player_ids`、`_collect_id_collection`、`_extract_dead_from_notes`、`_ids_from_text`、`_as_id_set`、`_merge_unique`、`_append_bounded`、`_first_scalar`、`_join_ids`、`_sort_player_ids` 等几乎整段代码重复了两次），导致文件膨胀至 62KB+，且台账生成存在严重逻辑缺陷（如 `p10` 在游戏中读到的台账显示“存活只有 p6”）。同时，启发式打分机制存在严重反向逻辑：在被狼队冲票或自身成为抗推位时盲目反咬好人，导致好人互撕被狼队逐个击破。必须重构精简代码、修复重复定义与台账抽取 bug、强化投票防弃票约束与对局逻辑更新。",
+  "evidence": [
+    "evaluation_summary 显示 villager_3-base 胜率仅 10% (2胜18负)，在 120 次决策中产生 10 次 fallback/超时，fallback 率达 8.33%，代码大小为 62938 字节，膨胀严重。",
+    "检查 current_agent 源码发现，从行 496 之后到行 780 几乎是前文方法的整段重复拷贝（重复定义了 _collect_claim_block, _render_turn_summary, _render_vote_summary, _render_speak_summary, _rank_candidates, _least_suspicious_candidate, _score_candidate, _candidate_pool, _extract_public_notes, _walk_public_payload, _snapshot_mapping 等全部私有方法），属于典型的代码粘连与单向膨胀坏味道。",
+    "在回放 round0-game8 的第 104 步发言中，p11（villager_3-base）发言机械复读并攻击同为好人的 8/9/10，直接被狼人 1/2/3/4 顺水推舟合力抗推出局（第 135 步 p11 获 3 票出局）。",
+    "第 122 步投票中，p11 投了同为村民的 p10，导致好人票型严重分散甚至内讧，加速了狼队的屠民/屠神节奏。",
+    "回放第 183 步中，同款台账抽取导致 p10 抱怨“公共台账写着存活只有p6，可我自己还坐在这儿”，证明公共台账的存活/已死状态提取机制存在逻辑漏洞，向模型输送了错误的断言信息。"
+  ],
+  "root_causes": [
+    "代码重复与单向膨胀：task_agent.py 存在大段整片粘贴的重复实现，使代码体积高达 62KB，不仅容易引发维护不一致，还增加了类加载与解析的潜在开销，属于必须彻底清理的严重工程缺陷。",
+    "台账提取与存活状态更新逻辑脆弱：依靠在 deep walk 中基于键名匹配提取 alive/dead，由于 payload 中各事件结构差异，容易出现集合差集计算失误（例如将仅包含发言者的单人列表错误当成存活全集），导致生成“存活只有1人”等误导性 prompt。",
+    "候选人评分机制过于粗糙脆弱：_score_candidate 仅对关键词进行简单加减分（如遇到'查杀'、'狼'加分，'金水'减分），缺乏对是谁对谁发出的查验声明的主语和真伪校验；在被狼队集火或好人质疑时，打分算法容易把质疑自己的好人推向最高怀疑度，造成第一天互咬出局。",
+    "提示词冗长且对决策缺乏防超时截断：决策清单和指示过长，未能针对投票阶段给出明确的禁止无故弃票和收敛比较的硬约束，导致部分回合思考超时回退为 pass。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "彻底重构并删除所有重复定义的方法，清理重复的 _collect_claim_block, _render_turn_summary, _render_vote_summary 等方法副本，将文件精简规范至单一、清晰的类实现，压缩冗余字符与无用分支。",
+      "rationale": "消除 30KB+ 的纯冗余代码副本，降低代码维护成本，防止出现双重维护与方法覆盖混乱。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构公共台账中的存活与已死名单提取：直接从 public_state 中的 players 列表（检查 alive 字段）作为系统事实的主信源，仅在缺失时才从事件中回退；杜绝从单条发言 mapping 中错误覆盖 alive_ids，保证存活名单与已死名单严格互斥且准确。",
+      "rationale": "修复回放中暴露的“台账记录口径异常、显示存活只有单人”的严重系统事实失真问题，给大模型提供准确的场存活基线。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "优化 render_villager_decision_checklist 和 render_action_contract，压缩 Prompt 字符数：精简决策清单为要点式约束，在投票阶段强约束“禁止主动 pass，必须在候选人中择一票出”，并引导优先跟从可信真预言家/警长归票逻辑，避免平民之间内耗投票。",
+      "rationale": "减少每次调用的 Prompt 上下文负担，杜绝模型产生无意义弃票或犹豫超时，提升好人阵营投票凝聚力。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "优化候选人评分与推荐逻辑（_score_candidate / _render_vote_summary）：区分发言人身份与被评价人，防止仅仅因为出现争议词就给正常发言的好人加怀疑分；降低盲目反咬对跳者的冲动，增加对真预言家金水、警长以及票型异常冲票者的识别权重。",
+      "rationale": "解决 villager_3 第一天就因为被质疑而盲目打反咬、导致好人内讧被狼队冲票放逐的败因。"
+    }
+  ],
+  "risks": [
+    "若重构台账提取过于简化，可能在部分非标事件或测试 mock 中未能解析出存活列表；需保留回退兼容保底逻辑（从 allowed_actions 的 target_ids 中补充合法存活者）。",
+    "强约束投票不可 pass 时，若当前合法动作中仅包含 pass（如某些特殊阶段），必须尊重 allowed_actions 的 schema，不能强行选择不存在的 target_id。"
+  ],
+  "code_agent_brief": "对 villager_3 的 task_agent.py 进行重构与修复：1. 彻底删除类中从第 496 行起的全部大段重复冗余函数，恢复单份干净的 TaskAgent 实现；2. 修复台账状态提取：优先从 turn_packet 的 public_state.players 列表提取准确的存活/死亡玩家名单，杜绝将局部事件误认为存活全集的 bug；3. 简化并压缩 render_villager_decision_checklist 与 action 提示，投票阶段强约束选择合法 target_id，禁止无故 pass；4. 改进候选人排序逻辑，避免仅靠文本关键词匹配把质疑自己的一般好人误判为狼，引导跟随明预言家与警徽链；5. 保持输入输出 contract 与边界完全一致，单次决策 prompt 不得超限。"
+}

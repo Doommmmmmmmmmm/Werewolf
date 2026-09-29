@@ -1,0 +1,46 @@
+你正在修改狼人杀角色 witch 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "诊断角色 witch 的节点 witch-base。该节点评测胜率仅 10% (2/20)，发生 12 次非法/回退决策 (fallback_rate=5.36%)，达到淘汰阈值。核心缺陷在于：1) 白天非女巫阶段仍执行全量夜间毒救推演与跨回合冗余 claims 扫描，叠加 Prompt 双重字段冗余，导致模型调用高频 TimeoutError 触发 fallback；2) 救药与毒药使用门槛过于僵化苛刻（前两夜非已知神职/警长坚决不救，毒药机械要求硬证据），导致女巫在多局中直至被投出或刀死双药仍未开出，好人轮次严重亏损。",
+  "evidence": [
+    "评测汇总数据显示：20 局仅获胜 2 局 (胜率 10.0%)，decision_count=224 中 invalid_decision_count=12，fallback_count=12 (fallback_rate=5.36%)，因 invalid_decisions > 10 被判定为 discarded。",
+    "在 Game 17 回放中，女巫 p6 在第 1 轮 sheriff_election_vote (seq 71/83)、第 3 轮 day_vote (seq 267/283) 及第 4 轮 day_vote (seq 330/338) 连续发生 3 次 TimeoutError 抛出 participant_error，被系统降级为 fallback_action (pass)。",
+    "Game 17 终局审计数据显示：对局持续至第 6 轮，狼人获胜；p6 在第 5 轮被票决出局时，其 role_state 仍为 antidote_available=true, poison_available=true，一次性资源完全闲置损耗。"
+  ],
+  "root_causes": [
+    "无阶段区分的冗余分析与 Prompt 膨胀：在 TaskAgent.decide 中，无论当前是发言、竞选还是白昼投票，均无条件调用 _witch_decision_summary 全量扫描历史 claim_threads 和 board_state；且向 prompt 中重复灌注 decision_brief 与 witch_decision_summary 两份相同对象，使得 token 负载过大、响应延迟飙升，导致 day_vote 多次超时并触发 fallback pass。",
+    "解药判定规则极度保守导致好人失轮次：_recommend_witch_action 规定仅当存活人数<=5 或确认是已知先知/守卫/警长时才救人，首夜或前两夜即使狼刀命中外置位好人也机械执行 pass 保药，错失第一夜黄金轮次优势。",
+    "毒药置信度闸门硬编码断层：_rank_witch_candidates 强制要求 hard_evidence>=1（公开系统查杀）或 independent_support>=2；在先知早亡或狼人倒钩深水的残局中，置信度始终为 low，导致女巫残局不敢开毒甚至盲跟狼人归票好人出局。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "精简 decide 阶段控制流，按当前内部阶段（phase）实施差异化推理：非 night_witch 阶段（白天发言、竞选、白天放逐投票）彻底跳过 _witch_decision_summary 和候选人排序逻辑；删除 prompt 字典中冗余的 decision_brief 重复键与臃肿嵌套。",
+      "rationale": "大幅减少白天决策的 Prompt 字符数与无用计算，直接根治 day_vote 和 sheriff 阶段高频出现的 TimeoutError，将 fallback 降至 0。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _recommend_witch_action 与解药释放策略：首夜（round 1）若收到明确当前夜刀目标且非自救限制，默认积极开药拯救轮次；后续夜间当目标为存活关键正义角色或存活人数<=7 时坚决施救。",
+      "rationale": "避免女巫因过度贪药导致神职或村民首夜猝死，好人从第 1 天起便落入狼人屠边节奏。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "优化毒药决策准入与残局放宽逻辑：在存活人数<=5 的生死残局，若解药已交且存在明确票型倒钩或强冲突嫌疑人，允许降低纯硬验要求，结合白天票型锁定高嫌疑目标；同时保留非女巫夜与不可用时的安全闸门。",
+      "rationale": "使女巫在神职信息断代时具备残局纠错与收割狼人的能力，消除携药出局的被动局面。"
+    },
+    {
+      "file": "task.md",
+      "change": "同步精简规约：明确首夜救药保轮次原则与残局用毒决策优先级，删除多余的说教式重复长句。",
+      "rationale": "使 Agent 的 Prompt 指令与 Python 本地逻辑决策优先级保持严格一致。"
+    }
+  ],
+  "risks": [
+    "首夜积极开药可能会偶发救起自刀狼人（狼人自刀骗药），但标准 12 人局中首夜自刀概率极低，救好人带来的轮次收益远大于风险。",
+    "残局毒药门槛适当放宽可能带来误毒好人风险，需严格通过存活人数限制（<=5 人）及排除已认金水玩家作为前置安全兜底。"
+  ],
+  "code_agent_brief": "请对 witch 角色的 task_agent.py 与 task.md 进行最小闭环重构：\n1. 在 TaskAgent.decide 中，判断若 phase 不包含 'witch'，则不执行 _witch_decision_summary 计算，prompt 中不要传入冗余的 decision_brief、witch_decision_summary 等夜间专用键，移除重复字段，精简 prompt_chars，杜绝超时。\n2. 重构 _recommend_witch_action：首夜（round <= 1）只要 current_attack_target 合法且在 allowed_actions 的 heal 中，直接推荐使用 heal；人数 <= 7 时对合法夜刀目标优先施救。\n3. 在 _rank_witch_candidates 与推荐逻辑中，若进入残局（alive_count <= 5）且 poison_available，若存在高票嫌疑人且非已知好人，将其设为 poison_eligible，避免药水闲置带入坟墓。\n4. 确保所有修改严守输入输出契约与合法 target_ids 校验，不得引入额外网络、进程或外部依赖。"
+}

@@ -1,0 +1,377 @@
+--- wolf_3-base/task_agent.py
++++ wolf_3-n00006/task_agent.py
+@@ -25,7 +25,7 @@
+ CURRENT_ROUND_DIALOGUE_TOOL_NAME = "read_current_round_dialogue"
+ DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5
+ DEFAULT_MAX_TOOL_RESULT_TOKENS = 1000
+-DEFAULT_MAX_PROMPT_CHARS = 12000
++DEFAULT_MAX_PROMPT_CHARS = 8000
+ # 这是 Task-Agent 层的“纠错重试”次数：首次模型调用之外，最多再请求两次。
+ # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。
+ DEFAULT_MAX_DECISION_RETRIES = 2
+@@ -468,18 +468,6 @@
+         memory_snapshot: Mapping[str, Any],
+         current_dialogue: list[dict[str, Any]],
+     ) -> dict[str, Any]:
+-        game = self._compact_snapshot(
+-            turn_packet.get("game"),
+-            preferred_keys=(
+-                "round",
+-                "phase",
+-                "public_phase",
+-                "day",
+-                "night",
+-                "alive_count",
+-                "dead_count",
+-            ),
+-        )
+         request = self._compact_snapshot(
+             turn_packet.get("request"),
+             preferred_keys=(
+@@ -491,45 +479,45 @@
+                 "target_ids",
+                 "speaker_id",
+             ),
++            depth=2,
++            max_items=6,
+         )
+         self_state = self._compact_snapshot(
+             turn_packet.get("self"),
+-            preferred_keys=(
+-                "player_id",
+-                "seat",
+-                "seat_id",
+-                "alive",
+-                "status",
+-                "vote_target",
+-                "speak_order",
+-            ),
++            preferred_keys=("player_id", "seat", "seat_id", "alive", "status"),
++            depth=1,
++            max_items=5,
+         )
+         private_information = self._compact_snapshot(
+             turn_packet.get("private_information"),
+-            preferred_keys=("role", "team", "identity", "faction", "ability"),
++            preferred_keys=("role", "team", "wolf_ids", "wolves", "teammates"),
++            depth=1,
++            max_items=5,
+         )
+         current_digest = self._current_public_state_digest(turn_packet, memory_snapshot)
+         wolf_strategy = self._build_wolf_strategy(
+             turn_packet, memory_snapshot, current_dialogue, current_digest
+         )
+-        state_digest = {
+-            **current_digest,
++        ledger = memory_snapshot.get("public_ledger") or {}
++        table_state = {
++            "round": current_digest.get("round"),
++            "phase": current_digest.get("phase"),
++            "alive": current_digest.get("alive_player_ids", [])[-10:],
++            "dead": current_digest.get("dead_player_ids", [])[-6:],
++            "sheriff": current_digest.get("current_sheriff_id"),
+             "recent_votes": memory_snapshot.get("recent_vote_summary", [])[-2:],
+-            "sheriff_changes": (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:],
+-            "recent_public_texts": memory_snapshot.get("recent_public_texts", [])[-2:],
+-            "recent_self_texts": memory_snapshot.get("recent_self_texts", [])[-2:],
++            "sheriff_changes": ledger.get("sheriff_changes", [])[-2:],
++            "claims": ledger.get("claims", [])[-3:],
++            "recent_public": memory_snapshot.get("recent_public_texts", [])[-2:],
++            "recent_self": memory_snapshot.get("recent_self_texts", [])[-1:],
++            "dialogue_tail": current_dialogue[-2:],
+         }
+         return {
+-            "decision_state": {
+-                "game": game,
+-                "request": request,
+-                "self": self_state,
+-                "private_information": private_information,
+-                "state_digest": state_digest,
+-                "recent_dialogue": current_dialogue[-2:],
+-                "case_summary": self._decision_case_summary(wolf_strategy, current_digest),
+-                "wolf_strategy": wolf_strategy,
+-            }
++            "request": request,
++            "self": self_state,
++            "private": private_information,
++            "table_state": table_state,
++            "strategy": self._compact_strategy(wolf_strategy, current_digest),
+         }
+ 
+     def _build_wolf_strategy(
+@@ -832,6 +820,10 @@
+         dead = set(current_digest.get("dead_player_ids") or [])
+         alive_known = bool(alive)
+         teammates = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        shield_context = self._day_shield_context(
++            turn_packet, memory_snapshot, current_dialogue, current_digest, candidates, records
++        )
++        shielded_targets = set(shield_context.get("shielded_target_ids", []))
+         pressure: list[tuple[int, tuple[int, str], str, str]] = []
+         for pid in candidates:
+             if pid in dead or (alive_known and pid not in alive) or pid == self.player_id:
+@@ -845,10 +837,13 @@
+                 score += min(8, mentions * 2); reasons.append("近期被多人提及")
+             if votes:
+                 score += min(8, votes * 2); reasons.append("票型集中")
+-            if self._public_claim_text(record):
+-                score += 3; reasons.append("公开身份链")
+-            if record.get("is_sheriff") or record.get("sheriff") or pid == current_digest.get("current_sheriff_id"):
+-                score += 3; reasons.append("当前警徽位")
++            if pid in shielded_targets:
++                score -= 18; reasons.append("单预无人对跳避让")
++            else:
++                if self._public_claim_text(record):
++                    score += 1; reasons.append("公开身份链可盘")
++                if record.get("is_sheriff") or record.get("sheriff") or pid == current_digest.get("current_sheriff_id"):
++                    score += 1; reasons.append("警徽链可提但不裸冲")
+             if not reasons:
+                 reasons.append("公共压力较低")
+             pressure.append((score, self._seat_sort_value(record, pid), pid, ",".join(reasons[:3])))
+@@ -867,7 +862,7 @@
+         elif non_wolves:
+             chosen = non_wolves[0]; mode = "pressure_non_wolf"
+         elif pass_kind:
+-            return {"stage": "day_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": list(teammates), "reason": "当前合法目标不足，保留弃票", "teammate_risk": {"alive_wolf_ids": sorted(teammates)}}
++            return {"stage": "day_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": sorted(teammates | shielded_targets), "shielded_target_ids": sorted(shielded_targets), "reason": "当前合法目标不足，保留弃票", "teammate_risk": {"alive_wolf_ids": sorted(teammates)}, "shield_context": shield_context}
+         elif pressure:
+             chosen = pressure[0]; mode = "forced_legal_target"
+         else:
+@@ -878,10 +873,83 @@
+             "recommended_kind": vote_action.get("kind") if vote_action else None,
+             "recommended_target_id": chosen[2] if chosen else None,
+             "backup_target_id": backup[2] if backup else None,
+-            "avoid_target_ids": sorted(teammates),
++            "avoid_target_ids": sorted(teammates | shielded_targets),
++            "shielded_target_ids": sorted(shielded_targets),
+             "mode": mode,
+             "reason": chosen[3] if chosen else "没有可排序的合法目标",
+             "teammate_risk": {"alive_wolf_ids": sorted(teammates), "top_is_teammate": bool(wolf_top), "hard_bus": hard_bus},
++            "shield_context": shield_context,
++        }
++
++    def _day_shield_context(
++        self,
++        turn_packet: Mapping[str, Any],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++        current_digest: Mapping[str, Any],
++        candidates: list[str] | None = None,
++        records: Mapping[str, Mapping[str, Any]] | None = None,
++    ) -> dict[str, Any]:
++        """识别单预言家无狼队对跳时不宜裸冲的坐定目标。"""
++        candidate_set = {str(pid) for pid in (candidates or []) if pid is not None}
++        records = records or {}
++        alive_ids = [str(pid) for pid in current_digest.get("alive_player_ids") or []]
++        alive_set = set(alive_ids)
++        wolf_ids = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        if not alive_set or self.player_id in alive_set:
++            wolf_ids.add(self.player_id)
++        text_items: list[tuple[str | None, str]] = []
++        for item in current_dialogue[-6:]:
++            text = item.get("text") or item.get("content") or item.get("message")
++            speaker = item.get("speaker") or item.get("player_id") or item.get("from")
++            if text:
++                text_items.append((str(speaker) if speaker is not None else None, str(text)))
++        for text in self._recent_public_texts[-4:]:
++            text_items.append((None, str(text)))
++
++        seer_claimers: set[str] = set()
++        for pid, record in records.items():
++            claim = self._public_claim_text(record) or ""
++            if "预言家" in claim:
++                seer_claimers.add(str(pid))
++        for speaker, text in text_items:
++            if speaker and "预言家" in text and not any(word in text for word in ("不是预言家", "非预言家")):
++                seer_claimers.add(speaker)
++
++        wolf_seer_claimers = seer_claimers & wolf_ids
++        single_seer_no_wolf_jump = bool(seer_claimers) and not wolf_seer_claimers
++
++        sheriff_id = current_digest.get("current_sheriff_id")
++        shielded: set[str] = set()
++        gold_water: set[str] = set()
++        if single_seer_no_wolf_jump:
++            if sheriff_id is not None:
++                shielded.add(str(sheriff_id))
++            shielded.update(seer_claimers)
++            for speaker, text in text_items:
++                if seer_claimers and speaker not in seer_claimers and "金水" not in text:
++                    continue
++                if not any(word in text for word in ("金水", "好人", "验了")):
++                    continue
++                for pid in candidate_set or alive_set:
++                    if pid and pid in text and pid not in seer_claimers:
++                        gold_water.add(pid)
++            shielded.update(gold_water)
++        if candidate_set:
++            shielded &= candidate_set
++        if alive_set:
++            shielded &= alive_set
++        wolf_alive = len(wolf_ids)
++        nonwolf_alive = len([pid for pid in alive_set if pid not in wolf_ids])
++        if wolf_alive and nonwolf_alive and wolf_alive >= nonwolf_alive:
++            shielded.clear()
++        return {
++            "single_seer_no_wolf_counterclaim": single_seer_no_wolf_jump,
++            "seer_claimers": sorted(seer_claimers),
++            "gold_water_ids": sorted(gold_water),
++            "shielded_target_ids": sorted(shielded),
++            "wolf_vote_majority": bool(wolf_alive and nonwolf_alive and wolf_alive >= nonwolf_alive),
++            "note": "单预无人对跳且未到狼队票权终局时避让持徽预言家/金水，优先压外置位争议非狼",
+         }
+ 
+     def _build_sheriff_vote_strategy(
+@@ -1326,6 +1394,10 @@
+         current_digest = current_digest or self._current_public_state_digest(turn_packet, memory_snapshot)
+         current_sheriff_id = current_digest.get("current_sheriff_id")
+         dead_ids = {str(pid) for pid in current_digest.get("dead_player_ids") or []}
++        shield_context = self._day_shield_context(
++            turn_packet, memory_snapshot, current_dialogue, current_digest, None, records
++        )
++        shielded_targets = set(shield_context.get("shielded_target_ids", []))
+         candidates: list[dict[str, Any]] = []
+         for pid, record in records.items():
+             if pid == self.player_id:
+@@ -1334,13 +1406,17 @@
+             reasons: list[str] = []
+             if pid in dead_ids or self._is_alive_record(record) is False:
+                 continue
+-            if record.get("is_sheriff") or record.get("sheriff") or pid == current_sheriff_id:
+-                score += 8
+-                reasons.append("当前持徽人")
+             claim_text = self._public_claim_text(record)
+-            if claim_text:
+-                score += 7
+-                reasons.append("公开身份声明")
++            if pid in shielded_targets:
++                score -= 18
++                reasons.append("单预坐定避让")
++            else:
++                if record.get("is_sheriff") or record.get("sheriff") or pid == current_sheriff_id:
++                    score += 1
++                    reasons.append("警徽链可提但不裸冲")
++                if claim_text:
++                    score += 1
++                    reasons.append("公开身份链可盘")
+             vote_count = record.get("vote_count", record.get("votes"))
+             if isinstance(vote_count, int) and vote_count > 0:
+                 score += min(5, vote_count)
+@@ -1353,11 +1429,11 @@
+             if mentions:
+                 score += min(4, mentions)
+                 reasons.append(f"近期被提及{mentions}次")
+-            if any(entry.get("player_id") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("claims", [])[-3:]):
+-                score += 2
++            if pid not in shielded_targets and any(entry.get("player_id") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("claims", [])[-3:]):
++                score += 1
+                 reasons.append("最新身份链")
+-            if any(entry.get("to") == pid or entry.get("from") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:]):
+-                score += 2
++            if pid not in shielded_targets and any(entry.get("to") == pid or entry.get("from") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:]):
++                score += 1
+                 reasons.append("警徽链")
+             candidates.append(
+                 {
+@@ -1393,6 +1469,8 @@
+             "one_sentence_hint": one_sentence_hint,
+             "opening_guard": opening_guard,
+             "candidate_order": candidates[:3],
++            "shielded_target_ids": sorted(shielded_targets),
++            "shield_context": shield_context,
+             "speech_budget": speech_actions[0].get("max_chars") if speech_actions else None,
+         }
+ 
+@@ -1571,44 +1649,48 @@
+         raw_dialogue = tool_context.get("current_round_dialogue") or []
+         return self._summarize_dialogue(raw_dialogue)
+ 
+-    def _decision_case_summary(
++    def _compact_strategy(
+         self,
+         wolf_strategy: Mapping[str, Any],
+         current_digest: Mapping[str, Any] | None = None,
+     ) -> dict[str, Any]:
++        """把策略树压成单层决策摘要，避免 prompt 重复携带完整嵌套。"""
+         stage = str(wolf_strategy.get("stage") or "other")
++        base: dict[str, Any] = {
++            "stage": stage,
++            "objective": wolf_strategy.get("objective"),
++            "mode": wolf_strategy.get("mode"),
++            "sheriff": (current_digest or {}).get("current_sheriff_id"),
++        }
+         if stage == "night":
+-            return {
+-                "mode": "night",
++            base.update({
+                 "primary": wolf_strategy.get("primary_target"),
+                 "backup": wolf_strategy.get("backup_target"),
+-                "discussion_lock": (wolf_strategy.get("discussion_signal") or {}).get("consensus_target"),
+-                "reason": wolf_strategy.get("tie_break_reason"),
+-                "current_sheriff_id": (current_digest or {}).get("current_sheriff_id"),
+-            }
+-        if stage == "day":
+-            day_focus = wolf_strategy.get("day_focus")
+-            if isinstance(day_focus, Mapping):
+-                return {
+-                    "mode": "day",
+-                    "object": day_focus.get("object"),
+-                    "evidence": day_focus.get("evidence"),
+-                    "next_action": day_focus.get("next_action"),
+-                    "opening_guard": day_focus.get("opening_guard"),
+-                    "current_sheriff_id": (current_digest or {}).get("current_sheriff_id"),
+-                }
+-        if stage in {"day_vote", "sheriff_vote"}:
+-            return {
+-                "mode": stage,
+-                "recommended_kind": wolf_strategy.get("recommended_kind"),
+-                "recommended_target_id": wolf_strategy.get("recommended_target_id"),
+-                "backup_target_id": wolf_strategy.get("backup_target_id"),
+-                "avoid_target_ids": wolf_strategy.get("avoid_target_ids", []),
+-                "strategy_mode": wolf_strategy.get("mode"),
++                "lock": (wolf_strategy.get("discussion_signal") or {}).get("consensus_target"),
++                "order": wolf_strategy.get("candidate_order", [])[:3],
++                "notes": wolf_strategy.get("notes", [])[:3],
++            })
++        elif stage == "day":
++            focus = wolf_strategy.get("day_focus") if isinstance(wolf_strategy.get("day_focus"), Mapping) else {}
++            base.update({
++                "focus": focus.get("object"),
++                "evidence": focus.get("evidence"),
++                "next": focus.get("next_action"),
++                "shielded": focus.get("shielded_target_ids", []),
++                "hint": focus.get("one_sentence_hint"),
++                "avoid_templates": wolf_strategy.get("avoid_templates", [])[:3],
++            })
++        elif stage in {"day_vote", "sheriff_vote"}:
++            base.update({
++                "kind": wolf_strategy.get("recommended_kind"),
++                "target": wolf_strategy.get("recommended_target_id"),
++                "backup": wolf_strategy.get("backup_target_id"),
++                "avoid": wolf_strategy.get("avoid_target_ids", [])[:6],
++                "shielded": wolf_strategy.get("shielded_target_ids", [])[:6],
+                 "reason": wolf_strategy.get("reason"),
+-                "current_sheriff_id": (current_digest or {}).get("current_sheriff_id"),
+-            }
+-        return {"mode": stage}
++                "teammate_risk": wolf_strategy.get("teammate_risk"),
++            })
++        return {key: value for key, value in base.items() if value not in (None, [], {})}
+ 
+     def _summarize_sync_packet(self, sync_packet: Mapping[str, Any]) -> dict[str, Any]:
+         if not isinstance(sync_packet, Mapping):
+--- wolf_3-base/task.md
++++ wolf_3-n00006/task.md
+@@ -16,10 +16,11 @@
+ - 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+ - 投票前先区分目标是否属于狼队：除非队友已被硬查杀、票势不可逆或牺牲能换取明确叙事，否则优先把票压向非狼公共焦点；若牺牲队友，下一轮必须能用公开票型自然解释这一步。
++- 单预言家且狼队无人对跳时，严禁裸冲当前持徽预言家、被公认的真预言家和已认证金水；除非已进入狼队票权终局，公开发言和投票应转向外置位划水、推票激进、逻辑矛盾或票型异常的非神好人。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
+ 
+ ## 发言约束
+-- 每次公开发言都要包含：一个具体对象、一个具体证据、一个下一步动作。
++- 每次公开发言都要包含：一个具体对象、一个具体证据、一个下一步动作；单预无人对跳局不要把持徽预言家或金水作为主踩对象，要用外置位发言、票型或身份链矛盾制造抗推焦点。
+ - 同一局里不要连续复用相同开场或同义句，禁止机械模板。
+ - 少说“先听一圈 / 看票型 / 中间位”这类空话，要结合本局具体发言、票型和身份链。
+ - 尽量引用最近一次自发言之外的新证据，避免重复同一套表述。

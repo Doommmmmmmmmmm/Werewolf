@@ -1,0 +1,42 @@
+你正在修改狼人杀角色 villager_2 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "villager_2-base 存在严重的冗余代码膨胀与极高的决策超时率（fallback_rate 达到 20.63%，超过 20% 阈值导致节点被淘汰，代码大小达 62.9KB）。主要原因是类内存在大段完全重复的辅助方法定义、过重且多层递归的公开台账解析与冗长 Prompt 构造，引发大语言模型推理与网络读取超时（TimeoutError / read operation timed out），且在警徽竞选与发言中缺乏合理的候选校验（如在警徽投票时投给已退水/不上警的候选人、乱跳神职带偏好人视野）。必须对 task_agent.py 进行重构精简、剔除全部重复代码、优化并压缩台账渲染逻辑以消除超时与非法回退。",
+  "evidence": [
+    "evaluation_summary 显示 villager_2-base 总决策 63 次中发生 13 次 fallback（fallback_rate=0.2063 > 0.2000，invalid_decisions=13 > 10），被判定为 discarded；code_size_bytes 达 62938 字节。",
+    "task_agent.py 中存在严重的重复代码复制（如 _collect_claim_block、_render_turn_summary、_render_vote_summary、_rank_candidates、_score_candidate、_candidate_pool、_snapshot_mapping 等多达 25 个方法在类内部被完整重复定义了两次）。",
+    "评测运行记录中 focus 玩家（p10）频繁报出 participant_error: TimeoutError 与 The read operation timed out，直接由 Runtime 执行 fallback_action（pass）。",
+    "random_game_replay（game 6）显示，在警长投票阶段（seq 77, 89），p10 盲目投票给已公开发言表明不上警且纯听逻辑的平民 p11，导致分票；在白天发言（seq 112）中闭眼平民盲跳‘带枪神牌’（猎人真神为 p8），造成好人阵营视角混乱。"
+  ],
+  "root_causes": [
+    "代码重复与臃肿：代码生成或合并时出现重复段落黏贴，多余的 20+ 个方法不仅大幅膨胀代码体积至 62KB 以上，还增加了运行时的维护成本与不必要的解析开销。",
+    "多层递归与低效的公共状态提取：_walk_public_payload 深度递归遍历全量公开数据与字典，生成大量低信噪比文本并频繁做正则与切分，构造出长达 11000+ 字符的 prompt，加重大模型上下文与响应延迟，频繁触发 180s 决策超时。",
+    "警长与投票参考候选过滤缺失：_render_vote_summary 和 candidate_pool 没有针对 sheriff_election_vote 过滤掉非候选人或发言退水者，仅做静态分数排序，导致模型做出低质量甚至弃权式投票；平民 prompt 规则允许编造假身份却没有约束‘不要在真预或对跳局无端抢跳强神’。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "彻底清理并删除重复定义的函数与冗余类方法（包括重复的 _collect_claim_block、_render_turn_summary、_snapshot_mapping 等全部冗余定义），精简代码体积至 20KB 以内。",
+      "rationale": "消除完全无用的代码坏味道与潜在执行混乱，使代码结构紧凑易维护，符合防单向膨胀与重构要求。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构并轻量化公共台账与上下文提取逻辑：精炼 _extract_public_notes 与 _snapshot_mapping，限制遍历深度与提取条数；将 summary 与 turn_instruction 压缩控制在紧凑长度（如不超过 2000 字符），大幅减少送入模型的无效字符。",
+      "rationale": "显著降低大模型输入 token 数量与推理延迟，从根本上解决 read operation timed out 和 TimeoutError 导致的 fallback 超标问题。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "优化 render_villager_decision_checklist 和 candidate_pool 逻辑：在警长投票阶段强制对齐 allowed_actions 中的 target_ids 并过滤已退水/放弃竞选者；在投票参考中直接输出最受支持/最可疑候选；提示平民不要轻易冒充猎人/守卫等带功能强神，避免干扰好人视线。",
+      "rationale": "改善平民决策质量，防止分票或盲投弃票选手，并确保合法目标匹配当前游戏阶段。"
+    }
+  ],
+  "risks": [
+    "过度精简台账可能导致平民遗漏历史关键查验链或警徽流信息，因此需保留对‘预言家查验’、‘警徽转移’与‘死亡名单’三项核心公开事实的精确提取。",
+    "候选人过滤若强行依赖硬编码规则可能遇到边缘阶段不匹配，必须始终以 allowed_actions 为最终兜底。"
+  ],
+  "code_agent_brief": "对 villager_2 的 task_agent.py 进行重构降重与防超时优化：\n1. 必须立即删除 task_agent.py 中自第 480 行起完全重复定义的第二套辅助函数与方法（约 300+ 行重复代码），将文件体积从 62KB 削减到精炼结构。\n2. 重构轻量台账生成：取消复杂的深层全量递归，改用针对 public_state 的扁平化事件与状态提取（仅跟踪 alive/dead、最新预言家查验/查杀、警长持有者与最新票型），精简 _turn_summary 和 instruction 长度，确保单次 prompt 体积大幅缩减，杜绝模型超时（TimeoutError）。\n3. 修正投票候选推荐：在 render_vote_summary 中严格使用当前 allowed_actions 中的 target_ids；警徽投票时不推荐未上警或已声明弃选的目标。\n4. 完善决策清单提示：明确要求村民不要在没有绝对收益的情况下空跳强神（如猎人、女巫），在发言和投票时始终坚持‘站边明确预言家、跟出查杀、保护金水’。"
+}

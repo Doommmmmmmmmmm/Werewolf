@@ -1,0 +1,8 @@
+{
+  "version_id": "meta-v001",
+  "parent_version_id": "meta-v000",
+  "epoch": 1,
+  "created_at": "2026-09-28T03:03:22.277644+00:00",
+  "rationale": "在上一 Epoch 中，Task-Agent 进化产物普遍呈现 node_id 与 status 为空或无有效 summary 的低效/空转状态，表明诊断缺乏深度事实驱动，未能基于实际对战回放（replay）定位具象失误。同时，Meta-Agent 缺乏对具体决策链路的细粒度指引，极易导致 Task-Agent 陷入盲目叠加规则、Prompt 膨胀及抽象无序修改的困境。需要强化诊断中的因果溯源与精确的重构预算约束，强制 Meta-Agent 结合真实回放数据与精简指标给出最小闭环改动方案。",
+  "mutation_summary": "1. 升级 meta_system.txt：强化对真实对局事实（replay）与评测指标的溯源校验，强制要求在 evidence 中引用具体 round/action 证据，明确否定无实质重构的规则堆叠；2. 升级 meta_task.txt：细化诊断任务流（事实溯源 -> 归因剖析 -> 最小闭环重构），引入严苛的代码预算与负熵原则；3. 补全 meta_agent.py 中截断的 _task_agent_contract 契约输出，规范上下文完整性。"
+}

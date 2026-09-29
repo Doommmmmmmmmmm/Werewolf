@@ -1,0 +1,403 @@
+--- wolf_3-base/task_agent.py
++++ wolf_3-n00004/task_agent.py
+@@ -25,7 +25,7 @@
+ CURRENT_ROUND_DIALOGUE_TOOL_NAME = "read_current_round_dialogue"
+ DEFAULT_MAX_TOOL_CALLS_PER_DECISION = 5
+ DEFAULT_MAX_TOOL_RESULT_TOKENS = 1000
+-DEFAULT_MAX_PROMPT_CHARS = 12000
++DEFAULT_MAX_PROMPT_CHARS = 7000
+ # 这是 Task-Agent 层的“纠错重试”次数：首次模型调用之外，最多再请求两次。
+ # 传输层的 HTTP/网络重试仍由 ModelClient 的 MODEL_MAX_RETRIES 单独控制。
+ DEFAULT_MAX_DECISION_RETRIES = 2
+@@ -192,7 +192,7 @@
+         self.max_decision_retries = max(0, int(max_decision_retries))
+         self.max_tool_calls_per_decision = max(0, int(max_tool_calls_per_decision))
+         self.max_tool_result_tokens = max(1, int(max_tool_result_tokens))
+-        self.max_prompt_chars = max(1, int(max_prompt_chars))
++        self.max_prompt_chars = min(7000, max(1, int(max_prompt_chars)))
+         self._model_token_usage: dict[str, int] = {
+             "successful_response_count": 0,
+             "api_attempt_count": 0,
+@@ -480,18 +480,15 @@
+                 "dead_count",
+             ),
+         )
+-        request = self._compact_snapshot(
+-            turn_packet.get("request"),
+-            preferred_keys=(
+-                "request_id",
+-                "phase",
+-                "channel",
+-                "allowed_actions",
+-                "max_chars",
+-                "target_ids",
+-                "speaker_id",
+-            ),
+-        )
++        raw_request = turn_packet.get("request") if isinstance(turn_packet.get("request"), Mapping) else {}
++        request = {
++            "request_id": raw_request.get("request_id"),
++            "phase": raw_request.get("phase"),
++            "channel": raw_request.get("channel"),
++            "allowed_actions": self._compact_snapshot(raw_request.get("allowed_actions"), depth=2, max_items=6),
++        }
++        if raw_request.get("speaker_id") is not None:
++            request["speaker_id"] = raw_request.get("speaker_id")
+         self_state = self._compact_snapshot(
+             turn_packet.get("self"),
+             preferred_keys=(
+@@ -512,23 +509,35 @@
+         wolf_strategy = self._build_wolf_strategy(
+             turn_packet, memory_snapshot, current_dialogue, current_digest
+         )
+-        state_digest = {
+-            **current_digest,
+-            "recent_votes": memory_snapshot.get("recent_vote_summary", [])[-2:],
+-            "sheriff_changes": (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:],
++        ledger = memory_snapshot.get("public_ledger") or {}
++        compact_game = dict(game) if isinstance(game, Mapping) else {}
++        compact_game.update(
++            {
++                "round": current_digest.get("round", compact_game.get("round")),
++                "phase": current_digest.get("phase", compact_game.get("phase")),
++                "sheriff_id": current_digest.get("current_sheriff_id"),
++                "alive_player_ids": current_digest.get("alive_player_ids", [])[:12],
++                "dead_player_ids": current_digest.get("dead_player_ids", [])[-6:],
++            }
++        )
++        compact_memory = {
++            "claims": (ledger.get("claims") or [])[-2:],
++            "votes": (ledger.get("votes") or [])[-2:],
++            "deaths": (ledger.get("deaths") or [])[-2:],
++            "sheriff_changes": (ledger.get("sheriff_changes") or [])[-1:],
++            "recent_votes": memory_snapshot.get("recent_vote_summary", [])[-1:],
+             "recent_public_texts": memory_snapshot.get("recent_public_texts", [])[-2:],
+-            "recent_self_texts": memory_snapshot.get("recent_self_texts", [])[-2:],
++            "recent_self_texts": memory_snapshot.get("recent_self_texts", [])[-1:],
+         }
+         return {
+             "decision_state": {
+-                "game": game,
++                "game": compact_game,
+                 "request": request,
+                 "self": self_state,
+-                "private_information": private_information,
+-                "state_digest": state_digest,
+-                "recent_dialogue": current_dialogue[-2:],
+-                "case_summary": self._decision_case_summary(wolf_strategy, current_digest),
+-                "wolf_strategy": wolf_strategy,
++                "private": private_information,
++                "memory": compact_memory,
++                "dialogue_tail": current_dialogue[-2:],
++                "strategy": self._compact_strategy_for_prompt(wolf_strategy, current_digest),
+             }
+         }
+ 
+@@ -832,6 +841,8 @@
+         dead = set(current_digest.get("dead_player_ids") or [])
+         alive_known = bool(alive)
+         teammates = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        posture = self._assess_day_posture(candidates, records, teammates, memory_snapshot, current_dialogue, current_digest)
++        shielded = set(posture.get("shielded_ids") or [])
+         pressure: list[tuple[int, tuple[int, str], str, str]] = []
+         for pid in candidates:
+             if pid in dead or (alive_known and pid not in alive) or pid == self.player_id:
+@@ -846,42 +857,117 @@
+             if votes:
+                 score += min(8, votes * 2); reasons.append("票型集中")
+             if self._public_claim_text(record):
+-                score += 3; reasons.append("公开身份链")
++                score += 2; reasons.append("公开身份链")
+             if record.get("is_sheriff") or record.get("sheriff") or pid == current_digest.get("current_sheriff_id"):
+-                score += 3; reasons.append("当前警徽位")
++                score += 1; reasons.append("当前警徽位")
++            if pid in shielded and pid not in teammates:
++                score -= 12
++                reasons.append("票势一边倒时不硬冲持徽预言家")
++            if posture.get("mode") in {"hook", "split"} and pid in teammates:
++                score += 6
++                reasons.append("队友已成公共焦点需倒钩切割")
+             if not reasons:
+                 reasons.append("公共压力较低")
+             pressure.append((score, self._seat_sort_value(record, pid), pid, ",".join(reasons[:3])))
+         pressure.sort(key=lambda item: (-item[0], item[1], item[2]))
+         non_wolves = [item for item in pressure if item[2] not in teammates]
+-        wolf_top = pressure[0] if pressure and pressure[0][2] in teammates else None
++        unshielded_non_wolves = [item for item in non_wolves if item[2] not in shielded]
++        wolf_pressure = [item for item in pressure if item[2] in teammates]
++        wolf_top = wolf_pressure[0] if wolf_pressure else None
+         text_blob = " ".join(str(item.get("text") or "") for item in current_dialogue[-6:])
+         hard_bus = bool(wolf_top and (
+-            wolf_top[0] >= 8 or any(word in text_blob and wolf_top[2] in text_blob for word in ("查杀", "定狼", "出局", "归票"))
++            posture.get("teammate_in_danger") or wolf_top[0] >= 8 or any(word in text_blob and wolf_top[2] in text_blob for word in ("查杀", "定狼", "出局", "归票", "全票"))
+         ))
+         pass_kind = next((str(item.get("kind")) for item in allowed if "pass" in str(item.get("kind", "")).lower()), None)
+-        if wolf_top and not hard_bus and non_wolves:
+-            chosen = non_wolves[0]; mode = "deflect"
++        if posture.get("mode") == "hook" and wolf_top:
++            chosen = wolf_top; mode = "hook_bus_teammate"
++        elif posture.get("mode") == "split" and unshielded_non_wolves:
++            chosen = unshielded_non_wolves[0]; mode = "split_to_gray_non_wolf"
++        elif wolf_top and not hard_bus and unshielded_non_wolves:
++            chosen = unshielded_non_wolves[0]; mode = "deflect"
+         elif wolf_top and hard_bus:
+             chosen = wolf_top; mode = "bus_teammate"
++        elif unshielded_non_wolves:
++            chosen = unshielded_non_wolves[0]; mode = "pressure_non_wolf"
+         elif non_wolves:
+-            chosen = non_wolves[0]; mode = "pressure_non_wolf"
++            chosen = non_wolves[0]; mode = "forced_non_wolf"
+         elif pass_kind:
+-            return {"stage": "day_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": list(teammates), "reason": "当前合法目标不足，保留弃票", "teammate_risk": {"alive_wolf_ids": sorted(teammates)}}
++            return {"stage": "day_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": sorted(teammates | shielded), "reason": "当前合法目标不足，保留弃票", "posture": posture, "teammate_risk": {"alive_wolf_ids": sorted(teammates)}}
+         elif pressure:
+             chosen = pressure[0]; mode = "forced_legal_target"
+         else:
+             chosen = None; mode = "no_candidate"
+-        backup = next((item for item in non_wolves if not chosen or item[2] != chosen[2]), None)
++        backup_pool = unshielded_non_wolves if mode != "hook_bus_teammate" else unshielded_non_wolves + non_wolves
++        backup = next((item for item in backup_pool if not chosen or item[2] != chosen[2]), None)
+         return {
+             "stage": "day_vote",
+             "recommended_kind": vote_action.get("kind") if vote_action else None,
+             "recommended_target_id": chosen[2] if chosen else None,
+             "backup_target_id": backup[2] if backup else None,
+-            "avoid_target_ids": sorted(teammates),
++            "avoid_target_ids": sorted(teammates | shielded) if mode not in {"hook_bus_teammate", "bus_teammate"} else sorted(shielded),
+             "mode": mode,
+             "reason": chosen[3] if chosen else "没有可排序的合法目标",
+-            "teammate_risk": {"alive_wolf_ids": sorted(teammates), "top_is_teammate": bool(wolf_top), "hard_bus": hard_bus},
++            "posture": posture,
++            "teammate_risk": {"alive_wolf_ids": sorted(teammates), "top_teammate_id": wolf_top[2] if wolf_top else None, "hard_bus": hard_bus},
++        }
++
++    def _assess_day_posture(
++        self,
++        candidates: list[str],
++        records: Mapping[str, Mapping[str, Any]],
++        teammates: set[str],
++        memory_snapshot: Mapping[str, Any],
++        current_dialogue: list[dict[str, Any]],
++        current_digest: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        """识别白天是否需要从冲锋切到倒钩/分票。仅使用公开包与本局记忆。"""
++        sheriff_id = current_digest.get("current_sheriff_id")
++        text_tail = " ".join(self._recent_public_texts[-4:] + [str(item.get("text") or "") for item in current_dialogue[-6:]])
++        seer_words = ("预言家", "真预", "验人", "金水", "查杀", "警徽流")
++        trust_words = ("站边", "认", "跟", "信", "归票", "警长", "持徽", "金水")
++        attack_words = ("假", "悍跳", "不信", "打", "冲", "抗推", "出")
++        support = sum(text_tail.count(word) for word in trust_words)
++        attacks = sum(text_tail.count(word) for word in attack_words)
++        sheriff_is_seer_like = bool(sheriff_id) and (sheriff_id in text_tail or any(self._public_claim_text(records.get(str(sheriff_id), {})) for _ in [0])) and any(word in text_tail for word in seer_words)
++        claimers = {
++            str(item.get("speaker") or item.get("player_id") or item.get("from"))
++            for item in current_dialogue[-6:]
++            if any(word in str(item.get("text") or "") for word in seer_words)
++        }
++        for entry in (memory_snapshot.get("public_ledger") or {}).get("claims", [])[-3:]:
++            if isinstance(entry, Mapping) and any(word in str(entry.get("claim") or "") for word in seer_words):
++                claimers.add(str(entry.get("player_id")))
++        live_claimers = {pid for pid in claimers if pid and pid in set(current_digest.get("alive_player_ids") or candidates)}
++        no_wolf_counter = not any(pid in teammates for pid in live_claimers)
++        shielded_ids = {str(sheriff_id)} if sheriff_is_seer_like and no_wolf_counter else set()
++        for pid in live_claimers:
++            if pid not in teammates and no_wolf_counter:
++                shielded_ids.add(pid)
++        danger_scores: dict[str, int] = {}
++        for pid in teammates:
++            if pid not in candidates or pid == self.player_id:
++                continue
++            record = records.get(pid, {})
++            votes = self._nonnegative_int(record.get("vote_count", record.get("votes")), fallback=0) or 0
++            danger = votes * 2 + self._recent_mention_count(pid)
++            if pid in text_tail and any(word in text_tail for word in ("查杀", "定狼", "出局", "归票", "狼坑", "焦点")):
++                danger += 5
++            danger_scores[pid] = danger
++        top_teammate = max(danger_scores.items(), key=lambda item: item[1], default=(None, 0))
++        one_sided = bool(shielded_ids) and support >= max(3, attacks) and no_wolf_counter
++        teammate_in_danger = bool(top_teammate[0] and top_teammate[1] >= 6)
++        mode = "normal"
++        if one_sided and teammate_in_danger:
++            mode = "hook"
++        elif one_sided:
++            mode = "split"
++        return {
++            "mode": mode,
++            "one_sided_sheriff_seer": one_sided,
++            "teammate_in_danger": teammate_in_danger,
++            "danger_teammate_id": top_teammate[0],
++            "shielded_ids": sorted(pid for pid in shielded_ids if pid),
++            "rule": "真预持徽且票势一边倒时禁全狼同向冲；优先倒钩或分流灰位",
+         }
+ 
+     def _build_sheriff_vote_strategy(
+@@ -1326,6 +1412,9 @@
+         current_digest = current_digest or self._current_public_state_digest(turn_packet, memory_snapshot)
+         current_sheriff_id = current_digest.get("current_sheriff_id")
+         dead_ids = {str(pid) for pid in current_digest.get("dead_player_ids") or []}
++        teammates = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        posture = self._assess_day_posture(list(records.keys()), records, teammates, memory_snapshot, current_dialogue, current_digest)
++        shielded = set(posture.get("shielded_ids") or [])
+         candidates: list[dict[str, Any]] = []
+         for pid, record in records.items():
+             if pid == self.player_id:
+@@ -1334,49 +1423,63 @@
+             reasons: list[str] = []
+             if pid in dead_ids or self._is_alive_record(record) is False:
+                 continue
+-            if record.get("is_sheriff") or record.get("sheriff") or pid == current_sheriff_id:
+-                score += 8
+-                reasons.append("当前持徽人")
+             claim_text = self._public_claim_text(record)
+-            if claim_text:
+-                score += 7
+-                reasons.append("公开身份声明")
+-            vote_count = record.get("vote_count", record.get("votes"))
+-            if isinstance(vote_count, int) and vote_count > 0:
+-                score += min(5, vote_count)
++            vote_count = self._nonnegative_int(record.get("vote_count", record.get("votes")), fallback=0) or 0
++            if vote_count > 0:
++                score += min(6, vote_count * 2)
+                 reasons.append("票型集中")
+-            speak_count = record.get("speak_count", record.get("speech_count"))
+-            if isinstance(speak_count, int) and speak_count > 0:
+-                score += min(4, speak_count)
+-                reasons.append("发言活跃")
+             mentions = self._recent_mention_count(pid)
+             if mentions:
+-                score += min(4, mentions)
++                score += min(5, mentions)
+                 reasons.append(f"近期被提及{mentions}次")
+-            if any(entry.get("player_id") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("claims", [])[-3:]):
+-                score += 2
+-                reasons.append("最新身份链")
+-            if any(entry.get("to") == pid or entry.get("from") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:]):
+-                score += 2
+-                reasons.append("警徽链")
++            speak_count = self._nonnegative_int(record.get("speak_count", record.get("speech_count")), fallback=0) or 0
++            if speak_count > 0:
++                score += min(3, speak_count)
++                reasons.append("有发言可拆")
++            if pid in teammates:
++                if posture.get("teammate_in_danger") and pid == posture.get("danger_teammate_id"):
++                    score += 4
++                    reasons.append("队友已成公共焦点，可轻切割但不复读")
++                else:
++                    score -= 8
++                    reasons.append("避免主动暴露狼队同线")
++            if record.get("is_sheriff") or record.get("sheriff") or pid == current_sheriff_id:
++                if pid in shielded:
++                    score -= 10
++                    reasons.append("一边倒持徽预言家不硬冲")
++                else:
++                    score += 2
++                    reasons.append("警徽链可轻问")
++            if claim_text:
++                score += 1 if pid not in shielded else -4
++                reasons.append("身份链")
++            if pid in shielded and pid not in teammates:
++                score -= 6
+             candidates.append(
+                 {
+                     "player_id": pid,
+                     "score": score,
+-                    "reason": ",".join(reasons[:3]) if reasons else "默认公共压力",
++                    "reason": ",".join(reasons[:3]) if reasons else "灰位可观察",
+                     "claim": claim_text,
+                 }
+             )
+         candidates.sort(key=lambda item: (-int(item["score"]), self._seat_sort_value(records.get(item["player_id"], {}), item["player_id"]), item["player_id"]))
+-        chosen = candidates[0] if candidates else {}
++        if posture.get("mode") in {"hook", "split"}:
++            preferred = [item for item in candidates if item["player_id"] not in shielded and item["player_id"] not in teammates]
++            if posture.get("mode") == "hook" and not preferred:
++                preferred = [item for item in candidates if item["player_id"] == posture.get("danger_teammate_id")]
++            chosen = preferred[0] if preferred else (candidates[0] if candidates else {})
++        else:
++            chosen = candidates[0] if candidates else {}
+         target_id = chosen.get("player_id")
+         record = records.get(target_id, {}) if target_id else {}
+         evidence = self._select_day_evidence(target_id, records, memory_snapshot, current_dialogue, current_digest)
+         next_action_text = self._day_next_action(evidence.get("kind"))
+         opening_guard = self._day_opening_guard()
++        style_hint = "独立抓灰位/跟风漏洞，禁止复述队友对预言家或警徽的同口径质疑" if posture.get("mode") in {"hook", "split"} else "用自己的证据链表态，不照抄前置位口径"
+         one_sentence_hint = self._clip_text(
+-            f"围绕{target_id or '当前焦点'}的{evidence.get('kind', 'fallback')}，先点证据，再接下一步动作：{next_action_text}",
+-            120,
++            f"围绕{target_id or '当前焦点'}的{evidence.get('kind', 'fallback')}，{style_hint}；下一步：{next_action_text}",
++            140,
+         )
+         return {
+             "object": {
+@@ -1390,6 +1493,8 @@
+                 "kind": evidence.get("kind"),
+                 "text": next_action_text,
+             },
++            "posture": posture,
++            "style_hint": style_hint,
+             "one_sentence_hint": one_sentence_hint,
+             "opening_guard": opening_guard,
+             "candidate_order": candidates[:3],
+@@ -1570,6 +1675,50 @@
+         tool_context = turn_packet.get("tool_context") or {}
+         raw_dialogue = tool_context.get("current_round_dialogue") or []
+         return self._summarize_dialogue(raw_dialogue)
++
++    def _compact_strategy_for_prompt(
++        self,
++        wolf_strategy: Mapping[str, Any],
++        current_digest: Mapping[str, Any] | None = None,
++    ) -> dict[str, Any]:
++        stage = str(wolf_strategy.get("stage") or "other")
++        base: dict[str, Any] = {"stage": stage}
++        if stage == "night":
++            return {
++                **base,
++                "primary": wolf_strategy.get("primary_target"),
++                "backup": wolf_strategy.get("backup_target"),
++                "lock": (wolf_strategy.get("locked_plan") or {}).get("primary_target_id"),
++                "reason": wolf_strategy.get("tie_break_reason"),
++            }
++        if stage == "day":
++            focus = wolf_strategy.get("day_focus") if isinstance(wolf_strategy.get("day_focus"), Mapping) else {}
++            return {
++                **base,
++                "objective": wolf_strategy.get("objective"),
++                "focus": {
++                    "object": focus.get("object"),
++                    "evidence": focus.get("evidence"),
++                    "next_action": focus.get("next_action"),
++                    "posture": focus.get("posture"),
++                    "style_hint": focus.get("style_hint"),
++                    "hint": focus.get("one_sentence_hint"),
++                },
++                "avoid_templates": wolf_strategy.get("avoid_templates", [])[:2],
++            }
++        if stage in {"day_vote", "sheriff_vote"}:
++            return {
++                **base,
++                "mode": wolf_strategy.get("mode"),
++                "recommended_kind": wolf_strategy.get("recommended_kind"),
++                "recommended_target_id": wolf_strategy.get("recommended_target_id"),
++                "backup_target_id": wolf_strategy.get("backup_target_id"),
++                "avoid_target_ids": wolf_strategy.get("avoid_target_ids", [])[:5],
++                "reason": wolf_strategy.get("reason"),
++                "posture": wolf_strategy.get("posture"),
++                "current_sheriff_id": (current_digest or {}).get("current_sheriff_id"),
++            }
++        return base
+ 
+     def _decision_case_summary(
+         self,
+--- wolf_3-base/task.md
++++ wolf_3-n00004/task.md
+@@ -16,7 +16,8 @@
+ - 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+ - 投票前先区分目标是否属于狼队：除非队友已被硬查杀、票势不可逆或牺牲能换取明确叙事，否则优先把票压向非狼公共焦点；若牺牲队友，下一轮必须能用公开票型自然解释这一步。
+-- 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
++- 当场上无狼队对跳、真预言家/高可信预言家持有警徽且票势一边倒时，禁止多名狼人同向强冲预言家或其金水；后置位狼人必须改抓发言划水、跟风或逻辑矛盾的非神好人作为焦点，或顺势倒钩被查杀/被归票队友，保全暗狼。
++- 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步；不要与队友连续复述同一套“质疑警徽/预言家”的口径。
+ 
+ ## 发言约束
+ - 每次公开发言都要包含：一个具体对象、一个具体证据、一个下一步动作。

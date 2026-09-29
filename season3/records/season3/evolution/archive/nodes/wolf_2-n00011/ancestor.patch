@@ -1,0 +1,260 @@
+--- wolf_2-base/task_agent.py
++++ wolf_2-n00011/task_agent.py
+@@ -315,6 +315,11 @@
+             action = normalize_decision(raw, turn_packet["request"])
+             error = decision_error(action, turn_packet["request"])
+             if error is None:
++                strategy = self._build_wolf_strategy(turn_packet, memory_snapshot, current_dialogue)
++                if isinstance(strategy, Mapping) and strategy.get("stage") == "night" and action.get("target_id"):
++                    aligned = self._repair_illegal_target(action, turn_packet["request"], strategy)
++                    if aligned is not None and decision_error(aligned, turn_packet["request"]) is None:
++                        action = aligned
+                 self._record_self_action(turn_packet, action)
+                 return action
+             if _attempt >= self.max_decision_retries:
+@@ -374,9 +379,14 @@
+ 
+     @staticmethod
+     def _turn_instruction(request: Mapping[str, Any], feedback: str) -> str:
++        phase = str(request.get("phase") or "")
++        channel = str(request.get("channel") or "")
++        night_guard = ""
++        if "night" in phase.lower() or "夜" in phase or "wolf" in channel.lower():
++            night_guard = "夜间狼刀：若 packet.decision_state.action_plan 给出 consensus_target_id 或 recommended_target_id，必须投该目标；不得投存活狼队友或偏离共识分票。"
+         return render_prompt(
+             "player_turn_instruction.txt",
+-            action_contract=render_action_contract(request),
++            action_contract=render_action_contract(request) + (f"\n{night_guard}" if night_guard else ""),
+             validation_feedback=(f"上一次输出未通过校验：{feedback}" if feedback else ""),
+         )
+ 
+@@ -512,23 +522,31 @@
+         wolf_strategy = self._build_wolf_strategy(
+             turn_packet, memory_snapshot, current_dialogue, current_digest
+         )
+-        state_digest = {
+-            **current_digest,
++        public_facts = {
++            "round": current_digest.get("round"),
++            "phase": current_digest.get("phase"),
++            "alive_player_ids": current_digest.get("alive_player_ids", [])[-12:],
++            "dead_player_ids": current_digest.get("dead_player_ids", [])[-6:],
++            "recent_death_order": current_digest.get("recent_death_order", [])[-4:],
++            "current_sheriff_id": current_digest.get("current_sheriff_id"),
+             "recent_votes": memory_snapshot.get("recent_vote_summary", [])[-2:],
+-            "sheriff_changes": (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:],
+-            "recent_public_texts": memory_snapshot.get("recent_public_texts", [])[-2:],
+-            "recent_self_texts": memory_snapshot.get("recent_self_texts", [])[-2:],
++            "sheriff_changes": (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-1:],
+         }
++        if wolf_strategy.get("stage") == "night":
++            public_facts["night_lock"] = {
++                "consensus_target_id": wolf_strategy.get("consensus_target_id"),
++                "recommended_target_id": wolf_strategy.get("recommended_target_id"),
++                "avoid_target_ids": wolf_strategy.get("avoid_target_ids", []),
++            }
+         return {
+             "decision_state": {
+                 "game": game,
+                 "request": request,
+                 "self": self_state,
+                 "private_information": private_information,
+-                "state_digest": state_digest,
++                "public_facts": public_facts,
+                 "recent_dialogue": current_dialogue[-2:],
+-                "case_summary": self._decision_case_summary(wolf_strategy, current_digest),
+-                "wolf_strategy": wolf_strategy,
++                "action_plan": wolf_strategy,
+             }
+         }
+ 
+@@ -561,22 +579,40 @@
+                 if isinstance(plan, Mapping):
+                     return dict(plan)
+             ranked_targets = self._rank_targets(turn_packet, memory_snapshot, target_actions, current_dialogue)
+-            primary = ranked_targets[0] if ranked_targets else None
+-            backup = ranked_targets[1] if len(ranked_targets) > 1 else None
++            alive_wolves = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++            legal_non_wolves = [pid for pid in candidate_ids if pid not in alive_wolves]
++            raw_consensus = discussion_signal.get("consensus_target") or discussion_signal.get("locked_target")
++            consensus = str(raw_consensus) if raw_consensus is not None and str(raw_consensus) in candidate_ids else None
++            if consensus in alive_wolves and legal_non_wolves:
++                consensus = None
++            if consensus:
++                primary = next((item for item in ranked_targets if item.get("player_id") == consensus), None)
++                if primary is None:
++                    primary = {"player_id": consensus, "reason": "狼队讨论锁定目标"}
++                ranked_targets = [primary] + [item for item in ranked_targets if item.get("player_id") != consensus]
++            else:
++                primary = ranked_targets[0] if ranked_targets else None
++            backup = next((item for item in ranked_targets[1:] if item.get("player_id") != (primary or {}).get("player_id")), None)
++            recommended_target_id = primary.get("player_id") if isinstance(primary, Mapping) else None
+             locked_plan = {
+-                "primary_target_id": primary.get("player_id") if isinstance(primary, Mapping) else None,
++                "primary_target_id": recommended_target_id,
+                 "backup_target_id": backup.get("player_id") if isinstance(backup, Mapping) else None,
+-                "consensus_target_id": discussion_signal.get("consensus_target"),
++                "consensus_target_id": consensus,
+                 "discussion_primary_target_id": discussion_signal.get("primary_target"),
+                 "discussion_backup_target_id": discussion_signal.get("backup_target"),
+             }
+             plan = {
+                 "stage": "night",
+-                "objective": "先锁主刀与备刀；重试时复用同一锁定计划，只在候选合法性变化时重排",
++                "objective": "夜间投票必须先执行狼队锁定刀口；若有 consensus_target_id/recommended_target_id 且合法，直接投它，不得改票分票",
++                "recommended_target_id": recommended_target_id,
++                "backup_target_id": locked_plan.get("backup_target_id"),
++                "consensus_target_id": consensus,
++                "avoid_target_ids": sorted(alive_wolves),
++                "alignment_rule": "night_wolf_vote 第一优先级=consensus_target_id，其次 recommended_target_id；除非无非狼合法目标，严禁投存活狼队友",
+                 "primary_target": primary,
+                 "backup_target": backup,
+                 "tie_break_reason": primary.get("reason") if isinstance(primary, Mapping) else "优先高威胁公共目标，再按座位/ID固定顺序",
+-                "candidate_order": ranked_targets,
++                "candidate_order": ranked_targets[:3],
+                 "discussion_signal": discussion_signal,
+                 "locked_plan": locked_plan,
+                 "notes": self._night_notes(memory_snapshot, current_dialogue, discussion_signal),
+@@ -587,6 +623,8 @@
+                 "primary_target_id": locked_plan.get("primary_target_id"),
+                 "backup_target_id": locked_plan.get("backup_target_id"),
+                 "consensus_target_id": locked_plan.get("consensus_target_id"),
++                "recommended_target_id": recommended_target_id,
++                "avoid_target_ids": sorted(alive_wolves),
+                 "strategy": plan,
+             }
+             return plan
+@@ -832,6 +870,9 @@
+         dead = set(current_digest.get("dead_player_ids") or [])
+         alive_known = bool(alive)
+         teammates = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        dialogue_blob = " ".join(str(item.get("text") or item.get("content") or item.get("message") or "") for item in current_dialogue[-8:])
++        public_blob = dialogue_blob + " " + " ".join(self._recent_public_texts[-4:])
++        mainstream_signal = self._extract_day_mainstream_targets(public_blob, candidates)
+         pressure: list[tuple[int, tuple[int, str], str, str]] = []
+         for pid in candidates:
+             if pid in dead or (alive_known and pid not in alive) or pid == self.player_id:
+@@ -845,6 +886,8 @@
+                 score += min(8, mentions * 2); reasons.append("近期被多人提及")
+             if votes:
+                 score += min(8, votes * 2); reasons.append("票型集中")
++            if pid in mainstream_signal:
++                score += min(12, mainstream_signal[pid] * 3); reasons.append("本轮归票/查杀主流")
+             if self._public_claim_text(record):
+                 score += 3; reasons.append("公开身份链")
+             if record.get("is_sheriff") or record.get("sheriff") or pid == current_digest.get("current_sheriff_id"):
+@@ -855,15 +898,21 @@
+         pressure.sort(key=lambda item: (-item[0], item[1], item[2]))
+         non_wolves = [item for item in pressure if item[2] not in teammates]
+         wolf_top = pressure[0] if pressure and pressure[0][2] in teammates else None
+-        text_blob = " ".join(str(item.get("text") or "") for item in current_dialogue[-6:])
+         hard_bus = bool(wolf_top and (
+-            wolf_top[0] >= 8 or any(word in text_blob and wolf_top[2] in text_blob for word in ("查杀", "定狼", "出局", "归票"))
++            wolf_top[0] >= 10
++            or mainstream_signal.get(wolf_top[2], 0) >= 2
++            or any(word in public_blob and wolf_top[2] in public_blob for word in ("查杀", "定狼", "铁狼", "出局", "归票", "全票", "冲票"))
+         ))
+         pass_kind = next((str(item.get("kind")) for item in allowed if "pass" in str(item.get("kind", "")).lower()), None)
+-        if wolf_top and not hard_bus and non_wolves:
++        mainstream_non_wolves = [item for item in non_wolves if mainstream_signal.get(item[2], 0) > 0]
++        if wolf_top and not hard_bus and mainstream_non_wolves:
++            chosen = mainstream_non_wolves[0]; mode = "follow_mainstream_deflect"
++        elif wolf_top and not hard_bus and non_wolves:
+             chosen = non_wolves[0]; mode = "deflect"
+         elif wolf_top and hard_bus:
+             chosen = wolf_top; mode = "bus_teammate"
++        elif mainstream_non_wolves:
++            chosen = mainstream_non_wolves[0]; mode = "follow_mainstream_non_wolf"
+         elif non_wolves:
+             chosen = non_wolves[0]; mode = "pressure_non_wolf"
+         elif pass_kind:
+@@ -882,7 +931,28 @@
+             "mode": mode,
+             "reason": chosen[3] if chosen else "没有可排序的合法目标",
+             "teammate_risk": {"alive_wolf_ids": sorted(teammates), "top_is_teammate": bool(wolf_top), "hard_bus": hard_bus},
++            "mainstream_signal": dict(mainstream_signal.most_common(3)) if isinstance(mainstream_signal, Counter) else dict(mainstream_signal),
+         }
++
++    def _extract_day_mainstream_targets(self, text_blob: str, candidates: list[str]) -> Counter[str]:
++        """从本轮公开发言中提取归票/查杀/定狼等主流焦点。"""
++        signal: Counter[str] = Counter()
++        if not text_blob:
++            return signal
++        focus_words = ("归票", "归", "出", "投", "票", "查杀", "定狼", "铁狼", "抗推", "全票", "冲票", "挂", "打")
++        for pid in candidates:
++            if not pid or pid not in text_blob:
++                continue
++            weight = text_blob.count(pid)
++            for match in re.finditer(re.escape(pid), text_blob):
++                window = text_blob[max(0, match.start() - 12): match.end() + 12]
++                if any(word in window for word in focus_words):
++                    weight += 2
++                if any(word in window for word in ("查杀", "定狼", "铁狼", "归票", "全票")):
++                    weight += 2
++            if weight > 0:
++                signal[pid] = weight
++        return signal
+ 
+     def _build_sheriff_vote_strategy(
+         self,
+@@ -951,13 +1021,33 @@
+                 return repaired
+             return None
+         recommendations = []
++        avoid_targets: set[str] = set()
++        phase_text = str(request.get("phase") or "")
++        channel_text = str(request.get("channel") or "")
++        is_night_vote = "night" in phase_text.lower() or "夜" in phase_text or "wolf" in channel_text.lower()
+         if isinstance(wolf_strategy, Mapping):
+-            for key in ("recommended_target_id", "backup_target_id"):
+-                value = wolf_strategy.get(key)
+-                if value is not None:
+-                    recommendations.append(str(value))
+-        for value in recommendations + target_ids:
+-            if value in target_ids:
++            avoid_targets = {str(pid) for pid in wolf_strategy.get("avoid_target_ids", []) if pid is not None}
++            if wolf_strategy.get("stage") == "night":
++                is_night_vote = True
++                for key in ("consensus_target_id", "recommended_target_id", "backup_target_id"):
++                    value = wolf_strategy.get(key)
++                    if value is not None:
++                        recommendations.append(str(value))
++                locked_plan = wolf_strategy.get("locked_plan")
++                if isinstance(locked_plan, Mapping):
++                    for key in ("consensus_target_id", "primary_target_id", "backup_target_id"):
++                        value = locked_plan.get(key)
++                        if value is not None:
++                            recommendations.append(str(value))
++            else:
++                for key in ("recommended_target_id", "backup_target_id"):
++                    value = wolf_strategy.get(key)
++                    if value is not None:
++                        recommendations.append(str(value))
++        legal_non_wolves = [target for target in target_ids if target not in avoid_targets]
++        ordered = recommendations + (legal_non_wolves if is_night_vote and legal_non_wolves else target_ids)
++        for value in ordered:
++            if value in target_ids and (not is_night_vote or value not in avoid_targets or not legal_non_wolves):
+                 repaired["target_id"] = value
+                 return repaired
+         return None
+--- wolf_2-base/task.md
++++ wolf_2-n00011/task.md
+@@ -7,15 +7,15 @@
+ - 每次夜间决策都要显式锁定主刀与备刀；同一夜重试时优先复用上一次锁定结果，只有候选合法性变化时再重新排序。
+ - 首夜优先处理公开威胁高、发言强、容易带队的人。
+ - 如果有人已经明显暴露身份、对跳、被查杀或成为票型焦点，优先把这些信息纳入刀口判断。
+-- 当狼队讨论给出明确主刀/备刀时，Task-Agent 以该共识作为第一排序信号，只有与公共威胁明显冲突时才改写；白天发言必须显式复用最近一次票型或警徽链里的新证据。
+-- 队友意见不一致时，按“高威胁公共目标 > 警长/神职概率高 > 更难被队友解释 > 固定座位/最后一致目标”收敛。
++- 当狼队讨论给出明确主刀/备刀时，Task-Agent 以该共识作为夜间投票第一优先级；只要共识目标仍是合法非狼目标，必须跟刀，禁止改投或向存活狼队友分票。
++- 队友意见不一致时，按“最后一致目标 > 高威胁公共目标 > 警长/神职概率高 > 更难被队友解释 > 固定座位”收敛；无有效共识时再回退到威胁排序。
+ 
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序和警徽变化再表态，不要只讲泛泛原则。
+ - 白天发言以当前公开状态为准：当前持徽人、存活/死亡名单和最近警徽转移不得凭旧记忆猜测；不能要求已死亡玩家继续解释、报查验或回应。
+ - 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+-- 投票前先区分目标是否属于狼队：除非队友已被硬查杀、票势不可逆或牺牲能换取明确叙事，否则优先把票压向非狼公共焦点；若牺牲队友，下一轮必须能用公开票型自然解释这一步。
++- 投票前先区分目标是否属于狼队，并结合本轮发言里的“归票 / 查杀 / 定狼 / 出局”等主流风向：除非队友已被硬查杀、票势不可逆或牺牲能换取明确叙事，否则优先跟随非狼公共焦点；若队友被多数围攻且不可逆，可以顺势倒钩，但下一轮必须能用公开票型自然解释这一步。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
+ 
+ ## 发言约束

@@ -1,0 +1,977 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-28T03:03:22.277644+00:00",
+  "config": {
+    "source_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/configs/season3.json",
+    "paths": {
+      "archive_root": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive",
+      "evaluation_root": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations",
+      "operation_root": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations",
+      "external_knowledge_root": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/skills",
+      "pi_root": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/archives/season2-20260923/runtime/pi"
+    },
+    "evolution": {
+      "roles": [
+        "wolf_1",
+        "wolf_2",
+        "wolf_3",
+        "wolf_4",
+        "seer",
+        "witch",
+        "guard",
+        "hunter",
+        "villager_1",
+        "villager_2",
+        "villager_3",
+        "villager_4"
+      ],
+      "random_seed": "season3-evolution",
+      "max_children_per_node": 3,
+      "max_tree_depth": 6,
+      "max_generated_candidates_per_role": 60,
+      "max_successful_evolutions_per_role": 20,
+      "children_per_expansion": 3,
+      "role_scheduler": "least_evolved_random",
+      "epoch_size": 6
+    },
+    "evaluation": {
+      "games_per_pending_node": 20,
+      "player_count": 12,
+      "optional_roles": [],
+      "game_concurrency": 10,
+      "model_max_in_flight": 30,
+      "decision_timeout_seconds": 180.0,
+      "max_decision_retries": 2,
+      "max_tool_calls_per_decision": 5,
+      "max_tool_result_tokens": 1000,
+      "max_prompt_chars": 15000,
+      "max_failed_games": 18,
+      "max_fallback_rate": 0.2,
+      "max_invalid_decisions": 10,
+      "discard_all_losses": true
+    },
+    "meta": {
+      "max_output_tokens": 24000,
+      "max_tool_calls": 20,
+      "max_tool_result_tokens": 8000,
+      "max_attempts": 2,
+      "required_resources": [
+        "task",
+        "boundaries",
+        "current_agent",
+        "random_game_replay"
+      ],
+      "enabled_tools": [
+        "list_resources",
+        "read_current_agent",
+        "read_evolution_path",
+        "read_evolution_tree",
+        "read_evolution_contract",
+        "read_evaluation_summary",
+        "read_game_replay",
+        "read_other_branch",
+        "read_previous_diagnosis",
+        "list_skills",
+        "read_skill"
+      ]
+    },
+    "pi": {
+      "command": [
+        "./pi-test.sh"
+      ],
+      "model": "gpt-5.5",
+      "node_bin": "/ssd15/exec/zhangbo08/anaconda3/envs/wolf/bin/node",
+      "agent_dir": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/.local/pi",
+      "timeout_seconds": 1200.0,
+      "max_attempts": 3,
+      "retry_backoff_seconds": 60.0,
+      "use_bwrap": true,
+      "candidate_smoke_test": true,
+      "readonly_paths": [],
+      "allowed_files": [
+        "task_agent.py",
+        "task.md"
+      ],
+      "environment_allowlist": [
+        "PATH",
+        "LANG",
+        "LC_ALL",
+        "SSL_CERT_FILE",
+        "NODE_EXTRA_CA_CERTS",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "PI_API_KEY",
+        "PI_BASE_URL",
+        "PI_OPENAI_API_KEY",
+        "PI_OPENAI_BASE_URL",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_OAUTH_TOKEN",
+        "GEMINI_API_KEY"
+      ]
+    }
+  },
+  "next_node_sequence": 34,
+  "core_snapshot_hash": "b145c7ee778a63259e7f1c8590f369d0cb664014a5032b3bd8998cce94249168",
+  "roles": {
+    "wolf_1": {
+      "base_node_id": "wolf_1-base",
+      "node_ids": [
+        "wolf_1-base"
+      ],
+      "generated_candidate_count": 0,
+      "successful_evolution_count": 0
+    },
+    "wolf_2": {
+      "base_node_id": "wolf_2-base",
+      "node_ids": [
+        "wolf_2-base",
+        "wolf_2-n00010",
+        "wolf_2-n00011",
+        "wolf_2-n00012"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "wolf_3": {
+      "base_node_id": "wolf_3-base",
+      "node_ids": [
+        "wolf_3-base",
+        "wolf_3-n00004",
+        "wolf_3-n00005",
+        "wolf_3-n00006"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "wolf_4": {
+      "base_node_id": "wolf_4-base",
+      "node_ids": [
+        "wolf_4-base",
+        "wolf_4-n00001",
+        "wolf_4-n00002",
+        "wolf_4-n00003"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "seer": {
+      "base_node_id": "seer-base",
+      "node_ids": [
+        "seer-base",
+        "seer-n00025",
+        "seer-n00026",
+        "seer-n00027"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "witch": {
+      "base_node_id": "witch-base",
+      "node_ids": [
+        "witch-base",
+        "witch-n00028",
+        "witch-n00029",
+        "witch-n00030"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "guard": {
+      "base_node_id": "guard-base",
+      "node_ids": [
+        "guard-base",
+        "guard-n00022",
+        "guard-n00023",
+        "guard-n00024"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "hunter": {
+      "base_node_id": "hunter-base",
+      "node_ids": [
+        "hunter-base",
+        "hunter-n00031",
+        "hunter-n00032",
+        "hunter-n00033"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "villager_1": {
+      "base_node_id": "villager_1-base",
+      "node_ids": [
+        "villager_1-base",
+        "villager_1-n00016",
+        "villager_1-n00017",
+        "villager_1-n00018"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "villager_2": {
+      "base_node_id": "villager_2-base",
+      "node_ids": [
+        "villager_2-base",
+        "villager_2-n00007",
+        "villager_2-n00008",
+        "villager_2-n00009"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "villager_3": {
+      "base_node_id": "villager_3-base",
+      "node_ids": [
+        "villager_3-base",
+        "villager_3-n00013",
+        "villager_3-n00014",
+        "villager_3-n00015"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    },
+    "villager_4": {
+      "base_node_id": "villager_4-base",
+      "node_ids": [
+        "villager_4-base",
+        "villager_4-n00019",
+        "villager_4-n00020",
+        "villager_4-n00021"
+      ],
+      "generated_candidate_count": 3,
+      "successful_evolution_count": 1
+    }
+  },
+  "nodes": {
+    "wolf_1-base": {
+      "node_id": "wolf_1-base",
+      "role": "wolf_1",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [],
+      "created_at": "2026-09-28T03:03:22.286783+00:00",
+      "code_hash": "eafd7c35501da92b709b0390c66b1c5ec8af174d82ae29b4413e8594c01ddd88",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": null,
+      "status_reason": "base_seed:wolf-n00135"
+    },
+    "wolf_2-base": {
+      "node_id": "wolf_2-base",
+      "role": "wolf_2",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "wolf_2-n00010",
+        "wolf_2-n00011",
+        "wolf_2-n00012"
+      ],
+      "created_at": "2026-09-28T03:03:22.291517+00:00",
+      "code_hash": "eafd7c35501da92b709b0390c66b1c5ec8af174d82ae29b4413e8594c01ddd88",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/wolf_2/wolf_2-base/summary.json",
+      "status_reason": "base_seed:wolf-n00135"
+    },
+    "wolf_3-base": {
+      "node_id": "wolf_3-base",
+      "role": "wolf_3",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "wolf_3-n00004",
+        "wolf_3-n00005",
+        "wolf_3-n00006"
+      ],
+      "created_at": "2026-09-28T03:03:22.297226+00:00",
+      "code_hash": "eafd7c35501da92b709b0390c66b1c5ec8af174d82ae29b4413e8594c01ddd88",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/wolf_3/wolf_3-base/summary.json",
+      "status_reason": "base_seed:wolf-n00135"
+    },
+    "wolf_4-base": {
+      "node_id": "wolf_4-base",
+      "role": "wolf_4",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "wolf_4-n00001",
+        "wolf_4-n00002",
+        "wolf_4-n00003"
+      ],
+      "created_at": "2026-09-28T03:03:22.301839+00:00",
+      "code_hash": "eafd7c35501da92b709b0390c66b1c5ec8af174d82ae29b4413e8594c01ddd88",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/wolf_4/wolf_4-base/summary.json",
+      "status_reason": "base_seed:wolf-n00135"
+    },
+    "seer-base": {
+      "node_id": "seer-base",
+      "role": "seer",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "seer-n00025",
+        "seer-n00026",
+        "seer-n00027"
+      ],
+      "created_at": "2026-09-28T03:03:22.307179+00:00",
+      "code_hash": "ed00d6da8d7b82babaf6f04e7710f8370867a6d2d86065d8a2db8a5df9b6568c",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/seer/seer-base/summary.json",
+      "status_reason": "base_seed:seer-n00112"
+    },
+    "witch-base": {
+      "node_id": "witch-base",
+      "role": "witch",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "witch-n00028",
+        "witch-n00029",
+        "witch-n00030"
+      ],
+      "created_at": "2026-09-28T03:03:22.312743+00:00",
+      "code_hash": "d72b12189ecba4d98f6f634379816c3a7a385da053762bc4eeb676cfdfe0436a",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/witch/witch-base/summary.json",
+      "status_reason": "base_seed:witch-n00096"
+    },
+    "guard-base": {
+      "node_id": "guard-base",
+      "role": "guard",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "guard-n00022",
+        "guard-n00023",
+        "guard-n00024"
+      ],
+      "created_at": "2026-09-28T03:03:22.317672+00:00",
+      "code_hash": "893a7eda95dff2797ab52d224c38cb1748bad7df5aca2e9b2c5e354687e7095d",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/guard/guard-base/summary.json",
+      "status_reason": "base_seed:guard-n00034"
+    },
+    "hunter-base": {
+      "node_id": "hunter-base",
+      "role": "hunter",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "hunter-n00031",
+        "hunter-n00032",
+        "hunter-n00033"
+      ],
+      "created_at": "2026-09-28T03:03:22.322463+00:00",
+      "code_hash": "22595e8ebc806e657a8599c8d8515d47238dbc4cdf53fd6b560456d7337a4959",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/hunter/hunter-base/summary.json",
+      "status_reason": "base_seed:hunter-n00144"
+    },
+    "villager_1-base": {
+      "node_id": "villager_1-base",
+      "role": "villager_1",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "villager_1-n00016",
+        "villager_1-n00017",
+        "villager_1-n00018"
+      ],
+      "created_at": "2026-09-28T03:03:22.327489+00:00",
+      "code_hash": "d39a427c1491a53a196f0aa353a7797e3324780e15d2444dec790da42418aa23",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_1/villager_1-base/summary.json",
+      "status_reason": "base_seed:villager-n00029"
+    },
+    "villager_2-base": {
+      "node_id": "villager_2-base",
+      "role": "villager_2",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "villager_2-n00007",
+        "villager_2-n00008",
+        "villager_2-n00009"
+      ],
+      "created_at": "2026-09-28T03:03:22.331642+00:00",
+      "code_hash": "d39a427c1491a53a196f0aa353a7797e3324780e15d2444dec790da42418aa23",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_2/villager_2-base/summary.json",
+      "status_reason": "base_seed:villager-n00029"
+    },
+    "villager_3-base": {
+      "node_id": "villager_3-base",
+      "role": "villager_3",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "villager_3-n00013",
+        "villager_3-n00014",
+        "villager_3-n00015"
+      ],
+      "created_at": "2026-09-28T03:03:22.335681+00:00",
+      "code_hash": "d39a427c1491a53a196f0aa353a7797e3324780e15d2444dec790da42418aa23",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_3/villager_3-base/summary.json",
+      "status_reason": "base_seed:villager-n00029"
+    },
+    "villager_4-base": {
+      "node_id": "villager_4-base",
+      "role": "villager_4",
+      "status": "retained",
+      "parent_id": null,
+      "depth": 0,
+      "children": [
+        "villager_4-n00019",
+        "villager_4-n00020",
+        "villager_4-n00021"
+      ],
+      "created_at": "2026-09-28T03:03:22.339708+00:00",
+      "code_hash": "d39a427c1491a53a196f0aa353a7797e3324780e15d2444dec790da42418aa23",
+      "patch_path": null,
+      "diagnosis_path": null,
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_4/villager_4-base/summary.json",
+      "status_reason": "base_seed:villager-n00029"
+    },
+    "wolf_4-n00001": {
+      "node_id": "wolf_4-n00001",
+      "role": "wolf_4",
+      "status": "retained",
+      "parent_id": "wolf_4-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T04:38:46.009785+00:00",
+      "code_hash": "f329578964b07405083091f0577bd7029a122e9df9c0e7ff96994557da4f5981",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_4-n00001/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T030331-c8da2964/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/wolf_4/wolf_4-n00001/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "wolf_4-n00002": {
+      "node_id": "wolf_4-n00002",
+      "role": "wolf_4",
+      "status": "discarded",
+      "parent_id": "wolf_4-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T04:44:03.317284+00:00",
+      "code_hash": "eafd7c35501da92b709b0390c66b1c5ec8af174d82ae29b4413e8594c01ddd88",
+      "patch_path": null,
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T030331-c8da2964/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": "code_agent_failure:TimeoutError:The read operation timed out"
+    },
+    "wolf_4-n00003": {
+      "node_id": "wolf_4-n00003",
+      "role": "wolf_4",
+      "status": "discarded",
+      "parent_id": "wolf_4-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T04:47:37.502472+00:00",
+      "code_hash": "e8eccc85005569232eb3b84c679441d83b0ac3967c532fe1aaf9f84b63b408bb",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_4-n00003/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T030331-c8da2964/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": "code_agent_failure:ValueError:候选 smoke 出现 fallback=11 errors=11"
+    },
+    "wolf_3-n00004": {
+      "node_id": "wolf_3-n00004",
+      "role": "wolf_3",
+      "status": "retained",
+      "parent_id": "wolf_3-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T06:33:33.825237+00:00",
+      "code_hash": "d3d6b46ef76f5b96e5658259cc436576f2d8781ad6dacc94a9aebd98693e3723",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_3-n00004/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T063333-8d4cd9c7/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/wolf_3/wolf_3-n00004/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "wolf_3-n00005": {
+      "node_id": "wolf_3-n00005",
+      "role": "wolf_3",
+      "status": "pending",
+      "parent_id": "wolf_3-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T06:37:37.849377+00:00",
+      "code_hash": "268bc4c485d0bd1074475baab504de64213eba2b63666aa06ee2d9726c74990a",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_3-n00005/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T063333-8d4cd9c7/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "wolf_3-n00006": {
+      "node_id": "wolf_3-n00006",
+      "role": "wolf_3",
+      "status": "pending",
+      "parent_id": "wolf_3-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T06:40:38.501722+00:00",
+      "code_hash": "9efbfcfd73e831b9ef92fc4b2e0324397342b3ad7173790f0de4667694635306",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_3-n00006/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T063333-8d4cd9c7/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_2-n00007": {
+      "node_id": "villager_2-n00007",
+      "role": "villager_2",
+      "status": "retained",
+      "parent_id": "villager_2-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T09:21:53.940616+00:00",
+      "code_hash": "cb4628999d71d0d17af2fb21950aa17a3f87767bf3391cb6c52d1e9fb1c38d36",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_2-n00007/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T082441-818ce2c3/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_2/villager_2-n00007/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "villager_2-n00008": {
+      "node_id": "villager_2-n00008",
+      "role": "villager_2",
+      "status": "pending",
+      "parent_id": "villager_2-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T09:31:00.789742+00:00",
+      "code_hash": "39e60f4bd25040b09c13af18381c7dc290af4be0c01aa326bb377b6cad0fc4c4",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_2-n00008/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T082441-818ce2c3/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_2-n00009": {
+      "node_id": "villager_2-n00009",
+      "role": "villager_2",
+      "status": "pending",
+      "parent_id": "villager_2-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T09:35:15.229207+00:00",
+      "code_hash": "e4aa5127ceaa4f68f4785a83c77e4551dd7ec34e8e3bf3125f2ff995a540b927",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_2-n00009/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T082441-818ce2c3/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "wolf_2-n00010": {
+      "node_id": "wolf_2-n00010",
+      "role": "wolf_2",
+      "status": "retained",
+      "parent_id": "wolf_2-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T12:10:38.287123+00:00",
+      "code_hash": "d81316dae2d03f170436bdd61a0f63aa423ddca0fca54959e579aa78684b416d",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_2-n00010/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T111916-cb814bff/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/wolf_2/wolf_2-n00010/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "wolf_2-n00011": {
+      "node_id": "wolf_2-n00011",
+      "role": "wolf_2",
+      "status": "pending",
+      "parent_id": "wolf_2-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T12:16:25.765437+00:00",
+      "code_hash": "824329de9806e12529e28276024880a3de390c1407739d7f6fa62c6f138b07f2",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_2-n00011/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T111916-cb814bff/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "wolf_2-n00012": {
+      "node_id": "wolf_2-n00012",
+      "role": "wolf_2",
+      "status": "pending",
+      "parent_id": "wolf_2-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T12:19:52.423633+00:00",
+      "code_hash": "a977eb0babc1131caac83211b727f2cc4a598855810f7c7422abfe938251cdd2",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/wolf_2-n00012/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T111916-cb814bff/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_3-n00013": {
+      "node_id": "villager_3-n00013",
+      "role": "villager_3",
+      "status": "retained",
+      "parent_id": "villager_3-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T15:25:59.769449+00:00",
+      "code_hash": "9f7df07dcf98bcc228941ea62bc761c362e2ab465a1c255689dd9ca54acda9b0",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_3-n00013/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T140948-75ac905a/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_3/villager_3-n00013/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "villager_3-n00014": {
+      "node_id": "villager_3-n00014",
+      "role": "villager_3",
+      "status": "pending",
+      "parent_id": "villager_3-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T15:31:41.756071+00:00",
+      "code_hash": "af37c1f51368122a871856c3ae27510384629ca3711842bf2e1858a1bbb77d9e",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_3-n00014/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T140948-75ac905a/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_3-n00015": {
+      "node_id": "villager_3-n00015",
+      "role": "villager_3",
+      "status": "pending",
+      "parent_id": "villager_3-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T15:38:42.779776+00:00",
+      "code_hash": "ab59bc563994bc1bc69594ed210a62c455b77b167df6eb83e34a2484215293cb",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_3-n00015/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T140948-75ac905a/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_1-n00016": {
+      "node_id": "villager_1-n00016",
+      "role": "villager_1",
+      "status": "retained",
+      "parent_id": "villager_1-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T18:43:28.397812+00:00",
+      "code_hash": "99563acca3ca6e0fbd4ca6688c917c191c3492427d78bef77e254f93e09f90d3",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_1-n00016/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T172434-2a3ce7a5/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_1/villager_1-n00016/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "villager_1-n00017": {
+      "node_id": "villager_1-n00017",
+      "role": "villager_1",
+      "status": "pending",
+      "parent_id": "villager_1-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T18:46:08.728506+00:00",
+      "code_hash": "5ba5aa28df15bcc1f33344084c4f4d239f064f7c574e7cb9cf6c2e9954214e70",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_1-n00017/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T172434-2a3ce7a5/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_1-n00018": {
+      "node_id": "villager_1-n00018",
+      "role": "villager_1",
+      "status": "pending",
+      "parent_id": "villager_1-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T18:49:11.440123+00:00",
+      "code_hash": "171e9b0f4d86b874e5bc5203d14ca67a4dfcc418589bc3f4b6e3fada89bfc261",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_1-n00018/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T172434-2a3ce7a5/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_4-n00019": {
+      "node_id": "villager_4-n00019",
+      "role": "villager_4",
+      "status": "retained",
+      "parent_id": "villager_4-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T21:52:41.740439+00:00",
+      "code_hash": "79b7db1ced0893d6c15def84ac6c4fb51b3a0e7cb401bd85e3eb3ba8140f0355",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_4-n00019/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T203816-b242b7d2/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/villager_4/villager_4-n00019/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "villager_4-n00020": {
+      "node_id": "villager_4-n00020",
+      "role": "villager_4",
+      "status": "pending",
+      "parent_id": "villager_4-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T21:56:29.877191+00:00",
+      "code_hash": "1c739649d2eb11bf61b4dbe6027e5940c8162df6203bcc058bfa0a02a7b02e5f",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_4-n00020/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T203816-b242b7d2/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "villager_4-n00021": {
+      "node_id": "villager_4-n00021",
+      "role": "villager_4",
+      "status": "pending",
+      "parent_id": "villager_4-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-28T21:58:31.416812+00:00",
+      "code_hash": "995660665fbcb0b839cdfceb142c53fa540924b98ca8783b40067bc77b4ae752",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/villager_4-n00021/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T203816-b242b7d2/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "guard-n00022": {
+      "node_id": "guard-n00022",
+      "role": "guard",
+      "status": "retained",
+      "parent_id": "guard-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T01:19:49.946605+00:00",
+      "code_hash": "f724f9f948b2b454684262be8a82a3b9bc0d5a3bd4bb1e7c31636d0da3d25951",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/guard-n00022/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T233728-2bbf0d86/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/guard/guard-n00022/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "guard-n00023": {
+      "node_id": "guard-n00023",
+      "role": "guard",
+      "status": "pending",
+      "parent_id": "guard-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T01:22:12.198408+00:00",
+      "code_hash": "e80bba79693de04e8dff527e177719030da41f11f3015b6e8f7b4c865f749143",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/guard-n00023/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T233728-2bbf0d86/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "guard-n00024": {
+      "node_id": "guard-n00024",
+      "role": "guard",
+      "status": "pending",
+      "parent_id": "guard-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T01:26:16.387169+00:00",
+      "code_hash": "1871a9728c4fca327c5d4817beae93a8158882f79b3f451a884ea04aed3e4c04",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/guard-n00024/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260928T233728-2bbf0d86/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "seer-n00025": {
+      "node_id": "seer-n00025",
+      "role": "seer",
+      "status": "retained",
+      "parent_id": "seer-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T04:46:10.981388+00:00",
+      "code_hash": "a5c6c129f23e86baac39d023e41932865b4445313f94df169c4b76ec33bfa0bf",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/seer-n00025/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T030629-74ecf374/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/seer/seer-n00025/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "seer-n00026": {
+      "node_id": "seer-n00026",
+      "role": "seer",
+      "status": "pending",
+      "parent_id": "seer-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T04:48:10.690162+00:00",
+      "code_hash": "6c45d6937a38f99b5b4b1981685cdcde24b64545f51dc84a95170a4e9625f905",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/seer-n00026/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T030629-74ecf374/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "seer-n00027": {
+      "node_id": "seer-n00027",
+      "role": "seer",
+      "status": "pending",
+      "parent_id": "seer-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T04:50:05.876752+00:00",
+      "code_hash": "ccf462d9372e5aea786fa74b0cb8209d11c9f73f5e0a1198201bc4c1213f5a84",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/seer-n00027/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T030629-74ecf374/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "witch-n00028": {
+      "node_id": "witch-n00028",
+      "role": "witch",
+      "status": "retained",
+      "parent_id": "witch-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T08:34:39.035408+00:00",
+      "code_hash": "6f413321dec98b40887f87b0cfd69f82266e4e7f8c7f871a937b703d06ad31ef",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/witch-n00028/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T063246-9c1d0aae/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/witch/witch-n00028/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "witch-n00029": {
+      "node_id": "witch-n00029",
+      "role": "witch",
+      "status": "pending",
+      "parent_id": "witch-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T08:39:24.769016+00:00",
+      "code_hash": "8146deaf35dde9f547fd1bd7e20832db1187010368cb2b9a69fa2151a6ffd7bc",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/witch-n00029/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T063246-9c1d0aae/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    },
+    "witch-n00030": {
+      "node_id": "witch-n00030",
+      "role": "witch",
+      "status": "discarded",
+      "parent_id": "witch-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T08:44:04.694947+00:00",
+      "code_hash": "d72b12189ecba4d98f6f634379816c3a7a385da053762bc4eeb676cfdfe0436a",
+      "patch_path": null,
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T063246-9c1d0aae/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": "code_agent_failure:TimeoutError:The read operation timed out"
+    },
+    "hunter-n00031": {
+      "node_id": "hunter-n00031",
+      "role": "hunter",
+      "status": "discarded",
+      "parent_id": "hunter-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T11:54:13.405483+00:00",
+      "code_hash": "8820af24aec016049fdfaa683fdaea9befa8820ce3c3e855af4e62ab2dcc3337",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/hunter-n00031/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T103219-f2912b28/expansion0/branch0/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/hunter/hunter-n00031/summary.json",
+      "status_reason": "invalid_decisions=15 > 10;all_completed_games_lost"
+    },
+    "hunter-n00032": {
+      "node_id": "hunter-n00032",
+      "role": "hunter",
+      "status": "retained",
+      "parent_id": "hunter-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T11:58:14.739435+00:00",
+      "code_hash": "96cd61af69466899f4d92675b5f210eb19a375bf5d5061f3f2b139d784a7a4f2",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/hunter-n00032/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T103219-f2912b28/expansion0/branch1/diagnosis.json",
+      "evaluation_summary_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/evaluations/hunter/hunter-n00032/summary.json",
+      "status_reason": "passed_broad_filter"
+    },
+    "hunter-n00033": {
+      "node_id": "hunter-n00033",
+      "role": "hunter",
+      "status": "pending",
+      "parent_id": "hunter-base",
+      "depth": 1,
+      "children": [],
+      "created_at": "2026-09-29T12:01:49.654244+00:00",
+      "code_hash": "a299f592d77f14db1047d9e9609c9aab3e3395f7bd395d0bee95ed1f84bd0001",
+      "patch_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/archive/nodes/hunter-n00033/ancestor.patch",
+      "diagnosis_path": "/ssd15/exec/zhangbo08/exp_dir/exp24.wolf/season3/records/season3/evolution/operations/20260929T103219-f2912b28/expansion0/branch2/diagnosis.json",
+      "evaluation_summary_path": null,
+      "status_reason": ""
+    }
+  },
+  "meta_versions": {
+    "meta-v000": {
+      "version_id": "meta-v000",
+      "parent_version_id": null,
+      "epoch": 0,
+      "created_at": "2026-09-28T03:03:22.277644+00:00",
+      "rationale": "Initial seed from Season 2 base",
+      "mutation_summary": "Initial baseline"
+    },
+    "meta-v001": {
+      "version_id": "meta-v001",
+      "parent_version_id": "meta-v000",
+      "epoch": 1,
+      "created_at": "2026-09-28T03:03:22.277644+00:00",
+      "rationale": "在上一 Epoch 中，Task-Agent 进化产物普遍呈现 node_id 与 status 为空或无有效 summary 的低效/空转状态，表明诊断缺乏深度事实驱动，未能基于实际对战回放（replay）定位具象失误。同时，Meta-Agent 缺乏对具体决策链路的细粒度指引，极易导致 Task-Agent 陷入盲目叠加规则、Prompt 膨胀及抽象无序修改的困境。需要强化诊断中的因果溯源与精确的重构预算约束，强制 Meta-Agent 结合真实回放数据与精简指标给出最小闭环改动方案。",
+      "mutation_summary": "1. 升级 meta_system.txt：强化对真实对局事实（replay）与评测指标的溯源校验，强制要求在 evidence 中引用具体 round/action 证据，明确否定无实质重构的规则堆叠；2. 升级 meta_task.txt：细化诊断任务流（事实溯源 -> 归因剖析 -> 最小闭环重构），引入严苛的代码预算与负熵原则；3. 补全 meta_agent.py 中截断的 _task_agent_contract 契约输出，规范上下文完整性。"
+    }
+  },
+  "current_meta_version": "meta-v001",
+  "epoch_progress": 5,
+  "current_epoch": 2,
+  "epoch_task_summaries": [
+    {
+      "node_id": null,
+      "action": "evolved",
+      "status": null,
+      "summary": null
+    },
+    {
+      "node_id": null,
+      "action": "evolved",
+      "status": null,
+      "summary": null
+    },
+    {
+      "node_id": null,
+      "action": "evolved",
+      "status": null,
+      "summary": null
+    },
+    {
+      "node_id": null,
+      "action": "evolved",
+      "status": null,
+      "summary": null
+    },
+    {
+      "node_id": null,
+      "action": "evolved",
+      "status": null,
+      "summary": null
+    }
+  ]
+}

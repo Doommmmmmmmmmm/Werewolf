@@ -1,0 +1,41 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-base 胜率仅 15%（3/20），核心缺陷在于代码中内建了臃肿繁复（超 200 行）的启发式关键词打分树与硬重写逻辑（_scan_guard_signal_tree, _player_risk_score, _repair_guard_decision）。该打分树错误地将白天被怀疑、被压票、被点名的嫌疑人/抗推位判定为高夜刀风险，导致守卫在实战（如 Game 6 第 3 夜）中去守护狼人 p2，导致真预言家 p5 失去保护被杀。必须彻底删除臃肿的打分系统与强制改写逻辑，纠正 Prompt 中保护抗推位的误导，精简代码实现减熵闭环。",
+  "evidence": [
+    "evaluation_summary 显示 guard-base 在 20 局评测中仅胜 3 局，胜率仅 15%（0.15），代码体积高达 34065 字节，包含大量冗余启发式规则。",
+    "Game 6 回放事实：第 2 天白天狼人 p1/p2/p3 猛烈冲警长 p5，p2 积累了大量 public/pressure/vote 文本。第 3 夜（seq 222）守卫 p7 在 _player_risk_score 的错误驱动下守护了狼人 p2，导致真预言家 p5 暴露在狼刀之下（seq 241）被击杀。",
+    "task_agent.py 中的 _signal_for_key 将 vote(4)、pressure(3)、focus 等抗推特征赋予高正权，直接将白天被好人围剿的抗推位/嫌疑狼判定为优先保护目标。"
+  ],
+  "root_causes": [
+    "代码层面逻辑臃肿且因果倒置：_scan_guard_signal_tree 和 _player_risk_score 硬编码了一整套对公开文本关键词打分的规则，把白天承受怀疑与压票的抗推位当成狼刀目标，导致守卫频繁护狼或保抗推位。",
+    "过度干预与强制改写：_repair_guard_decision 依赖有偏的启发式排序强行干涉乃至篡改模型的守护选择，剥夺了模型结合上下文综合辨别真伪好人的能力。",
+    "Prompt 指令偏差：role_task 与 turn_instruction 中提示“优先被多人点名/压票的关键发言位”，强化了将白天抗推位误判为核心保护目标的错误决策偏见。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "大幅删减 _scan_guard_signal_tree、_signal_for_key、_ingest_dialogue_entries、_dialogue_text_signals、_dialogue_entry_*、_player_risk_score、_public_heat_score、_player_risk_bucket、_extract_focus_ids 等 200+ 行冗余启发式规则代码；移除 player_risk_profile、recent_public_focus_ids、alive_player_cache 等臃肿数据结构；删除 _repair_guard_decision 强制改写逻辑，仅保留针对禁止连守规则的硬校验（_guard_decision_error）。",
+      "rationale": "彻底减熵，削减代码体积约 40%，消除错误打分树对决策的误导，避免硬编码篡改模型守护决策。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _system_prompt 和 _turn_instruction 中的守卫引导文本：明确守卫目标是保护持警徽真预言家、关键明神、坐实金水及带队好人；明确指出白天被怀疑、被压票、被集火孤立的玩家多为抗推位，狼队夜间通常不会浪费刀口；提示若不能连守则转守明金水、次要神职、自守或外置位强好人。",
+      "rationale": "纠正模型对狼刀优先级的因果理解，指导模型进行高价值博弈与防连守轮换。"
+    },
+    {
+      "file": "task.md",
+      "change": "更新操作规程：删除‘优先保护被多人压票/点名的关键发言位’，修改为‘优先保护公开领袖/真预言家、明神、金水等关键好人；白天被集火的嫌疑目标通常是狼人的抗推位，不要误当刀口’。",
+      "rationale": "保持 task.md 规程与 Prompt、代码策略严格一致，避免模型收到相互冲突的操作指示。"
+    }
+  ],
+  "risks": [
+    "移除代码层的自动改写后，模型可能会在极少数情况下输出非 target_ids 目标或连续两夜守护同一人；但由于系统具备 decision_error 校验和本地重试机制，此风险完全可控。",
+    "若真预言家首夜未跳或局势极度混乱，模型可能难以立即锁定真神，但相比于硬编码保护抗推位/狼人，模型的语义推理泛化能力明显更优。"
+  ],
+  "code_agent_brief": "1. 编辑 task_agent.py：彻底删除 _scan_guard_signal_tree, _signal_for_key, _ingest_dialogue_entries, _dialogue_entry_text, _dialogue_entry_speaker_id, _dialogue_entry_targets, _dialogue_text_signals, _player_risk_bucket, _bump_player_risk, _player_risk_score, _public_heat_score, _extract_focus_ids, _extract_ids_by_keys, _guard_candidate_targets 等全部打分扫描函数及相关常数（_GUARD_CONTEXT_KEYWORDS 等）；删除 self.player_risk_profile, self.recent_public_focus_ids, self.alive_player_cache 等属性。\n2. 废除 _repair_guard_decision，改为在 decide() 的校验环节调用 _guard_decision_error(action, request)：当规则不允许连守且 target_id == self.last_protected_id 时返回格式校验错误，促发重试。\n3. 在 _system_prompt 与 _turn_instruction 中注入清晰的守卫策略：优先保护持警徽真预言家、明神职、明金水及逻辑坐实好人；严禁把白天被压票/点名/怀疑的抗推位当做高刀口；当禁止连守时指导二阶守护（金水/自守/次要神）。\n4. 同步更新 task.md 中的规程描述，移除保护压票位的误导说法。"
+}

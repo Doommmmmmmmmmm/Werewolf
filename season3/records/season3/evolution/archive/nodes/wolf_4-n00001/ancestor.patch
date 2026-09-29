@@ -1,0 +1,325 @@
+--- wolf_4-base/task_agent.py
++++ wolf_4-n00001/task_agent.py
+@@ -43,6 +43,10 @@
+     "先稳",
+     "刀中间位",
+ )
++_SEER_WORDS = ("预言家", "验人", "查验", "报验", "警徽流")
++_GOOD_CHAIN_WORDS = ("金水", "银水", "好人", "白牌", "民及民以上")
++_NON_SEER_WORDS = ("不是预言家", "非预言家", "不跳预言家", "退水")
++_CRISIS_WORDS = ("查杀", "定狼", "悍跳", "爆狼", "出局", "归票", "裸冲", "站错边")
+ 
+ 
+ CURRENT_ROUND_DIALOGUE_TOOL: dict[str, Any] = {
+@@ -762,14 +766,54 @@
+         phase_value = self._safe_get(game, "public_phase") or self._safe_get(game, "phase")
+         if phase_value is None:
+             phase_value = self._safe_get(public_state, "public_phase") or self._safe_get(public_state, "phase")
++        current_sheriff = self._current_sheriff_id(public_state, game, memory_snapshot)
++        sheriff_profile = self._sheriff_profile(current_sheriff, public_state, game, memory_snapshot)
+         status.update({
+             "round": round_value,
+             "phase": phase_value,
+-            "current_sheriff_id": self._current_sheriff_id(public_state, game, memory_snapshot),
++            "current_sheriff_id": current_sheriff,
++            "sheriff_profile": sheriff_profile,
+         })
+         # 兼容旧字段名，但 current_sheriff_id 是唯一应优先相信的徽位事实。
+         status["sheriff_id"] = status["current_sheriff_id"]
+         return status
++
++    def _sheriff_profile(
++        self,
++        sheriff_id: str | None,
++        public_state: Any,
++        game: Any,
++        memory_snapshot: Mapping[str, Any],
++    ) -> dict[str, Any]:
++        if not sheriff_id:
++            return {"player_id": None, "holder_type": "none", "can_report_checks": False, "warning": "当前无警徽"}
++        records = self._extract_player_records(public_state, game, memory_snapshot)
++        record = records.get(str(sheriff_id), {})
++        claim_text = self._public_claim_text(record) or ""
++        ledger = memory_snapshot.get("public_ledger") or {}
++        claim_blob = " ".join(
++            str(entry.get("claim") or "")
++            for entry in (ledger.get("claims") or [])[-6:]
++            if isinstance(entry, Mapping) and str(entry.get("player_id")) == str(sheriff_id)
++        )
++        recent_blob = " ".join(self._recent_public_texts[-6:])
++        blob = f"{claim_text} {claim_blob} {recent_blob}"
++        own_blob = f"{claim_text} {claim_blob}"
++        is_seer = bool(own_blob and any(word in own_blob for word in _SEER_WORDS) and not any(word in own_blob for word in _NON_SEER_WORDS))
++        is_good_heir = bool(blob and any(word in blob for word in _GOOD_CHAIN_WORDS))
++        changes = [entry for entry in (ledger.get("sheriff_changes") or [])[-3:] if isinstance(entry, Mapping)]
++        inherited = any(str(entry.get("to")) == str(sheriff_id) and entry.get("from") for entry in changes)
++        holder_type = "seer_holder" if is_seer and not is_good_heir else ("good_heir" if is_good_heir or inherited else "unknown_holder")
++        can_report = holder_type == "seer_holder"
++        warning = "只有预言家本人能报查验；金水/好人继承徽只能解释传徽和站边" if not can_report else "可围绕其查验逻辑提问"
++        return {
++            "player_id": str(sheriff_id),
++            "holder_type": holder_type,
++            "claim": claim_text or None,
++            "inherited": inherited,
++            "can_report_checks": can_report,
++            "warning": warning,
++        }
+ 
+     def _wolf_team_ids(self, private_information: Any) -> list[str]:
+         if not isinstance(private_information, Mapping):
+@@ -831,7 +875,14 @@
+         alive = set(current_digest.get("alive_player_ids") or [])
+         dead = set(current_digest.get("dead_player_ids") or [])
+         alive_known = bool(alive)
++        all_teammates = set(self._wolf_team_ids(turn_packet.get("private_information")))
+         teammates = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        dead_teammates = sorted(pid for pid in all_teammates if pid in dead)
++        sheriff_profile = current_digest.get("sheriff_profile") if isinstance(current_digest.get("sheriff_profile"), Mapping) else {}
++        protected_public = {
++            str(pid) for pid in (current_digest.get("current_sheriff_id"),)
++            if pid and sheriff_profile.get("holder_type") in {"seer_holder", "good_heir"}
++        }
+         pressure: list[tuple[int, tuple[int, str], str, str]] = []
+         for pid in candidates:
+             if pid in dead or (alive_known and pid not in alive) or pid == self.player_id:
+@@ -841,47 +892,55 @@
+             reasons: list[str] = []
+             mentions = self._recent_mention_count(pid)
+             votes = self._nonnegative_int(record.get("vote_count", record.get("votes")), fallback=0) or 0
++            claim_text = self._public_claim_text(record)
+             if mentions:
+                 score += min(8, mentions * 2); reasons.append("近期被多人提及")
+             if votes:
+                 score += min(8, votes * 2); reasons.append("票型集中")
+-            if self._public_claim_text(record):
+-                score += 3; reasons.append("公开身份链")
++            if claim_text:
++                score += 2; reasons.append("公开身份链")
+             if record.get("is_sheriff") or record.get("sheriff") or pid == current_digest.get("current_sheriff_id"):
+-                score += 3; reasons.append("当前警徽位")
++                if pid in protected_public:
++                    score -= 8; reasons.append("真预言家/金水持徽不硬冲")
++                else:
++                    score += 1; reasons.append("警徽位需看传递")
+             if not reasons:
+-                reasons.append("公共压力较低")
++                score += 1; reasons.append("外置位身份覆盖少")
+             pressure.append((score, self._seat_sort_value(record, pid), pid, ",".join(reasons[:3])))
+         pressure.sort(key=lambda item: (-item[0], item[1], item[2]))
+         non_wolves = [item for item in pressure if item[2] not in teammates]
+-        wolf_top = pressure[0] if pressure and pressure[0][2] in teammates else None
+-        text_blob = " ".join(str(item.get("text") or "") for item in current_dialogue[-6:])
+-        hard_bus = bool(wolf_top and (
+-            wolf_top[0] >= 8 or any(word in text_blob and wolf_top[2] in text_blob for word in ("查杀", "定狼", "出局", "归票"))
+-        ))
++        safer_non_wolves = [item for item in non_wolves if item[2] not in protected_public]
++        wolf_pressure = [item for item in pressure if item[2] in teammates]
++        text_blob = " ".join(str(item.get("text") or "") for item in current_dialogue[-6:] + [{"text": t} for t in self._recent_public_texts[-4:]])
++        teammate_under_fire = any(
++            item[0] >= 8 or any(word in text_blob and item[2] in text_blob for word in _CRISIS_WORDS)
++            for item in wolf_pressure
++        )
++        hard_bus = teammate_under_fire
+         pass_kind = next((str(item.get("kind")) for item in allowed if "pass" in str(item.get("kind", "")).lower()), None)
+-        if wolf_top and not hard_bus and non_wolves:
+-            chosen = non_wolves[0]; mode = "deflect"
+-        elif wolf_top and hard_bus:
+-            chosen = wolf_top; mode = "bus_teammate"
++        if hard_bus and wolf_pressure:
++            chosen = wolf_pressure[0]; mode = "bus_teammate_under_crisis"
++        elif safer_non_wolves:
++            chosen = safer_non_wolves[0]; mode = "deflect_after_loss_to_uncovered_outer" if dead_teammates else "deflect_to_uncovered_outer"
+         elif non_wolves:
+-            chosen = non_wolves[0]; mode = "pressure_non_wolf"
++            chosen = non_wolves[0]; mode = "follow_public_pressure_without_naked_charge"
+         elif pass_kind:
+-            return {"stage": "day_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": list(teammates), "reason": "当前合法目标不足，保留弃票", "teammate_risk": {"alive_wolf_ids": sorted(teammates)}}
++            return {"stage": "day_vote", "mode": "pass", "recommended_kind": pass_kind, "recommended_target_id": None, "backup_target_id": None, "avoid_target_ids": sorted(teammates | protected_public), "reason": "无合适外置位，避免裸冲真预言家/金水持徽", "teammate_risk": {"alive_wolf_ids": sorted(teammates), "dead_wolf_ids": dead_teammates}}
+         elif pressure:
+             chosen = pressure[0]; mode = "forced_legal_target"
+         else:
+             chosen = None; mode = "no_candidate"
+-        backup = next((item for item in non_wolves if not chosen or item[2] != chosen[2]), None)
++        backup = next((item for item in safer_non_wolves if not chosen or item[2] != chosen[2]), None)
+         return {
+             "stage": "day_vote",
+             "recommended_kind": vote_action.get("kind") if vote_action else None,
+             "recommended_target_id": chosen[2] if chosen else None,
+             "backup_target_id": backup[2] if backup else None,
+-            "avoid_target_ids": sorted(teammates),
++            "avoid_target_ids": sorted(teammates | protected_public) if not hard_bus else sorted(protected_public),
+             "mode": mode,
+             "reason": chosen[3] if chosen else "没有可排序的合法目标",
+-            "teammate_risk": {"alive_wolf_ids": sorted(teammates), "top_is_teammate": bool(wolf_top), "hard_bus": hard_bus},
++            "teammate_risk": {"alive_wolf_ids": sorted(teammates), "dead_wolf_ids": dead_teammates, "hard_bus": hard_bus},
++            "sheriff_caution": sheriff_profile.get("warning"),
+         }
+ 
+     def _build_sheriff_vote_strategy(
+@@ -1325,54 +1384,53 @@
+         records = self._extract_player_records(public_state, turn_packet.get("game"), memory_snapshot)
+         current_digest = current_digest or self._current_public_state_digest(turn_packet, memory_snapshot)
+         current_sheriff_id = current_digest.get("current_sheriff_id")
++        sheriff_profile = current_digest.get("sheriff_profile") if isinstance(current_digest.get("sheriff_profile"), Mapping) else {}
+         dead_ids = {str(pid) for pid in current_digest.get("dead_player_ids") or []}
++        teammates = set(self._alive_wolf_ids(turn_packet.get("private_information"), current_digest))
++        protected_sheriff = str(current_sheriff_id) if current_sheriff_id and sheriff_profile.get("holder_type") in {"seer_holder", "good_heir"} else None
++        crisis = bool(set(self._wolf_team_ids(turn_packet.get("private_information"))) & dead_ids)
++        crisis_blob = " ".join(str(item.get("text") or "") for item in current_dialogue[-6:]) + " " + " ".join(self._recent_public_texts[-4:])
++        crisis = crisis or any(pid in crisis_blob and any(word in crisis_blob for word in _CRISIS_WORDS) for pid in teammates)
+         candidates: list[dict[str, Any]] = []
+         for pid, record in records.items():
+-            if pid == self.player_id:
++            if pid == self.player_id or pid in dead_ids or self._is_alive_record(record) is False:
+                 continue
+             score = 0
+             reasons: list[str] = []
+-            if pid in dead_ids or self._is_alive_record(record) is False:
+-                continue
+-            if record.get("is_sheriff") or record.get("sheriff") or pid == current_sheriff_id:
+-                score += 8
+-                reasons.append("当前持徽人")
+             claim_text = self._public_claim_text(record)
++            if pid == protected_sheriff:
++                score -= 10
++                reasons.append("真预言家/金水持徽不硬冲")
++            elif record.get("is_sheriff") or record.get("sheriff") or pid == current_sheriff_id:
++                score += 1
++                reasons.append("警徽链只问传递")
++            if pid in teammates and crisis:
++                score += 6; reasons.append("倒钩队友避裸冲")
++            elif pid in teammates:
++                score -= 6; reasons.append("避免无必要踩队友")
+             if claim_text:
+-                score += 7
++                score += 2
+                 reasons.append("公开身份声明")
+             vote_count = record.get("vote_count", record.get("votes"))
+             if isinstance(vote_count, int) and vote_count > 0:
+                 score += min(5, vote_count)
+                 reasons.append("票型集中")
+-            speak_count = record.get("speak_count", record.get("speech_count"))
+-            if isinstance(speak_count, int) and speak_count > 0:
+-                score += min(4, speak_count)
+-                reasons.append("发言活跃")
+             mentions = self._recent_mention_count(pid)
+             if mentions:
+                 score += min(4, mentions)
+                 reasons.append(f"近期被提及{mentions}次")
+-            if any(entry.get("player_id") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("claims", [])[-3:]):
+-                score += 2
+-                reasons.append("最新身份链")
+             if any(entry.get("to") == pid or entry.get("from") == pid for entry in (memory_snapshot.get("public_ledger") or {}).get("sheriff_changes", [])[-2:]):
+-                score += 2
++                score += 1
+                 reasons.append("警徽链")
+-            candidates.append(
+-                {
+-                    "player_id": pid,
+-                    "score": score,
+-                    "reason": ",".join(reasons[:3]) if reasons else "默认公共压力",
+-                    "claim": claim_text,
+-                }
+-            )
++            if not reasons:
++                score += 1; reasons.append("外置位身份覆盖少")
++            candidates.append({"player_id": pid, "score": score, "reason": ",".join(reasons[:3]), "claim": claim_text})
+         candidates.sort(key=lambda item: (-int(item["score"]), self._seat_sort_value(records.get(item["player_id"], {}), item["player_id"]), item["player_id"]))
+         chosen = candidates[0] if candidates else {}
+         target_id = chosen.get("player_id")
+         record = records.get(target_id, {}) if target_id else {}
+         evidence = self._select_day_evidence(target_id, records, memory_snapshot, current_dialogue, current_digest)
+-        next_action_text = self._day_next_action(evidence.get("kind"))
++        next_action_text = self._day_next_action(evidence.get("kind"), evidence)
+         opening_guard = self._day_opening_guard()
+         one_sentence_hint = self._clip_text(
+             f"围绕{target_id or '当前焦点'}的{evidence.get('kind', 'fallback')}，先点证据，再接下一步动作：{next_action_text}",
+@@ -1393,6 +1451,8 @@
+             "one_sentence_hint": one_sentence_hint,
+             "opening_guard": opening_guard,
+             "candidate_order": candidates[:3],
++            "sheriff_profile": sheriff_profile,
++            "speech_rule": "金水/非预言家持徽只谈传徽与站边，禁止要求其报查验；无证据不点名外置位转票",
+             "speech_budget": speech_actions[0].get("max_chars") if speech_actions else None,
+         }
+ 
+@@ -1419,14 +1479,24 @@
+                     for entry in (ledger.get("sheriff_changes") or [])[-3:]
+                     if isinstance(entry, Mapping)
+                 )
+-                label = "当前持徽人" if target_id == current_sheriff_id else ("曾持徽/警徽链相关" if historical else "公开身份")
+-                return {"kind": "claim", "text": f"{target_id}{label}:{claim_text}"}
++                sheriff_profile = current_digest.get("sheriff_profile") if isinstance(current_digest.get("sheriff_profile"), Mapping) else {}
++                if target_id == current_sheriff_id and not sheriff_profile.get("can_report_checks"):
++                    return {
++                        "kind": "sheriff_heir",
++                        "text": f"{target_id}为{claim_text or '非预言家'}持徽/继承链，只能问传徽理由和站边，禁止要求报查验",
++                        "can_ask_checks": False,
++                    }
++                label = "当前预言家持徽人" if target_id == current_sheriff_id else ("曾持徽/警徽链相关" if historical else "公开身份")
++                return {"kind": "claim", "text": f"{target_id}{label}:{claim_text}", "can_ask_checks": target_id == current_sheriff_id}
+             for entry in (ledger.get("votes") or [])[-4:]:
+                 if entry.get("player_id") == target_id or entry.get("voter") == target_id or entry.get("target_id") == target_id:
+                     return {"kind": "vote", "text": self._clip_text(json.dumps(entry, ensure_ascii=False), 48)}
+             for entry in (ledger.get("sheriff_changes") or [])[-2:]:
+                 if entry.get("to") == target_id or entry.get("from") == target_id:
+-                    label = "当前持徽人" if target_id == current_sheriff_id else "曾持徽/警徽链相关"
++                    sheriff_profile = current_digest.get("sheriff_profile") if isinstance(current_digest.get("sheriff_profile"), Mapping) else {}
++                    if target_id == current_sheriff_id and not sheriff_profile.get("can_report_checks"):
++                        return {"kind": "sheriff_heir", "text": f"当前持徽继承:{self._clip_text(json.dumps(entry, ensure_ascii=False), 40)}；只问传徽，不问查验", "can_ask_checks": False}
++                    label = "当前预言家持徽人" if target_id == current_sheriff_id else "曾持徽/警徽链相关"
+                     return {"kind": "sheriff", "text": f"{label}:{self._clip_text(json.dumps(entry, ensure_ascii=False), 40)}"}
+         for entry in (ledger.get("deaths") or [])[-2:]:
+             if isinstance(entry, Mapping):
+@@ -1442,15 +1512,18 @@
+         return {"kind": "fallback", "text": "用当前公开信息补一条最具体的链条"}
+ 
+     @staticmethod
+-    def _day_next_action(evidence_kind: str | None) -> str:
++    def _day_next_action(evidence_kind: str | None, evidence: Mapping[str, Any] | None = None) -> str:
++        if evidence and evidence.get("can_ask_checks") is False:
++            return "只要求其说明传徽理由和站边依据，明确不让非预言家报查验"
+         mapping = {
+-            "claim": "继续追问细节并逼其补足逻辑",
+-            "vote": "顺着票型继续压，并要求给出投票理由",
+-            "sheriff": "围绕警徽链转向，先解释传递再站边",
++            "claim": "核对身份声明与前后发言，不机械逼问查验",
++            "vote": "顺着票型要求给出投票理由",
++            "sheriff": "围绕警徽链解释传递再站边",
++            "sheriff_heir": "只问传徽和站边，不问查验",
+             "death": "用死亡顺序重排站边，避免空泛表态",
+-            "dialogue": "先围绕这句发言做定点追问",
++            "dialogue": "围绕这句发言做定点追问",
+         }
+-        return mapping.get(evidence_kind or "", "先把对象、证据和动作说完整，再决定站边")
++        return mapping.get(evidence_kind or "", "把对象、证据和动作说完整；没有证据不硬转票")
+ 
+     def _night_notes(
+         self,
+@@ -1504,7 +1577,9 @@
+         sheriff_changes = public_ledger.get("sheriff_changes") or []
+         current_sheriff = current_digest.get("current_sheriff_id")
+         if current_sheriff:
+-            points.append(f"当前持徽人：{current_sheriff}")
++            profile = current_digest.get("sheriff_profile") if isinstance(current_digest.get("sheriff_profile"), Mapping) else {}
++            suffix = "（非预言家继承不报查验）" if profile.get("can_report_checks") is False else ""
++            points.append(f"当前持徽人：{current_sheriff}{suffix}")
+         if sheriff_changes:
+             last = sheriff_changes[-1]
+             if isinstance(last, Mapping):
+--- wolf_4-base/task.md
++++ wolf_4-n00001/task.md
+@@ -13,9 +13,11 @@
+ ## 白天
+ - 先结合本轮具体发言、票型、死亡顺序和警徽变化再表态，不要只讲泛泛原则。
+ - 白天发言以当前公开状态为准：当前持徽人、存活/死亡名单和最近警徽转移不得凭旧记忆猜测；不能要求已死亡玩家继续解释、报查验或回应。
+-- 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作。
++- 必须区分“预言家持徽”和“金水/好人继承持徽”：金水或非预言家持徽者只能解释传徽、站边和票型，不得要求其报查验、验人座位或警徽流。
++- 每次公开发言至少绑定一个具体对象、一个具体证据（投票 / 身份 / 死亡 / 警徽链）和一个下一步动作；没有公开证据时不要机械说“讲不圆就挪票到某人”。
+ - 对跳、查杀、警长局里，要根据当前局势切换悍跳、倒钩、怂狼或牺牲队友，而不是固定站边。
+-- 投票前先区分目标是否属于狼队：除非队友已被硬查杀、票势不可逆或牺牲能换取明确叙事，否则优先把票压向非狼公共焦点；若牺牲队友，下一轮必须能用公开票型自然解释这一步。
++- 当队友悍跳明显下风、被硬查杀、已被公投出局或场上公认逻辑不可逆时，必须主动倒钩或跟从场上公认逻辑，禁止全狼连排硬冲真预言家、金水或持徽好人。
++- 投票前先区分目标是否属于狼队：除非队友已被硬查杀、票势不可逆或牺牲能换取明确叙事，否则优先把票压向非狼公共焦点、无身份覆盖外置位或警徽流中的平民；若牺牲队友，下一轮必须能用公开票型自然解释这一步。
+ - 如果队友被强压，可以牺牲一人换叙事，但后续发言必须能自然解释这一步。
+ 
+ ## 发言约束

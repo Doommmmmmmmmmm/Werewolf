@@ -1,0 +1,46 @@
+你正在修改狼人杀角色 guard 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "guard-base 节点的胜率仅为 15%（3胜17负），其核心缺陷在于代码中硬编码了庞大且扭曲的‘风险与热度’启发式打分系统（占代码近半体积）。该系统错误地将白天被怀疑、点名、投票的‘抗推/嫌疑焦点’判定为夜间‘高风险被刀好人’，导致守卫在关键轮次误将护盾施加给白天被好人围剿的狼人，而让真正带队的持徽预言家裸奔暴毙；同时冗余的状态扫描代码造成代码严重膨胀（34KB）。重构必须彻底拔除这套虚假评分引擎，通过轻量清晰的状态追踪与精准的守卫语义决策提示词，实现减熵与防狼刀能力的全面提升。",
+  "evidence": [
+    "evaluation_summary 显示 guard-base 在 20 局对局中仅取得 3 胜（胜率 15%），代码体积高达 34065 字节，包含大量冗余的递归树扫描与关键词打分逻辑。",
+    "在回放 game 18 中，Round 2（seq 152）守卫守护了真预言家 p5 并成功阻挡狼刀产生平安夜（seq 173）。但在 Round 3 预言家不能连守的关键轮次（seq 223），守卫代码因白天 p2 遭到集中质询与怀疑、累积了极高的 pressure/vote 风险分，在 _repair_guard_decision / _guard_candidate_targets 中将狼人 p2 排在首位并守护了狼人 p2，导致狼人夜间顺利刀杀持徽真预言家 p5（seq 242）。",
+    "代码中 _scan_guard_signal_tree、_dialogue_text_signals、_player_risk_score 等方法通过硬编码词频统计（claim, vote, threat, pressure, exposure）计算分数，完全混淆了‘被狼刀的好人’与‘被好人怀疑的狼人’的本质区别。"
+  ],
+  "root_causes": [
+    "虚假的刀口风险模型：代码中将 'pressure'（怀疑、可疑、压票、指认）与 'vote' 赋予正向被刀风险加分，在狼人杀中，被场上好人集火质疑的玩家通常是狼人或抗推位，狼人极少夜间浪费刀口去击杀可能被白天放逐的人，守卫启发式规则产生了完全相反的因果判断。",
+    "后处理强行干预与逻辑绑架：_repair_guard_decision 依赖基于错误假设的 _guard_candidate_targets 排序。一旦大模型给出的目标不在第一梯队或被代码逻辑干涉，代码会将守护目标硬重写为错误算出的最高分目标（例如将狼人排在第一名）。",
+    "代码与记忆结构严重臃肿（负向增熵）：在 task_agent.py 中堆砌了近 300 行关于递归树遍历、信号词提取、加权计分的复杂函数，不仅无助于提取高维的身份与阵营博弈信息，反而掩盖了大模型对发言动机与神职链条的理解能力。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "彻底删除 _scan_guard_signal_tree, _signal_for_key, _ingest_dialogue_entries, _dialogue_entry_text, _dialogue_entry_speaker_id, _dialogue_entry_targets, _dialogue_text_signals, _player_risk_bucket, _bump_player_risk, _player_risk_score, _public_heat_score, _extract_focus_ids, _extract_ids_by_keys 等全部打分与加权提取函数（精简删除约 250 行代码）。",
+      "rationale": "切除误导守卫将抗推位狼人当作高危好人的错误硬编码启发式规则，大幅减轻代码体积和控制流复杂度。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构守护状态追踪机制，仅保留最小必要历史（如 last_protected_id, last_protected_round），并在合法校验与候选过滤中仅保留刚性规则边界（如 target_id 必须在 allowed_actions 中、不能连守同一人等）。",
+      "rationale": "确保外部规则（不能连守同一人、自守限制）得到零成本的准确执行，避免硬编码排序干涉 LLM 决策。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "在 _system_prompt 和 _turn_instruction 中注入官方守卫策略逻辑（参考 official-guard-protect 与 official-guard-counterknife）：明确区分‘狼刀目标（持徽预言家、明神职、强逻辑坐好位）’与‘抗推目标（被多方质疑、票型孤立的嫌疑人/狼人）’，指导模型在连守受限时推测狼人的二阶刀口（如明金水、守卫自身或次要神职）。",
+      "rationale": "用清晰的高层次博弈决策原则替代低效机械的词频打分，使决策具有情境泛化能力。"
+    },
+    {
+      "file": "task.md",
+      "change": "更新守卫操作规程，强调‘狼人刀口往往避开白天抗推焦点，优先拔除公开带队真神与已坐实好人；严禁保护被全场质疑的嫌疑人’。",
+      "rationale": "使任务说明与重构后的策略提示词保持高度因果一致性。"
+    }
+  ],
+  "risks": [
+    "完全移除硬编码候选排序后，若大模型在个别轮次出现幻觉给出上一夜的目标，需要确保校验层（decision_error 或前置 candidate 过滤）能够阻断非法连守并触发合法重试。",
+    "在大模型判断场上真假预言家出现失误时，守卫可能守错悍跳狼；但相较于原系统稳定保护抗推狼人，通过语义上下文判断真神职的期望收益显著更高。"
+  ],
+  "code_agent_brief": "1. 在 task_agent.py 中进行深度代码减肥：彻底删除 _scan_guard_signal_tree 及其下游所有 _bump_player_risk、_player_risk_score、_dialogue_text_signals 等启发式打分与文本扫描方法，移除 player_risk_profile、recent_public_focus_ids 等臃肿状态结构。\n2. 保留 last_protected_id 与 last_protected_round，仅用于硬性过滤：当 guard_can_repeat_protect 为 False 时，从候选 target_ids 中排除 last_protected_id。\n3. 移除 _repair_guard_decision 中的硬编码改写逻辑，让决策回归模型本身，仅由本地校验和重试机制保证合法性。\n4. 在提示词生成中，精简并加强守卫决策指引：指出优先保护明神（真预言家/带徽好人/明女巫）或坐实金水，明确警示不要保护白天被集火的嫌疑人/抗推位；在不能连守时考虑守卫自守或保护外置位关键好人。\n5. 同步修订 task.md，使之与精简高效的新控制流对齐。"
+}

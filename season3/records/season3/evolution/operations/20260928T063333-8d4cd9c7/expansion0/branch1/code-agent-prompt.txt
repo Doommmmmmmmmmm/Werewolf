@@ -1,0 +1,47 @@
+你正在修改狼人杀角色 wolf_3 的 Task-Agent 候选。
+只允许修改当前目录中的这些文件：task_agent.py、task.md。不要创建其他文件。
+游戏规则、信息可见性、行动 JSON 契约和工具预算不可绕过；代码不得访问网络、文件系统、环境变量、进程或隐藏状态。稳定游戏内核 core/ 不属于候选工作区，绝对不能修改。保留 TaskAgent 类及现有构造接口。
+Task-Agent 外部运行契约：每次决策最多调用 5 次受限工具，每次工具返回最多 1000 个长度单位，每次模型请求 system 与 messages 总长度最多 15000 个 Unicode 字符。Task-Agent 单次模型输出最多 900 tokens，且工具预算为 5 次、Prompt 和策略可以自由修改，但不得通过自动拼接完整历史来绕过这些预算；需要历史时让模型主动调用受限工具。
+根据以下诊断和修改说明直接完成代码修改，并自行检查语法：
+
+{
+  "summary": "wolf_3-base 整体具备较高的胜率（85%），但审计回放与评测数据暴露出三个严重缺陷：一是在夜间击杀打分与排序逻辑中未对存活狼队友做负分惩罚，导致首夜出现狼人投票自刀队友（投p1）的严重失误；二是白天投票策略盲目为持徽/警长目标加分，且缺乏逆势倒钩判断，在队友被真预言家查杀且票势一边倒时，仍然机械盲冲真预言家警长，暴露狼坑；三是上下文与策略提示词严重冗余，Prompt 长度超过万字导致决策频繁发生 TimeoutError 进而触发降级。",
+  "evidence": [
+    "Game 10 第 30 步（Round 1 夜间狼投票）：p1、p2、p4 均投好人 p8，而 p3(wolf_3) 却向队友 p1 投出击杀票，导致票型变为 3:1，险些干扰狼队击杀；代码审计发现 _score_target 仅检查 target_id == self.player_id，完全没有将存活队友排除或大幅降权。",
+    "Game 10 第 192 步（Round 2 白天放逐投票）：p1 已被真预言家兼持徽人 p5 查杀且全场好人一致出 p1，p3 的 _build_day_vote_strategy 却因给警徽位无条件加分（score += 3）而把票投给 p5，与 p1、p2 一同形成送人头的‘三狼裸冲警长’票型，彻底暴露阵营面。",
+    "评测汇总与回放审计显示：Game 0 中 p3 产生 participant_error: TimeoutError 导致降级；多局决策 Prompt 测量字符达到 10984~11095，逼近系统预算边界，token 消耗极大且极易引起超时。",
+    "代码层面：_build_compact_turn_prompt 同时将 game、state_digest、case_summary、wolf_strategy 四重冗余结构打包注入，大量重复包含 candidate_order、discussion_signal、notes 等字典，造成严重的 Token 膨胀。"
+  ],
+  "root_causes": [
+    "_score_target 逻辑缺陷：只过滤了 target_id == self.player_id，未引入 private_information 提供的 wolf_ids，且如果狼队友近期被提及或发言较多还会获得额外加分，导致狼队夜刀发生自残投票。",
+    "_build_day_vote_strategy 缺乏倒钩与态势感知：盲目将‘当前警徽位’作为出票加分项，在真预言家持徽且全场归票队友时，无法识别‘队友处于绝境（查杀/归票焦点）’与‘警长受全场保护’的态势，导致狼队机械硬冲送命。",
+    "Prompt 组织结构单向膨胀：_build_compact_turn_prompt 没有对策略对象进行瘦身，重复拼接 state_digest 与 memory_snapshot，导致决策上下文体积过大，增加了 LLM 生成延迟并引发超长读取超时（TimeoutError）。"
+  ],
+  "modification_plan": [
+    {
+      "file": "task_agent.py",
+      "change": "在 _score_target 与 _rank_targets 中传入并使用存活狼队友名单（alive_wolf_ids），对狼队友目标施加巨额负分（如 -80 分），强制夜刀目标只锁定非狼公共焦点；同时在狼队讨论信号解析中优先尊重共识。",
+      "rationale": "杜绝 Game 10 中 wolf_3 出现首夜刀队友的严重负向行为，确保夜刀统一指向对狼人威胁最大的神民目标。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构 _build_day_vote_strategy，增加局面态势感知（posture/bus_teammate）：当队友被真预言家查杀或成为不可逆投票焦点时，主动转入倒钩（bus）或分散出票，不再硬冲受好人保护的警长；删除对当前持徽警长的无条件加分，避免反向送人头。",
+      "rationale": "修复白天投票机械盲冲预言家的问题，让 wolf_3 能够在查杀局与警长局中自然倒钩并隐藏身份。"
+    },
+    {
+      "file": "task_agent.py",
+      "change": "重构并精简 _build_compact_turn_prompt 与 _compact_snapshot，合并冗余的 state_digest/case_summary/wolf_strategy，将 DEFAULT_MAX_PROMPT_CHARS 适度精简控制，剔除策略对象中的长列表与重复字段。",
+      "rationale": "落实防单向膨胀与代码重构要求，大幅压缩 Prompt 字符数，降低模型推理耗时与网络延迟，彻底解决 TimeoutError 导致的 fallback。"
+    },
+    {
+      "file": "task.md",
+      "change": "明确强化任务规则约束：严禁夜间击杀己方存活队友（除非进入绝境自刀演戏阶段）；白天投票严禁在预言家强势且队友已被查杀时盲目硬冲持徽人，必须根据票型自然顺推或弃票隐蔽。",
+      "rationale": "使 prompt 指令与代码层的策略优化保持一致，强化狼人策略的一致性与生存率。"
+    }
+  ],
+  "risks": [
+    "若倒钩判断门槛过低，狼人可能过早出卖队友导致狼坑迅速减员；需要严格限定在‘队友被查杀且归票集中’的硬证据下才触发倒钩。",
+    "压缩 Prompt 时如果遗漏关键阶段（如 allowed_actions 中的合法 target_ids），可能引发非法目标错误；因此精简必须保留精确的 JSON 行动契约。"
+  ],
+  "code_agent_brief": "请对 wolf_3 的 task_agent.py 和 task.md 进行重构与优化：1. 修复夜刀目标评分 bug：在 _score_target 中接入 alive_wolf_ids，对狼队友施加 -80 惩罚分，杜绝夜间刀队友。2. 重构 _build_day_vote_strategy：移除警长无条件加分，增加态势评估，当狼队友被查杀且全场归票队友时，执行倒钩出票或避开强冲预言家。3. 精简 Prompt 结构：重构 _build_compact_turn_prompt，合并冗余字典，避免将 case_summary 和未压缩的 wolf_strategy 同时传入，将 prompt 规模压缩并防止 TimeoutError。"
+}

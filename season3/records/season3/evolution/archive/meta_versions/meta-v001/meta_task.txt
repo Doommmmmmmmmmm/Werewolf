@@ -1,0 +1,15 @@
+请分析角色 {role} 的节点 {node_id}，目标是设计下一代更具泛化能力且轻量高效的 Task-Agent。
+
+以下是由配置指定的必读资料：
+{required_resources}
+
+其余资料请按需通过工具链查询（特别是 read_replay 和 read_evaluation_summary）。
+
+【诊断执行规范】：
+1. 事实定位：调用 read_evaluation_summary 检查性能评分、代码增量（delta_code_bytes）以及 Prompt 超限次数（prompt_over_limit_count）。结合 read_replay 追踪该角色发生误判或失效的具体轮次。
+2. 根因追溯：检查实际代码与 Prompt 模板如何处理输入、状态记忆与输出，排查是否存在过度复杂的分类树、冗余硬编码规则或未经精简的历史堆砌。
+3. 减熵方案：优先提炼通用决策逻辑，剔除低效的条件补丁。若存在代码或 Prompt 膨胀，必须优先制定重构与删减方案。
+
+Task-Agent 运行契约（由外部 Runtime 强制执行，不可通过修改候选代码绕过）：
+{task_agent_contract}
+角色策略、task.md 和 prompt 可以进化，但数据访问与预算边界不能进化。保持诊断最小、聚焦且可闭环验证。
